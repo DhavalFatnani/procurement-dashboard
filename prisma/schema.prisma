@@ -1,0 +1,410 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// --- ENUMS ---
+
+enum Role {
+  SM
+  OPS_HEAD
+  FINANCE
+}
+
+enum PRStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  REVISION_REQUIRED
+  CONVERTED_TO_PO
+  EXECUTED_PRINT
+  CANCELLED
+  FORCE_CANCELLED
+}
+
+enum ExecutionType {
+  VENDOR_PURCHASE
+  INTERNAL_PRINT
+}
+
+enum POStatus {
+  OPEN
+  PARTIALLY_RECEIVED
+  FULLY_RECEIVED
+  INVOICED
+  PAID
+  CLOSED
+  PARTIALLY_CLOSED
+  FORCE_CLOSED
+}
+
+enum GRNExceptionType {
+  DAMAGED
+  WRONG_ITEM
+  QUANTITY_SHORT
+  QUALITY_REJECTION
+}
+
+enum GRNExceptionResolution {
+  ACCEPTED
+  RETURNED_TO_VENDOR
+  OVERRIDE_ACCEPTED
+}
+
+enum InvoiceMatchStatus {
+  PENDING
+  MATCHED
+  MISMATCH
+  OVERRIDE_ACCEPTED
+}
+
+enum PaymentStatus {
+  UNPAID
+  PARTIALLY_PAID
+  PAID
+}
+
+enum VendorStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum VendorRequestStatus {
+  PENDING
+  ACTIVATED
+  REJECTED
+}
+
+enum SerialSeries {
+  LOCK_TAGS
+  JEWELLERY_BARCODES
+  APPAREL_BARCODES
+}
+
+enum SerialReservationStatus {
+  PENDING
+  RESERVED
+}
+
+/// Reserved for operational/UI state around serial ceilings (not yet on `SeriesConfig` per domain spec).
+enum SeriesConfigStatus {
+  ACTIVE
+  INACTIVE
+  WARNING
+}
+
+// --- MODELS ---
+
+model User {
+  id          String   @id
+  email       String   @unique
+  name        String
+  role        Role
+  warehouseId String
+  createdAt   DateTime @default(now())
+
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id])
+
+  vendorsCreated            Vendor[]            @relation("VendorCreatedBy")
+  vendorChangeLogs          VendorChangeLog[]
+  vendorRequestsRequested   VendorRequest[]     @relation("VendorRequestRequestedBy")
+  vendorRequestsReviewed    VendorRequest[]     @relation("VendorRequestReviewedBy")
+  purchaseRequestsCreated   PurchaseRequest[]
+  prVersionsChanged         PRVersion[]
+  purchaseOrdersForceClosed PurchaseOrder[]     @relation("POForceClosedBy")
+  goodsReceipts             GoodsReceipt[]
+  grnExceptionsResolved     GRNException[]
+  invoicesUploaded          Invoice[]           @relation("InvoiceUploadedBy")
+  invoicesOverridden        Invoice[]           @relation("InvoiceOverrideBy")
+  paymentsPaid              Payment[]
+  serialReservationsCreated SerialReservation[]
+  seriesConfigsConfigured   SeriesConfig[]
+}
+
+model Warehouse {
+  id        String   @id @default(cuid())
+  name      String
+  location  String
+  createdAt DateTime @default(now())
+
+  users             User[]
+  purchaseRequests  PurchaseRequest[]
+  serialReservations SerialReservation[]
+}
+
+model Vendor {
+  id                   String       @id @default(cuid())
+  businessName         String
+  gst                  String?
+  address              String?
+  pocName              String
+  phone                String
+  email                String
+  accountName          String
+  accountNumber        String
+  ifsc                 String
+  bankName             String
+  status               VendorStatus @default(ACTIVE)
+  hasSimilarVendorFlag Boolean      @default(false)
+  similarVendorId      String?
+  createdById          String
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
+
+  createdBy User    @relation("VendorCreatedBy", fields: [createdById], references: [id])
+  similarTo Vendor? @relation("VendorSimilarity", fields: [similarVendorId], references: [id])
+  similarOf Vendor[] @relation("VendorSimilarity")
+
+  purchaseOrders           PurchaseOrder[]
+  vendorChangeLogs         VendorChangeLog[]
+  vendorRequestsActivated  VendorRequest[] @relation("VendorRequestActivatedVendor")
+  purchaseRequests         PurchaseRequest[]
+}
+
+model VendorChangeLog {
+  id          String   @id @default(cuid())
+  vendorId    String
+  fieldName   String
+  oldValue    String?
+  newValue    String?
+  changedById String
+  changedAt   DateTime @default(now())
+  reason      String?
+
+  vendor    Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  changedBy User   @relation(fields: [changedById], references: [id])
+}
+
+model VendorRequest {
+  id                String              @id @default(cuid())
+  businessName      String
+  pocName           String
+  phone             String
+  email             String
+  status            VendorRequestStatus @default(PENDING)
+  requestedById     String
+  reviewedById      String?
+  reviewReason      String?
+  linkedPRId        String?             @unique
+  activatedVendorId String?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  requestedBy     User               @relation("VendorRequestRequestedBy", fields: [requestedById], references: [id])
+  reviewedBy      User?              @relation("VendorRequestReviewedBy", fields: [reviewedById], references: [id])
+  linkedPR        PurchaseRequest?   @relation("VendorRequestLinkedPR", fields: [linkedPRId], references: [id])
+  activatedVendor Vendor?            @relation("VendorRequestActivatedVendor", fields: [activatedVendorId], references: [id])
+  purchaseRequest PurchaseRequest?  @relation("PurchaseRequestVendorRequest")
+}
+
+model Category {
+  id     String @id @default(cuid())
+  name   String
+
+  subcategories    Subcategory[]
+  purchaseRequests PurchaseRequest[]
+}
+
+model Subcategory {
+  id             String          @id @default(cuid())
+  categoryId     String
+  name           String
+  series         SerialSeries?
+  executionType  ExecutionType
+
+  category         Category          @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  purchaseRequests PurchaseRequest[]
+}
+
+/// Human-facing id: use prefix `PR-` in application (e.g. `PR-${cuid()}`) when creating rows.
+model PurchaseRequest {
+  id              String          @id
+  categoryId      String
+  subcategoryId   String
+  quantity        Int
+  warehouseId     String
+  vendorId        String?
+  executionType   ExecutionType
+  status          PRStatus        @default(DRAFT)
+  currentVersion  Int             @default(1)
+  revisionCount   Int             @default(0)
+  vendorRequestId String?         @unique
+  createdById     String
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  category      Category        @relation(fields: [categoryId], references: [id])
+  subcategory   Subcategory     @relation(fields: [subcategoryId], references: [id])
+  warehouse     Warehouse       @relation(fields: [warehouseId], references: [id])
+  vendor        Vendor?         @relation(fields: [vendorId], references: [id])
+  vendorRequest VendorRequest?  @relation("PurchaseRequestVendorRequest", fields: [vendorRequestId], references: [id])
+  createdBy     User            @relation(fields: [createdById], references: [id])
+
+  linkedVendorRequests VendorRequest[] @relation("VendorRequestLinkedPR")
+  versions             PRVersion[]
+  purchaseOrder        PurchaseOrder?
+  serialReservation    SerialReservation?
+}
+
+model PRVersion {
+  id              String   @id @default(cuid())
+  prId            String
+  versionNumber   Int
+  changedById     String
+  changedAt       DateTime @default(now())
+  revisionComment String?
+  diffSnapshot    Json?
+
+  pr        PurchaseRequest @relation(fields: [prId], references: [id], onDelete: Cascade)
+  changedBy User            @relation(fields: [changedById], references: [id])
+}
+
+/// Human-facing id: use prefix `PO-` when creating rows.
+model PurchaseOrder {
+  id               String    @id
+  prId             String    @unique
+  vendorId         String
+  orderedQty       Int
+  unitPrice        Decimal?  @db.Decimal(18, 4)
+  status           POStatus  @default(OPEN)
+  expectedDelivery DateTime?
+  deliveryComplete Boolean   @default(false)
+  forceClosedById  String?
+  forceCloseReason String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  purchaseRequest PurchaseRequest @relation(fields: [prId], references: [id])
+  vendor          Vendor          @relation(fields: [vendorId], references: [id])
+  forceClosedBy   User?           @relation("POForceClosedBy", fields: [forceClosedById], references: [id])
+
+  grns               GoodsReceipt[]
+  invoices           Invoice[]
+  serialReservation  SerialReservation?
+}
+
+model GoodsReceipt {
+  id               String    @id @default(cuid())
+  poId             String
+  receivedQty      Int
+  acceptedQty      Int
+  disputedQty      Int       @default(0)
+  receivedById     String
+  receivedAt       DateTime  @default(now())
+  deliveryNoteRef  String?
+  createdAt        DateTime  @default(now())
+
+  purchaseOrder PurchaseOrder @relation(fields: [poId], references: [id], onDelete: Cascade)
+  receivedBy    User          @relation(fields: [receivedById], references: [id])
+
+  exceptions   GRNException[]
+  invoiceLinks InvoiceGRNLink[]
+}
+
+model GRNException {
+  id               String                   @id @default(cuid())
+  grnId            String
+  exceptionType    GRNExceptionType
+  exceptionQty     Int
+  note             String
+  resolutionStatus GRNExceptionResolution?
+  resolvedById     String?
+  resolvedAt       DateTime?
+  resolutionNote   String?
+  createdAt        DateTime                 @default(now())
+
+  grn       GoodsReceipt @relation(fields: [grnId], references: [id], onDelete: Cascade)
+  resolvedBy User?       @relation(fields: [resolvedById], references: [id])
+}
+
+model Invoice {
+  id             String              @id @default(cuid())
+  poId           String
+  invoiceNumber  String
+  amount         Decimal             @db.Decimal(18, 4)
+  invoiceDate    DateTime
+  fileUrl        String
+  uploadedById   String
+  matchStatus    InvoiceMatchStatus  @default(PENDING)
+  expectedAmount Decimal?            @db.Decimal(18, 4)
+  tolerancePct   Decimal             @default(2.5) @db.Decimal(6, 3)
+  overrideById   String?
+  overrideReason String?
+  paymentStatus  PaymentStatus       @default(UNPAID)
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  purchaseOrder PurchaseOrder @relation(fields: [poId], references: [id], onDelete: Cascade)
+  uploadedBy    User          @relation("InvoiceUploadedBy", fields: [uploadedById], references: [id])
+  overrideBy    User?         @relation("InvoiceOverrideBy", fields: [overrideById], references: [id])
+
+  grnLinks InvoiceGRNLink[]
+  payments Payment[]
+
+  @@unique([poId, invoiceNumber])
+}
+
+model InvoiceGRNLink {
+  id        String @id @default(cuid())
+  invoiceId String
+  grnId     String
+
+  invoice Invoice        @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  grn     GoodsReceipt   @relation(fields: [grnId], references: [id], onDelete: Cascade)
+
+  @@unique([invoiceId, grnId])
+}
+
+model Payment {
+  id             String         @id @default(cuid())
+  invoiceId      String
+  status         PaymentStatus
+  method         String?
+  proofUrl       String?
+  transactionRef String?
+  paidById       String?
+  paidAt         DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  paidBy  User?   @relation(fields: [paidById], references: [id])
+}
+
+model SerialReservation {
+  id              String                  @id @default(cuid())
+  series          SerialSeries
+  rangeStart      BigInt
+  rangeEnd        BigInt
+  quantity        Int
+  warehouseId     String
+  status          SerialReservationStatus @default(PENDING)
+  prId            String?                 @unique
+  poId            String?                 @unique
+  idempotencyKey  String                  @unique
+  createdById     String
+  createdAt       DateTime                @default(now())
+
+  warehouse Warehouse        @relation(fields: [warehouseId], references: [id])
+  pr        PurchaseRequest? @relation(fields: [prId], references: [id])
+  po        PurchaseOrder?   @relation(fields: [poId], references: [id])
+  createdBy User             @relation(fields: [createdById], references: [id])
+}
+
+model SeriesConfig {
+  id                      String       @id @default(cuid())
+  series                  SerialSeries @unique
+  inactivityThresholdDays Int          @default(30)
+  ceilingNumber           BigInt
+  ceilingAlertPct         Int          @default(80)
+  configuredById          String
+  configuredAt            DateTime     @default(now())
+
+  configuredBy User @relation(fields: [configuredById], references: [id])
+}
