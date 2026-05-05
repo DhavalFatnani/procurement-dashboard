@@ -44,7 +44,7 @@ export async function checkRole(allowedRoles: readonly Role[]): Promise<SessionU
   if (!role) {
     redirect("/unauthorized");
   }
-  if (!allowedRoles.includes(role)) {
+  if (allowedRoles.length > 0 && !allowedRoles.includes(role)) {
     redirect("/unauthorized");
   }
   return { ...user, role };

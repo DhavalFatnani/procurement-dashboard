@@ -1,30 +1,27 @@
-import { signOut } from "@/app/actions/auth";
+import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { checkRole } from "@/lib/auth";
-import { ROLES } from "@/types";
+import { getNavItemsForRole, ROLE_LABELS } from "@/lib/navigation";
 
 export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  await checkRole(ROLES);
+  const user = await checkRole([]);
+  const displayName =
+    (typeof user.user_metadata?.name === "string" && user.user_metadata.name) ||
+    user.email ||
+    "User";
+  const navItems = getNavItemsForRole(user.role);
 
   return (
-    <div className="min-h-screen">
-      <header className="border-b bg-card">
-        <div className="container flex h-14 items-center justify-between">
-          <span className="text-sm font-semibold">KNOT Procurement</span>
-          <form action={signOut}>
-            <button
-              type="submit"
-              className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-            >
-              Sign out
-            </button>
-          </form>
-        </div>
-      </header>
-      <main className="container py-8">{children}</main>
-    </div>
+    <DashboardShell
+      displayName={displayName}
+      role={user.role}
+      roleLabel={ROLE_LABELS[user.role]}
+      navItems={navItems}
+    >
+      {children}
+    </DashboardShell>
   );
 }

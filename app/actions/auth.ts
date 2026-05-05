@@ -13,13 +13,14 @@ export async function signInWithEmail(formData: FormData) {
   if (error) {
     redirect(`/login?error=${encodeURIComponent(error.message)}`);
   }
-  revalidatePath("/");
-  redirect("/");
+  revalidatePath("/dashboard");
+  redirect("/dashboard");
 }
 
 export async function signOut() {
   const supabase = await createServerSupabaseClient();
   await supabase.auth.signOut();
+  revalidatePath("/dashboard");
   revalidatePath("/");
   redirect("/login");
 }

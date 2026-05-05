@@ -1,11 +1,15 @@
+import { PageHeader } from "@/components/shared/PageHeader";
 import { getSessionUser } from "@/lib/auth";
 
 export default async function DashboardHomePage() {
   const user = await getSessionUser();
 
   return (
-    <div className="space-y-2">
-      <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
+    <div className="space-y-6">
+      <PageHeader
+        title="Dashboard"
+        subtitle="Overview of procurement activity and quick links."
+      />
       <p className="text-muted-foreground">
         Signed in as <span className="font-medium text-foreground">{user?.email}</span> (
         {user?.role})
