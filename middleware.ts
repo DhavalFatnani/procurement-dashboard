@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { tryGetSupabasePublishableConfig } from "@/lib/supabase-env";
 
-const publicPaths = new Set(["/login", "/unauthorized"]);
+const publicPaths = new Set(["/login", "/login/forgot-password", "/unauthorized"]);
 
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
@@ -40,7 +40,7 @@ export async function middleware(request: NextRequest) {
 
   const pathname = request.nextUrl.pathname;
 
-  if (pathname.startsWith("/api")) {
+  if (pathname.startsWith("/api") || pathname.startsWith("/auth/")) {
     return supabaseResponse;
   }
 

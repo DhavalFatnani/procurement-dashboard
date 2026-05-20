@@ -3,106 +3,123 @@ import {
   PaymentStatus,
   POStatus,
   PRStatus,
+  VendorStatus,
 } from "@prisma/client";
-import type { VariantProps } from "class-variance-authority";
 
-import { Badge, badgeVariants } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
-type BadgeVariant = NonNullable<VariantProps<typeof badgeVariants>["variant"]>;
+type StatusTone = "neutral" | "warning" | "info" | "success" | "error";
 
-const prVariant: Record<PRStatus, BadgeVariant> = {
-  [PRStatus.DRAFT]: "secondary",
-  [PRStatus.PENDING_APPROVAL]: "outline",
-  [PRStatus.APPROVED]: "default",
-  [PRStatus.REJECTED]: "destructive",
-  [PRStatus.REVISION_REQUIRED]: "outline",
-  [PRStatus.CONVERTED_TO_PO]: "default",
-  [PRStatus.EXECUTED_PRINT]: "default",
-  [PRStatus.CANCELLED]: "outline",
-  [PRStatus.FORCE_CANCELLED]: "destructive",
+const toneStyles: Record<
+  StatusTone,
+  { badge: string; dot: string }
+> = {
+  neutral: {
+    badge: "bg-[var(--status-neutral-bg)] text-[var(--text-secondary)]",
+    dot: "bg-[var(--status-neutral)]",
+  },
+  warning: {
+    badge: "bg-[var(--status-warning-bg)] text-[var(--status-warning)]",
+    dot: "bg-[var(--status-warning)]",
+  },
+  info: {
+    badge: "bg-[var(--status-info-bg)] text-[var(--status-info)]",
+    dot: "bg-[var(--status-info)]",
+  },
+  success: {
+    badge: "bg-[var(--status-success-bg)] text-[var(--status-success)]",
+    dot: "bg-[var(--status-success)]",
+  },
+  error: {
+    badge: "bg-[var(--status-error-bg)] text-[var(--status-error)]",
+    dot: "bg-[var(--status-error)]",
+  },
 };
 
-const prClass: Partial<Record<PRStatus, string>> = {
-  [PRStatus.PENDING_APPROVAL]: "border-amber-500/50 text-amber-700 dark:text-amber-400",
-  [PRStatus.REVISION_REQUIRED]: "border-amber-500/50 text-amber-700 dark:text-amber-400",
-  [PRStatus.CANCELLED]: "text-muted-foreground",
+const prTone: Record<PRStatus, StatusTone> = {
+  [PRStatus.DRAFT]: "neutral",
+  [PRStatus.PENDING_APPROVAL]: "warning",
+  [PRStatus.APPROVED]: "info",
+  [PRStatus.REVISION_REQUIRED]: "warning",
+  [PRStatus.CONVERTED_TO_PO]: "info",
+  [PRStatus.EXECUTED_PRINT]: "success",
+  [PRStatus.REJECTED]: "error",
+  [PRStatus.CANCELLED]: "neutral",
+  [PRStatus.FORCE_CANCELLED]: "error",
 };
 
-const poVariant: Record<POStatus, BadgeVariant> = {
-  [POStatus.OPEN]: "outline",
-  [POStatus.PARTIALLY_RECEIVED]: "outline",
-  [POStatus.FULLY_RECEIVED]: "default",
-  [POStatus.INVOICED]: "default",
-  [POStatus.PAID]: "default",
-  [POStatus.CLOSED]: "secondary",
-  [POStatus.PARTIALLY_CLOSED]: "outline",
-  [POStatus.FORCE_CLOSED]: "destructive",
+const poTone: Record<POStatus, StatusTone> = {
+  [POStatus.OPEN]: "neutral",
+  [POStatus.PARTIALLY_RECEIVED]: "warning",
+  [POStatus.FULLY_RECEIVED]: "info",
+  [POStatus.INVOICED]: "info",
+  [POStatus.PAID]: "info",
+  [POStatus.CLOSED]: "success",
+  [POStatus.PARTIALLY_CLOSED]: "success",
+  [POStatus.FORCE_CLOSED]: "neutral",
 };
 
-const poClass: Partial<Record<POStatus, string>> = {
-  [POStatus.OPEN]: "border-sky-500/40 text-sky-800 dark:text-sky-300",
-  [POStatus.PARTIALLY_RECEIVED]: "border-sky-500/40 text-sky-800 dark:text-sky-300",
-  [POStatus.PARTIALLY_CLOSED]: "border-amber-500/50 text-amber-800 dark:text-amber-300",
+const paymentTone: Record<PaymentStatus, StatusTone> = {
+  [PaymentStatus.UNPAID]: "error",
+  [PaymentStatus.PARTIALLY_PAID]: "warning",
+  [PaymentStatus.PAID]: "success",
 };
 
-const paymentVariant: Record<PaymentStatus, BadgeVariant> = {
-  [PaymentStatus.UNPAID]: "outline",
-  [PaymentStatus.PARTIALLY_PAID]: "outline",
-  [PaymentStatus.PAID]: "default",
+const invoiceTone: Record<InvoiceMatchStatus, StatusTone> = {
+  [InvoiceMatchStatus.PENDING]: "neutral",
+  [InvoiceMatchStatus.MATCHED]: "success",
+  [InvoiceMatchStatus.MISMATCH]: "error",
+  [InvoiceMatchStatus.OVERRIDE_ACCEPTED]: "warning",
 };
 
-const paymentClass: Partial<Record<PaymentStatus, string>> = {
-  [PaymentStatus.UNPAID]: "border-rose-500/40 text-rose-800 dark:text-rose-300",
-  [PaymentStatus.PARTIALLY_PAID]: "border-amber-500/50 text-amber-800 dark:text-amber-300",
-};
-
-const invoiceVariant: Record<InvoiceMatchStatus, BadgeVariant> = {
-  [InvoiceMatchStatus.PENDING]: "outline",
-  [InvoiceMatchStatus.MATCHED]: "default",
-  [InvoiceMatchStatus.MISMATCH]: "destructive",
-  [InvoiceMatchStatus.OVERRIDE_ACCEPTED]: "secondary",
-};
-
-const invoiceClass: Partial<Record<InvoiceMatchStatus, string>> = {
-  [InvoiceMatchStatus.PENDING]: "border-amber-500/50 text-amber-800 dark:text-amber-300",
+const vendorTone: Record<VendorStatus, StatusTone> = {
+  [VendorStatus.ACTIVE]: "success",
+  [VendorStatus.INACTIVE]: "neutral",
 };
 
 export type StatusBadgeProps =
   | { kind: "PRStatus"; status: PRStatus }
   | { kind: "POStatus"; status: POStatus }
   | { kind: "PaymentStatus"; status: PaymentStatus }
-  | { kind: "InvoiceMatchStatus"; status: InvoiceMatchStatus };
+  | { kind: "InvoiceMatchStatus"; status: InvoiceMatchStatus }
+  | { kind: "VendorStatus"; status: VendorStatus };
 
 function formatStatus(status: string) {
   return status.replaceAll("_", " ");
 }
 
+function DotStatusBadge({ label, tone }: { label: string; tone: StatusTone }) {
+  const styles = toneStyles[tone];
+  return (
+    <span
+      className={cn(
+        "inline-flex w-fit items-center gap-1.5 whitespace-nowrap rounded px-2 py-0.5 text-ds-xs font-medium leading-snug",
+        styles.badge,
+      )}
+    >
+      <span className={cn("size-1.5 shrink-0 rounded-full", styles.dot)} aria-hidden />
+      {label}
+    </span>
+  );
+}
+
 export function StatusBadge(props: StatusBadgeProps) {
   switch (props.kind) {
     case "PRStatus":
-      return (
-        <Badge variant={prVariant[props.status]} className={cn(prClass[props.status])}>
-          {formatStatus(props.status)}
-        </Badge>
-      );
+      return <DotStatusBadge label={formatStatus(props.status)} tone={prTone[props.status]} />;
     case "POStatus":
-      return (
-        <Badge variant={poVariant[props.status]} className={cn(poClass[props.status])}>
-          {formatStatus(props.status)}
-        </Badge>
-      );
+      return <DotStatusBadge label={formatStatus(props.status)} tone={poTone[props.status]} />;
     case "PaymentStatus":
       return (
-        <Badge variant={paymentVariant[props.status]} className={cn(paymentClass[props.status])}>
-          {formatStatus(props.status)}
-        </Badge>
+        <DotStatusBadge label={formatStatus(props.status)} tone={paymentTone[props.status]} />
       );
     case "InvoiceMatchStatus":
       return (
-        <Badge variant={invoiceVariant[props.status]} className={cn(invoiceClass[props.status])}>
-          {formatStatus(props.status)}
-        </Badge>
+        <DotStatusBadge label={formatStatus(props.status)} tone={invoiceTone[props.status]} />
+      );
+    case "VendorStatus":
+      return (
+        <DotStatusBadge label={formatStatus(props.status)} tone={vendorTone[props.status]} />
       );
   }
 }
