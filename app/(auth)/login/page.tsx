@@ -13,16 +13,18 @@ import {
 import { Input } from "@/components/ui/input";
 
 type Props = {
-  searchParams: { error?: string };
+  searchParams: Promise<{ error?: string; reset?: string }>;
 };
 
-export default function LoginPage({ searchParams }: Props) {
-  const error = searchParams.error;
+export default async function LoginPage({ searchParams }: Props) {
+  const sp = await searchParams;
+  const error = sp.error;
+  const resetSuccess = sp.reset === "1";
 
   return (
-    <Card className="w-full max-w-sm shadow-sm">
+    <Card className="w-full max-w-sm">
       <CardHeader className="text-center">
-        <CardTitle className="text-2xl font-semibold tracking-tight">Sign in</CardTitle>
+        <CardTitle className="text-ds-lg font-semibold tracking-tight">Sign in</CardTitle>
         <CardDescription>Use your KNOT procurement account.</CardDescription>
       </CardHeader>
       <CardContent>
@@ -41,9 +43,17 @@ export default function LoginPage({ searchParams }: Props) {
             />
           </div>
           <div className="space-y-2">
-            <label className="text-sm font-medium" htmlFor="password">
-              Password
-            </label>
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium" htmlFor="password">
+                Password
+              </label>
+              <Link
+                href="/login/forgot-password"
+                className="text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground"
+              >
+                Forgot password?
+              </Link>
+            </div>
             <Input
               id="password"
               name="password"
@@ -52,6 +62,11 @@ export default function LoginPage({ searchParams }: Props) {
               required
             />
           </div>
+          {resetSuccess ? (
+            <p className="text-sm text-green-600 dark:text-green-500" role="status">
+              Your password has been updated. Sign in with your new password.
+            </p>
+          ) : null}
           {error ? (
             <p className="text-sm text-destructive" role="alert">
               {error}

@@ -1,8 +1,9 @@
 import { PageHeader } from "@/components/shared/PageHeader";
-import { getSessionUser } from "@/lib/auth";
+import { checkRole } from "@/lib/auth";
+import { ACCESS } from "@/lib/route-access";
 
 export default async function DashboardHomePage() {
-  const user = await getSessionUser();
+  const user = await checkRole([...ACCESS.dashboard]);
 
   return (
     <div className="space-y-6">
@@ -11,8 +12,7 @@ export default async function DashboardHomePage() {
         subtitle="Overview of procurement activity and quick links."
       />
       <p className="text-muted-foreground">
-        Signed in as <span className="font-medium text-foreground">{user?.email}</span> (
-        {user?.role})
+        Signed in as <span className="font-medium text-foreground">{user.email}</span> ({user.role})
       </p>
       <p className="text-sm text-muted-foreground">
         Invoice and payment proof uploads use Supabase Storage buckets{" "}

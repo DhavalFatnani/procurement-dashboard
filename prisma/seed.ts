@@ -3,7 +3,10 @@ import {
   Role,
   ExecutionType,
   SerialSeries,
+  PRStatus,
+  VendorStatus,
 } from "@prisma/client";
+import { randomUUID } from "crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import * as dotenv from "dotenv";
 
@@ -296,10 +299,148 @@ async function seedUsersAndSeriesConfig(warehouseIds: string[]) {
   console.log(`  Default password: ${PASSWORD}\n`);
 }
 
+async function seedSampleVendorsAndPRs() {
+  const sm = await prisma.user.findFirst({
+    where: { email: "sm@knot-procurement.local" },
+  });
+  const ops = await prisma.user.findFirst({
+    where: { email: "ops@knot-procurement.local" },
+  });
+  if (!sm || !ops) {
+    console.warn("[seed] Skipping sample vendors/PRs — seed users first.");
+    return;
+  }
+
+  const packagingSub = await prisma.subcategory.findFirst({
+    where: { id: "seed-sub-packaging-0" },
+  });
+  const lockVendorSub = await prisma.subcategory.findFirst({
+    where: { id: "seed-sub-lock-0" },
+  });
+  const printSub = await prisma.subcategory.findFirst({
+    where: { id: "seed-sub-lock-1" },
+  });
+  if (!packagingSub || !lockVendorSub || !printSub) {
+    return;
+  }
+
+  await prisma.vendor.upsert({
+    where: { id: "seed-vendor-alpha" },
+    update: {},
+    create: {
+      id: "seed-vendor-alpha",
+      businessName: "Alpha Packaging Co",
+      pocName: "Ravi Kumar",
+      phone: "9876500001",
+      email: "alpha@example.com",
+      accountName: "Alpha Packaging Co",
+      accountNumber: "123456789012",
+      ifsc: "HDFC0001234",
+      bankName: "HDFC Bank",
+      status: VendorStatus.ACTIVE,
+      createdById: ops.id,
+    },
+  });
+
+  await prisma.vendor.upsert({
+    where: { id: "seed-vendor-beta" },
+    update: {},
+    create: {
+      id: "seed-vendor-beta",
+      businessName: "Beta Supplies Ltd",
+      pocName: "Meera Shah",
+      phone: "9876500002",
+      email: "beta@example.com",
+      accountName: "Beta Supplies Ltd",
+      accountNumber: "987654321098",
+      ifsc: "ICIC0009876",
+      bankName: "ICICI Bank",
+      status: VendorStatus.ACTIVE,
+      createdById: ops.id,
+    },
+  });
+
+  const prDraftId = "PR-seed-draft-001";
+  await prisma.purchaseRequest.upsert({
+    where: { id: prDraftId },
+    update: {},
+    create: {
+      id: prDraftId,
+      categoryId: packagingSub.categoryId,
+      subcategoryId: packagingSub.id,
+      quantity: 500,
+      warehouseId: sm.warehouseId,
+      vendorId: "seed-vendor-alpha",
+      executionType: ExecutionType.VENDOR_PURCHASE,
+      status: PRStatus.DRAFT,
+      createdById: sm.id,
+    },
+  });
+
+  const prPendingId = "PR-seed-pending-001";
+  await prisma.purchaseRequest.upsert({
+    where: { id: prPendingId },
+    update: {},
+    create: {
+      id: prPendingId,
+      categoryId: lockVendorSub.categoryId,
+      subcategoryId: lockVendorSub.id,
+      quantity: 1000,
+      warehouseId: sm.warehouseId,
+      vendorId: "seed-vendor-beta",
+      executionType: ExecutionType.VENDOR_PURCHASE,
+      status: PRStatus.PENDING_APPROVAL,
+      currentVersion: 1,
+      createdById: sm.id,
+      versions: {
+        create: {
+          versionNumber: 1,
+          changedById: sm.id,
+          revisionComment: "Initial submission",
+        },
+      },
+    },
+  });
+
+  const prPrintId = `PR-${randomUUID()}`;
+  const existingPrint = await prisma.purchaseRequest.findFirst({
+    where: { status: PRStatus.EXECUTED_PRINT },
+  });
+  if (!existingPrint) {
+    await prisma.purchaseRequest.create({
+      data: {
+        id: prPrintId,
+        categoryId: printSub.categoryId,
+        subcategoryId: printSub.id,
+        quantity: 50,
+        warehouseId: sm.warehouseId,
+        executionType: ExecutionType.INTERNAL_PRINT,
+        status: PRStatus.EXECUTED_PRINT,
+        createdById: sm.id,
+        serialReservation: {
+          create: {
+            id: `seed-res-${printSub.series}`,
+            series: printSub.series!,
+            rangeStart: BigInt(1),
+            rangeEnd: BigInt(50),
+            quantity: 50,
+            warehouseId: sm.warehouseId,
+            createdById: sm.id,
+            idempotencyKey: `seed-${printSub.series}-1`,
+          },
+        },
+      },
+    });
+  }
+
+  console.log("[seed] Sample vendors and purchase requests ready.");
+}
+
 async function main() {
   await seedWarehouses();
   await seedCategoriesAndSubcategories();
   await seedUsersAndSeriesConfig(WAREHOUSES.map((w) => w.id));
+  await seedSampleVendorsAndPRs();
 
   console.log("[seed] Warehouses, categories, and subcategories are ready.");
 }
