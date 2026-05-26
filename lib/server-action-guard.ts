@@ -2,7 +2,7 @@ import "server-only";
 
 import { Role } from "@prisma/client";
 
-import { getSessionUser } from "@/lib/auth";
+import { getRequestSession } from "@/lib/session";
 
 export class ActionAuthError extends Error {
   constructor(message = "Unauthorized") {
@@ -13,7 +13,7 @@ export class ActionAuthError extends Error {
 
 /** Use at the top of server actions; throws if session or role is invalid. */
 export async function requireRoles(allowed: readonly Role[]) {
-  const user = await getSessionUser();
+  const user = await getRequestSession();
   if (!user) {
     throw new ActionAuthError("Not signed in");
   }

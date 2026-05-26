@@ -3,55 +3,183 @@
 import type { VendorStatus } from "@prisma/client";
 import { Role } from "@prisma/client";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+
+import { vendorParamsFromForm } from "@/lib/build-list-url";
+import type { Paginated } from "@/lib/pagination";
 import * as React from "react";
 
 import type { PendingVendorRequestRow, VendorListRow } from "@/app/actions/vendors";
-import { AddVendorSheet } from "@/components/vendors/AddVendorSheet";
-import { ReviewVendorRequestSheet } from "@/components/vendors/ReviewVendorRequestSheet";
+import dynamic from "next/dynamic";
+
+const AddVendorSheet = dynamic(
+  () => import("@/components/vendors/AddVendorSheet").then((m) => ({ default: m.AddVendorSheet })),
+  { ssr: false },
+);
+const ReviewVendorRequestSheet = dynamic(
+  () =>
+    import("@/components/vendors/ReviewVendorRequestSheet").then((m) => ({
+      default: m.ReviewVendorRequestSheet,
+    })),
+  { ssr: false },
+);
 import { VendorRowActions } from "@/components/vendors/VendorRowActions";
-import { DataTable, type DataTableColumn } from "@/components/shared/DataTable";
+import { Avatar } from "@/components/shared/Avatar";
+import { DataTable, getRowId, type DataTableColumn } from "@/components/shared/DataTable";
 import { EmptyState } from "@/components/shared/EmptyState";
+import { usePageKeyboardHandlers } from "@/components/providers/dashboard-ui-provider";
+import { FilterBar } from "@/components/shared/FilterBar";
+import { FilterChipsRow } from "@/components/shared/FilterChipsRow";
+import { FilterSearch } from "@/components/shared/FilterSearch";
+import { FilterSelect } from "@/components/shared/FilterSelect";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Pagination } from "@/components/shared/Pagination";
 import { StatusBadge } from "@/components/shared/StatusBadge";
-import type { Paginated } from "@/lib/pagination";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { compactChipSpecs, type FilterChipSpec } from "@/lib/filter-chips";
+import { formatShortRef } from "@/lib/display-ref";
+import { formatDateTimeMedium } from "@/lib/format-datetime";
 import { cn } from "@/lib/utils";
-
-function formatDate(iso: string) {
-  try {
-    return new Intl.DateTimeFormat(undefined, {
-      dateStyle: "medium",
-      timeStyle: "short",
-    }).format(new Date(iso));
-  } catch {
-    return iso;
-  }
-}
 
 export function VendorsView({
   role,
   tab,
-  vendors,
+  initialVendors,
   pendingRequests,
   search,
   statusFilter,
+  openAddVendor = false,
+  showHeader = true,
 }: {
   role: Role;
   tab: "all" | "pending";
-  vendors: Paginated<VendorListRow>;
+  initialVendors: Paginated<VendorListRow>;
   pendingRequests: PendingVendorRequestRow[];
   search: string;
   statusFilter: VendorStatus | "ALL";
+  openAddVendor?: boolean;
+  showHeader?: boolean;
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const canManage = role === Role.OPS_HEAD;
+  const [addVendorOpen, setAddVendorOpen] = React.useState(openAddVendor ?? false);
+  const [isPending, startTransition] = React.useTransition();
+
+  const navigateVendors = React.useCallback(
+    (params: URLSearchParams, options?: { exactCount?: boolean }) => {
+      if (options?.exactCount) {
+        params.set("exactCount", "1");
+      } else {
+        params.delete("exactCount");
+      }
+      params.set("tab", "all");
+      const qs = params.toString();
+      startTransition(() => {
+        router.replace(qs ? `/vendors?${qs}` : "/vendors", { scroll: false });
+      });
+    },
+    [router],
+  );
+
+  const handleVendorRowClick = React.useCallback(
+    (r: VendorListRow) => router.push(`/vendors/${r.id}`),
+    [router],
+  );
+
+  function handleFilterSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    navigateVendors(vendorParamsFromForm(e.currentTarget));
+  }
+
+  function handlePageChange(page: number) {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("tab", "all");
+    if (page <= 1) {
+      params.delete("page");
+    } else {
+      params.set("page", String(page));
+    }
+    navigateVendors(params, { exactCount: page > 1 });
+  }
+
+  function clearFilter(key: "q" | "status") {
+    const params = new URLSearchParams(searchParams.toString());
+    if (key === "status") {
+      params.set("status", "ALL");
+    } else {
+      params.delete(key);
+    }
+    params.delete("page");
+    navigateVendors(params);
+  }
+
+  const chipSpecs: FilterChipSpec[] = compactChipSpecs([
+    search && {
+      key: "q",
+      tone: "neutral",
+      label: `Search: "${search}"`,
+      onClear: () => clearFilter("q"),
+    },
+    statusFilter !== "ALL" && {
+      key: "status",
+      tone: statusFilter === "ACTIVE" ? "success" : "neutral",
+      label: `Status: ${statusFilter}`,
+      onClear: () => clearFilter("status"),
+    },
+  ]);
+
+  function clearAllFilters() {
+    const params = new URLSearchParams();
+    params.set("tab", "all");
+    navigateVendors(params);
+  }
+
+  React.useEffect(() => {
+    if (openAddVendor && canManage) {
+      setAddVendorOpen(true);
+    }
+  }, [openAddVendor, canManage]);
+
+  usePageKeyboardHandlers({
+    onFocusSearch: () => {
+      const el = document.querySelector<HTMLInputElement>(
+        'input[name="q"][aria-label="Search vendors"]',
+      );
+      el?.focus();
+    },
+  });
+
+  function exportVendorsCsv() {
+    const header = ["ref", "businessName", "pocName", "phone", "email", "status"];
+    const lines = initialVendors.items.map((v) =>
+      [formatShortRef(v.id), v.businessName, v.pocName, v.phone, v.email, v.status]
+        .map((c) => `"${String(c).replaceAll('"', '""')}"`)
+        .join(","),
+    );
+    const csv = [header.join(","), ...lines].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "vendors.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   const vendorColumns: DataTableColumn<VendorListRow>[] = React.useMemo(
     () => [
-      { id: "name", header: "Vendor name", cell: (r) => r.businessName },
+      {
+        id: "name",
+        header: "Vendor name",
+        cell: (r) => (
+          <span className="inline-flex items-center gap-2">
+            <Avatar name={r.businessName} size="sm" />
+            <span className="font-medium text-foreground">{r.businessName}</span>
+          </span>
+        ),
+      },
       { id: "poc", header: "POC", cell: (r) => r.pocName },
       { id: "phone", header: "Phone", cell: (r) => r.phone },
       { id: "email", header: "Email", cell: (r) => r.email },
@@ -66,7 +194,7 @@ export function VendorsView({
         cell: (r) => <StatusBadge kind="VendorStatus" status={r.status} />,
       },
       { id: "by", header: "Created by", cell: (r) => r.createdByName },
-      { id: "updated", header: "Last updated", cell: (r) => formatDate(r.updatedAt) },
+      { id: "updated", header: "Last updated", cell: (r) => formatDateTimeMedium(r.updatedAt) },
       {
         id: "actions",
         header: "",
@@ -101,7 +229,7 @@ export function VendorsView({
             "—"
           ),
       },
-      { id: "date", header: "Date", cell: (r) => formatDate(r.createdAt) },
+      { id: "date", header: "Date", cell: (r) => formatDateTimeMedium(r.createdAt) },
       {
         id: "act",
         header: "",
@@ -111,17 +239,30 @@ export function VendorsView({
     [],
   );
 
+  const resultCount = initialVendors.total ?? initialVendors.items.length;
+
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Vendors"
-        subtitle={
-          canManage
-            ? "Manage vendor master data, bank details, and pending activation requests."
-            : "View-only directory of approved vendors."
-        }
-        action={canManage ? <AddVendorSheet /> : undefined}
-      />
+      {showHeader ? (
+        <PageHeader
+          variant="hero"
+          title="Vendors"
+          subtitle={
+            canManage
+              ? "Manage vendor master data, bank details, and pending activation requests."
+              : "View-only directory of approved vendors."
+          }
+          action={
+            canManage ? (
+              <AddVendorSheet open={addVendorOpen} onOpenChange={setAddVendorOpen} />
+            ) : undefined
+          }
+        />
+      ) : canManage ? (
+        <div className="flex justify-end">
+          <AddVendorSheet open={addVendorOpen} onOpenChange={setAddVendorOpen} />
+        </div>
+      ) : null}
 
       {canManage ? (
         <div className="flex gap-2 border-b">
@@ -141,48 +282,46 @@ export function VendorsView({
             description="New requests from purchase flows will appear here for Ops Head review."
           />
         ) : (
-          <DataTable columns={pendingColumns} data={pendingRequests} getRowKey={(r) => r.id} />
+          <DataTable columns={pendingColumns} data={pendingRequests} getRowKey={getRowId} />
         )
       ) : (
         <>
-          <form className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end" method="get">
+          <form onSubmit={handleFilterSubmit}>
             <input type="hidden" name="tab" value="all" />
-            <div className="space-y-1.5 sm:min-w-[200px]">
-              <label htmlFor="q" className="text-sm font-medium">
-                Search
-              </label>
-              <Input
-                id="q"
+            <FilterBar
+              resultCount={resultCount}
+              onExportCsv={tab === "all" ? exportVendorsCsv : undefined}
+              activeChips={
+                chipSpecs.length > 0 ? (
+                  <FilterChipsRow chips={chipSpecs} onClearAll={clearAllFilters} />
+                ) : undefined
+              }
+            >
+              <FilterSearch
                 name="q"
-                placeholder="Name, phone, or email"
                 defaultValue={search}
-                autoComplete="off"
+                placeholder="Name, phone, or email"
+                ariaLabel="Search vendors"
+                width="w-[240px]"
               />
-            </div>
-            <div className="space-y-1.5 sm:min-w-[160px]">
-              <label htmlFor="status" className="text-sm font-medium">
-                Status
-              </label>
-              <select
-                id="status"
+              <FilterSelect
                 name="status"
-                defaultValue={statusFilter}
-                className={cn(
-                  "h-8 w-full rounded-lg border border-input bg-transparent px-2 text-sm outline-none",
-                  "focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30",
-                )}
-              >
-                <option value="ALL">All</option>
-                <option value="ACTIVE">Active</option>
-                <option value="INACTIVE">Inactive</option>
-              </select>
-            </div>
-            <Button type="submit" className="sm:mb-0.5">
-              Apply
-            </Button>
+                defaultValue={statusFilter === "ALL" ? "" : statusFilter}
+                placeholder="All statuses"
+                ariaLabel="Status"
+                triggerClassName="w-[150px]"
+                options={[
+                  { value: "ACTIVE", label: "Active" },
+                  { value: "INACTIVE", label: "Inactive" },
+                ]}
+              />
+              <Button type="submit" size="sm" className="h-8">
+                Apply
+              </Button>
+            </FilterBar>
           </form>
 
-          {vendors.items.length === 0 ? (
+          {initialVendors.items.length === 0 ? (
             <EmptyState
               title="No vendors found"
               description={
@@ -198,23 +337,32 @@ export function VendorsView({
             />
           ) : (
             <>
-              <DataTable
-                columns={vendorColumns}
-                data={vendors.items}
-                getRowKey={(r) => r.id}
-                onRowClick={(r) => router.push(`/vendors/${r.id}`)}
-              />
+              <div
+                className={cn(
+                  "transition-opacity duration-150",
+                  isPending && "pointer-events-none opacity-50",
+                )}
+              >
+                <DataTable
+                  columns={vendorColumns}
+                  data={initialVendors.items}
+                  getRowKey={getRowId}
+                  onRowClick={handleVendorRowClick}
+                />
+              </div>
               <Pagination
                 basePath="/vendors"
-                page={vendors.page}
-                pageSize={vendors.pageSize}
-                total={vendors.total}
-                totalPages={vendors.totalPages}
+                page={initialVendors.page}
+                pageSize={initialVendors.pageSize}
+                total={initialVendors.total}
+                totalPages={initialVendors.totalPages}
+                hasNextPage={initialVendors.hasNextPage}
                 searchParams={{
                   tab: "all",
                   q: search || undefined,
                   status: statusFilter !== "ALL" ? statusFilter : undefined,
                 }}
+                onPageChange={handlePageChange}
               />
             </>
           )}

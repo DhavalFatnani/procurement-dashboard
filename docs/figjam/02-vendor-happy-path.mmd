@@ -1,0 +1,49 @@
+flowchart LR
+    subgraph smLane ["SM"]
+        create[createPR DRAFT]
+        submit[submitPR PENDING]
+        grn[createGRN]
+        invUp[createInvoice]
+    end
+
+    subgraph opsLane ["OPS_HEAD"]
+        approve[approvePR]
+        poCreate[createPOFromPR OPEN]
+        override[overrideInvoiceMatch optional]
+        resolve[resolveGRNException optional]
+    end
+
+    subgraph finLane ["FINANCE"]
+        pay[updatePayment]
+    end
+
+    subgraph sysLane ["System"]
+        closeEval[evaluatePOClosure]
+        closed[PO CLOSED]
+    end
+
+    create --> submit
+    submit --> approve
+    approve --> approved[PR APPROVED awaiting PO]
+    approved --> poCreate
+    poCreate --> grn
+    grn --> closeEval
+    grn --> invUp
+    invUp --> closeEval
+    invUp --> pay
+    pay --> closeEval
+    override --> pay
+    resolve --> closeEval
+    closeEval --> closed
+
+    style create fill:#DAE8FC,stroke:#007AD2
+    style submit fill:#DAE8FC,stroke:#007AD2
+    style grn fill:#DAE8FC,stroke:#007AD2
+    style invUp fill:#DAE8FC,stroke:#007AD2
+    style approve fill:#E8DAFF,stroke:#7B61FF
+    style poCreate fill:#E8DAFF,stroke:#7B61FF
+    style override fill:#E8DAFF,stroke:#7B61FF
+    style resolve fill:#E8DAFF,stroke:#7B61FF
+    style pay fill:#D5F5E3,stroke:#0E7A3E
+    style closeEval fill:#F0F0F0,stroke:#666666
+    style closed fill:#CDF4D3,stroke:#66D575

@@ -1,0 +1,174 @@
+"use client";
+
+import { ChevronRight } from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import * as React from "react";
+import { toast } from "sonner";
+
+import {
+  forceClosePO,
+  markDeliveryComplete,
+} from "@/app/actions/purchase-orders";
+import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
+import { TextareaActionDialog } from "@/components/shared/TextareaActionDialog";
+import { Button } from "@/components/ui/button";
+import type { PONextAction, PONextActionId } from "@/lib/po-next-actions";
+
+/**
+ * Sticky action bar for the PO detail page. Renders the primary contextual
+ * action plus any destructive Ops actions. Mutate-style actions live here so
+ * the confirmation dialogs are owned alongside their triggers.
+ *
+ * The parent invokes `runMutateAction(id)` (returned by `useActionRunner`)
+ * when the side-panel "Next actions" list has the same mutate action; this
+ * keeps both surfaces wired to the same handlers.
+ */
+export function PODetailActionBar({
+  poId,
+  actions,
+  runMutateActionRef,
+}: {
+  poId: string;
+  actions: PONextAction[];
+  runMutateActionRef: React.MutableRefObject<
+    (id: PONextActionId) => void
+  >;
+}) {
+  const router = useRouter();
+  const [markDeliveryOpen, setMarkDeliveryOpen] = React.useState(false);
+  const [forceCloseOpen, setForceCloseOpen] = React.useState(false);
+
+  async function handleMarkDeliveryComplete() {
+    const res = await markDeliveryComplete(poId);
+    if (!res.ok) {
+      toast.error(res.message ?? "Failed to mark delivery complete.");
+      return;
+    }
+    toast.success("Delivery marked complete.");
+    router.refresh();
+  }
+
+  async function handleForceClose(reason: string) {
+    const res = await forceClosePO(poId, reason);
+    if (!res.ok) {
+      toast.error(res.message ?? "Failed to force close.");
+      return;
+    }
+    toast.success("Purchase order force closed.");
+    router.refresh();
+  }
+
+  const runMutateAction = React.useCallback(
+    (id: PONextActionId) => {
+      if (id === "mark-delivery-complete") {
+        setMarkDeliveryOpen(true);
+        return;
+      }
+      if (id === "force-close") {
+        setForceCloseOpen(true);
+      }
+    },
+    [],
+  );
+
+  // Expose imperative handler to parent so the side-panel actions can route
+  // through the same dialog state.
+  React.useEffect(() => {
+    runMutateActionRef.current = runMutateAction;
+  }, [runMutateAction, runMutateActionRef]);
+
+  if (actions.length === 0) {
+    return null;
+  }
+
+  const primary = actions[0]!;
+  const secondary = actions.filter(
+    (a, i) => i !== 0 && a.tone !== "destructive",
+  );
+  const destructive = actions.find((a) => a.tone === "destructive");
+
+  return (
+    <>
+      <div className="flex flex-1 items-center gap-3">
+        <p className="hidden text-ds-xs font-semibold uppercase tracking-wide text-muted-foreground sm:block">
+          Next steps
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          {primary.href ? (
+            <Button render={<Link href={primary.href} />} className="gap-1.5">
+              {primary.label}
+              <ChevronRight
+                className="size-3.5"
+                strokeWidth={1.75}
+                aria-hidden
+              />
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              className="gap-1.5"
+              onClick={() => runMutateAction(primary.id)}
+            >
+              {primary.label}
+              <ChevronRight
+                className="size-3.5"
+                strokeWidth={1.75}
+                aria-hidden
+              />
+            </Button>
+          )}
+          {secondary.map((action) =>
+            action.href ? (
+              <Button
+                key={action.id}
+                variant="soft"
+                render={<Link href={action.href} />}
+              >
+                {action.label}
+              </Button>
+            ) : (
+              <Button
+                key={action.id}
+                type="button"
+                variant="soft"
+                onClick={() => runMutateAction(action.id)}
+              >
+                {action.label}
+              </Button>
+            ),
+          )}
+        </div>
+      </div>
+      {destructive ? (
+        <Button
+          type="button"
+          variant="outline"
+          className="text-destructive hover:text-destructive"
+          onClick={() => runMutateAction(destructive.id)}
+        >
+          {destructive.label}
+        </Button>
+      ) : null}
+
+      <ConfirmDialog
+        open={markDeliveryOpen}
+        onOpenChange={setMarkDeliveryOpen}
+        title="Mark delivery complete?"
+        description="This flags the PO as delivery complete and runs auto-close evaluation."
+        confirmLabel="Confirm"
+        onConfirm={() => void handleMarkDeliveryComplete()}
+      />
+
+      <TextareaActionDialog
+        open={forceCloseOpen}
+        onOpenChange={setForceCloseOpen}
+        title="Force close purchase order"
+        description="Provide a mandatory reason. This cannot be undone through normal workflow."
+        label="Reason"
+        confirmLabel="Force close"
+        onConfirm={(reason) => void handleForceClose(reason)}
+      />
+    </>
+  );
+}

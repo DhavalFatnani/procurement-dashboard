@@ -1,37 +1,38 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
-import { POStatus, Role, VendorStatus } from "@prisma/client";
+import { revalidatePath, revalidateTag } from "next/cache";
+import { Prisma, Role, VendorStatus } from "@prisma/client";
 
-import { dbSerial, paginatedQuery } from "@/lib/db-serial";
+import type { MutationResult } from "@/lib/action-result";
+import { dbParallel } from "@/lib/db-parallel";
 import { jaroWinklerDistance } from "@/lib/jaro-winkler-distance";
+import { logger } from "@/lib/logger";
+import { maskLogValue } from "@/lib/mask-log-value";
+import { vendorCreateSchema, vendorUpdateSchema } from "@/lib/validation/vendor";
+import {
+  getActiveVendors as getActiveVendorsQuery,
+  getPendingVendorRequests as getPendingVendorRequestsQuery,
+  getVendorById as getVendorByIdQuery,
+  getVendors as getVendorsQuery,
+} from "@/lib/queries/vendors";
+import type {
+  PendingVendorRequestRow,
+  VendorDetail,
+  VendorListRow,
+} from "@/lib/queries/vendors";
+import { revalidateDashboardMetrics } from "@/lib/revalidate-tags";
 import type { Paginated } from "@/lib/pagination";
 import { prisma } from "@/lib/prisma";
 import { requireRoles } from "@/lib/server-action-guard";
 
 const JW_THRESHOLD = 0.85;
 
-export type VendorListRow = {
-  id: string;
-  businessName: string;
-  pocName: string;
-  phone: string;
-  email: string;
-  accountLast4: string;
-  status: VendorStatus;
-  createdByName: string;
-  updatedAt: string;
-};
-
-export type PendingVendorRequestRow = {
-  id: string;
-  businessName: string;
-  pocName: string;
-  phone: string;
-  requestedByName: string;
-  linkedPRId: string | null;
-  createdAt: string;
-};
+// Re-export types from source — see note in app/actions/finder.ts.
+export type {
+  PendingVendorRequestRow,
+  VendorDetail,
+  VendorListRow,
+} from "@/lib/queries/vendors";
 
 export async function getVendors(
   filters: {
@@ -42,77 +43,12 @@ export async function getVendors(
   },
 ): Promise<Paginated<VendorListRow>> {
   await requireRoles([Role.SM, Role.OPS_HEAD]);
-
-  const status =
-    filters.status && filters.status !== "ALL" ? filters.status : undefined;
-  const q = filters.search?.trim();
-  const page = Math.max(1, filters.page ?? 1);
-  const pageSize = Math.min(100, Math.max(10, filters.pageSize ?? 25));
-  const skip = (page - 1) * pageSize;
-
-  const clauses: object[] = [];
-  if (status) {
-    clauses.push({ status });
-  }
-  if (q) {
-    clauses.push({
-      OR: [
-        { businessName: { contains: q, mode: "insensitive" as const } },
-        { phone: { contains: q, mode: "insensitive" as const } },
-        { email: { contains: q, mode: "insensitive" as const } },
-      ],
-    });
-  }
-  const where = clauses.length > 0 ? { AND: clauses } : {};
-
-  const paginated = await paginatedQuery({
-    page,
-    pageSize,
-    count: () => prisma.vendor.count({ where }),
-    findMany: () =>
-      prisma.vendor.findMany({
-        where,
-        orderBy: { updatedAt: "desc" },
-        skip,
-        take: pageSize,
-        include: { createdBy: { select: { name: true } } },
-      }),
-  });
-
-  return {
-    ...paginated,
-    items: paginated.items.map((v) => ({
-      id: v.id,
-      businessName: v.businessName,
-      pocName: v.pocName,
-      phone: v.phone,
-      email: v.email,
-      accountLast4: v.accountNumber.slice(-4),
-      status: v.status,
-      createdByName: v.createdBy.name,
-      updatedAt: v.updatedAt.toISOString(),
-    })),
-  };
+  return getVendorsQuery(filters);
 }
 
 export async function getPendingVendorRequests(): Promise<PendingVendorRequestRow[]> {
   await requireRoles([Role.OPS_HEAD]);
-
-  const rows = await prisma.vendorRequest.findMany({
-    where: { status: "PENDING" },
-    orderBy: { createdAt: "desc" },
-    include: { requestedBy: { select: { name: true } } },
-  });
-
-  return rows.map((r) => ({
-    id: r.id,
-    businessName: r.businessName,
-    pocName: r.pocName,
-    phone: r.phone,
-    requestedByName: r.requestedBy.name,
-    linkedPRId: r.linkedPRId,
-    createdAt: r.createdAt.toISOString(),
-  }));
+  return getPendingVendorRequestsQuery();
 }
 
 export type CreateVendorInput = {
@@ -146,24 +82,21 @@ export type CreateVendorResult =
     }
   | { ok: false; code: "VALIDATION"; message: string };
 
-function normalizeGst(gst: string | undefined) {
-  const t = gst?.trim();
-  return t ? t.toUpperCase() : "";
-}
-
 export async function createVendor(input: CreateVendorInput): Promise<CreateVendorResult> {
   const user = await requireRoles([Role.OPS_HEAD]);
 
-  const businessName = input.businessName.trim();
-  const pocName = input.pocName.trim();
-  const phone = input.phone.trim();
-  const email = input.email.trim().toLowerCase();
-  const accountName = input.accountName.trim();
-  const accountNumber = input.accountNumber.trim();
-  const ifsc = input.ifsc.trim().toUpperCase();
-  const bankName = input.bankName.trim();
-  const gstNorm = normalizeGst(input.gst);
-  const address = input.address.trim();
+  const {
+    businessName,
+    pocName,
+    phone,
+    email,
+    accountName,
+    accountNumber,
+    ifsc,
+    bankName,
+    gst: gstNorm,
+    address,
+  } = vendorCreateSchema.parse(input);
 
   if (!businessName || !pocName || !phone || !email) {
     return { ok: false, code: "VALIDATION", message: "Complete all required contact fields." };
@@ -172,48 +105,9 @@ export async function createVendor(input: CreateVendorInput): Promise<CreateVend
     return { ok: false, code: "VALIDATION", message: "Complete all bank details." };
   }
 
-  const dupPhone = await prisma.vendor.findFirst({
-    where: { phone },
-    select: { id: true, businessName: true },
-  });
-  if (dupPhone) {
-    return {
-      ok: false,
-      code: "DUPLICATE_FIELD",
-      field: "phone",
-      existingVendorId: dupPhone.id,
-      existingVendorName: dupPhone.businessName,
-    };
-  }
-
-  const dupEmail = await prisma.vendor.findFirst({
-    where: { email },
-    select: { id: true, businessName: true },
-  });
-  if (dupEmail) {
-    return {
-      ok: false,
-      code: "DUPLICATE_FIELD",
-      field: "email",
-      existingVendorId: dupEmail.id,
-      existingVendorName: dupEmail.businessName,
-    };
-  }
-
-  if (gstNorm) {
-    const dupGst = await prisma.vendor.findFirst({
-      where: { gst: gstNorm },
-      select: { id: true, businessName: true },
-    });
-    if (dupGst) {
-      return {
-        ok: false,
-        code: "DUPLICATE_FIELD",
-        field: "gst",
-        existingVendorId: dupGst.id,
-        existingVendorName: dupGst.businessName,
-      };
-    }
+  const dup = await assertNoDuplicateFields({ phone, email, gst: gstNorm || null });
+  if (dup) {
+    return dup;
   }
 
   const allNames = await prisma.vendor.findMany({
@@ -278,189 +172,68 @@ export async function createVendor(input: CreateVendorInput): Promise<CreateVend
   });
 
   revalidatePath("/vendors");
+  revalidateTag("vendor-options");
   return { ok: true, vendorId: vendor.id };
 }
 
-function maskLogValue(fieldName: string, value: string | null | undefined): string | null {
-  if (value == null || value === "") {
-    return value ?? null;
-  }
-  if (fieldName === "accountNumber" || fieldName.toLowerCase().includes("account")) {
-    const digits = value.replace(/\D/g, "");
-    const last4 = digits.slice(-4) || value.slice(-4);
-    return `••••${last4}`;
-  }
-  return value;
-}
+type DuplicateFieldResult = Extract<CreateVendorResult, { code: "DUPLICATE_FIELD" }>;
 
+/**
+ * Detects a vendor that collides on phone, email, or GST in a single query,
+ * then reports the first conflict in priority order (phone → email → gst) to
+ * match the field-level messaging the UI expects.
+ */
 async function assertNoDuplicateFields(
   data: { phone: string; email: string; gst: string | null },
   excludeVendorId?: string,
-): Promise<CreateVendorResult | null> {
+): Promise<DuplicateFieldResult | null> {
   const notSelf = excludeVendorId ? { id: { not: excludeVendorId } } : {};
 
-  const dupPhone = await prisma.vendor.findFirst({
-    where: { phone: data.phone, ...notSelf },
-    select: { id: true, businessName: true },
-  });
-  if (dupPhone) {
-    return {
-      ok: false,
-      code: "DUPLICATE_FIELD",
-      field: "phone",
-      existingVendorId: dupPhone.id,
-      existingVendorName: dupPhone.businessName,
-    };
+  const or: Prisma.VendorWhereInput[] = [{ phone: data.phone }, { email: data.email }];
+  if (data.gst) {
+    or.push({ gst: data.gst });
   }
 
-  const dupEmail = await prisma.vendor.findFirst({
-    where: { email: data.email, ...notSelf },
-    select: { id: true, businessName: true },
+  const candidates = await prisma.vendor.findMany({
+    where: { OR: or, ...notSelf },
+    select: { id: true, businessName: true, phone: true, email: true, gst: true },
   });
-  if (dupEmail) {
-    return {
-      ok: false,
-      code: "DUPLICATE_FIELD",
-      field: "email",
-      existingVendorId: dupEmail.id,
-      existingVendorName: dupEmail.businessName,
-    };
-  }
+
+  const dupOn = (
+    match: { id: string; businessName: string } | undefined,
+    field: DuplicateFieldResult["field"],
+  ): DuplicateFieldResult | null =>
+    match
+      ? {
+          ok: false,
+          code: "DUPLICATE_FIELD",
+          field,
+          existingVendorId: match.id,
+          existingVendorName: match.businessName,
+        }
+      : null;
+
+  const phoneDup = dupOn(candidates.find((c) => c.phone === data.phone), "phone");
+  if (phoneDup) return phoneDup;
+
+  const emailDup = dupOn(candidates.find((c) => c.email === data.email), "email");
+  if (emailDup) return emailDup;
 
   if (data.gst) {
-    const dupGst = await prisma.vendor.findFirst({
-      where: { gst: data.gst, ...notSelf },
-      select: { id: true, businessName: true },
-    });
-    if (dupGst) {
-      return {
-        ok: false,
-        code: "DUPLICATE_FIELD",
-        field: "gst",
-        existingVendorId: dupGst.id,
-        existingVendorName: dupGst.businessName,
-      };
-    }
+    const gst = data.gst;
+    const gstDup = dupOn(candidates.find((c) => c.gst === gst), "gst");
+    if (gstDup) return gstDup;
   }
 
   return null;
 }
-
-export type VendorDetail = {
-  id: string;
-  businessName: string;
-  gst: string | null;
-  address: string | null;
-  pocName: string;
-  phone: string;
-  email: string;
-  accountName: string;
-  accountLast4: string;
-  ifsc: string;
-  bankName: string;
-  status: VendorStatus;
-  hasSimilarVendorFlag: boolean;
-  similarVendorId: string | null;
-  similarVendorName: string | null;
-  createdByName: string;
-  createdAt: string;
-  updatedAt: string;
-  changeLogs: {
-    id: string;
-    fieldName: string;
-    oldValue: string | null;
-    newValue: string | null;
-    changedByName: string;
-    changedAt: string;
-    reason: string | null;
-  }[];
-  purchaseOrders: Paginated<{
-    id: string;
-    status: POStatus;
-    createdAt: string;
-    totalValue: string | null;
-  }>;
-};
 
 export async function getVendorById(
   id: string,
   options?: { poPage?: number; poPageSize?: number },
 ): Promise<VendorDetail | null> {
   await requireRoles([Role.SM, Role.OPS_HEAD]);
-
-  const poPage = Math.max(1, options?.poPage ?? 1);
-  const poPageSize = Math.min(50, Math.max(5, options?.poPageSize ?? 10));
-  const poSkip = (poPage - 1) * poPageSize;
-
-  const vendor = await prisma.vendor.findUnique({
-    where: { id },
-    include: {
-      createdBy: { select: { name: true } },
-      similarTo: { select: { id: true, businessName: true } },
-      vendorChangeLogs: {
-        orderBy: { changedAt: "desc" },
-        take: 100,
-        include: { changedBy: { select: { name: true } } },
-      },
-    },
-  });
-
-  if (!vendor) {
-    return null;
-  }
-
-  const poPaginated = await paginatedQuery({
-    page: poPage,
-    pageSize: poPageSize,
-    count: () => prisma.purchaseOrder.count({ where: { vendorId: id } }),
-    findMany: () =>
-      prisma.purchaseOrder.findMany({
-        where: { vendorId: id },
-        orderBy: { createdAt: "desc" },
-        skip: poSkip,
-        take: poPageSize,
-      }),
-  });
-
-  return {
-    id: vendor.id,
-    businessName: vendor.businessName,
-    gst: vendor.gst,
-    address: vendor.address,
-    pocName: vendor.pocName,
-    phone: vendor.phone,
-    email: vendor.email,
-    accountName: vendor.accountName,
-    accountLast4: vendor.accountNumber.slice(-4),
-    ifsc: vendor.ifsc,
-    bankName: vendor.bankName,
-    status: vendor.status,
-    hasSimilarVendorFlag: vendor.hasSimilarVendorFlag,
-    similarVendorId: vendor.similarVendorId,
-    similarVendorName: vendor.similarTo?.businessName ?? null,
-    createdByName: vendor.createdBy.name,
-    createdAt: vendor.createdAt.toISOString(),
-    updatedAt: vendor.updatedAt.toISOString(),
-    changeLogs: vendor.vendorChangeLogs.map((log) => ({
-      id: log.id,
-      fieldName: log.fieldName,
-      oldValue: maskLogValue(log.fieldName, log.oldValue),
-      newValue: maskLogValue(log.fieldName, log.newValue),
-      changedByName: log.changedBy.name,
-      changedAt: log.changedAt.toISOString(),
-      reason: log.reason,
-    })),
-    purchaseOrders: {
-      ...poPaginated,
-      items: poPaginated.items.map((po) => ({
-        id: po.id,
-        status: po.status,
-        createdAt: po.createdAt.toISOString(),
-        totalValue:
-          po.unitPrice != null ? `${Number(po.unitPrice) * po.orderedQty}` : null,
-      })),
-    },
-  };
+  return getVendorByIdQuery(id, options);
 }
 
 export type ActivateVendorFromRequestInput = {
@@ -494,7 +267,18 @@ export async function updateVendor(
 ): Promise<UpdateVendorResult> {
   const user = await requireRoles([Role.OPS_HEAD]);
 
-  const reason = input.reason.trim();
+  const {
+    pocName,
+    phone,
+    email,
+    address,
+    accountName,
+    accountNumber,
+    ifsc,
+    bankName,
+    reason,
+  } = vendorUpdateSchema.parse(input);
+
   if (!reason) {
     return { ok: false, code: "VALIDATION", message: "Reason for this edit is required." };
   }
@@ -503,15 +287,6 @@ export async function updateVendor(
   if (!existing) {
     return { ok: false, code: "VALIDATION", message: "Vendor not found." };
   }
-
-  const pocName = input.pocName.trim();
-  const phone = input.phone.trim();
-  const email = input.email.trim().toLowerCase();
-  const address = input.address.trim();
-  const accountName = input.accountName.trim();
-  const accountNumber = input.accountNumber.trim();
-  const ifsc = input.ifsc.trim().toUpperCase();
-  const bankName = input.bankName.trim();
 
   const dup = await assertNoDuplicateFields(
     { phone, email, gst: existing.gst },
@@ -567,42 +342,55 @@ export async function updateVendor(
 
   revalidatePath("/vendors");
   revalidatePath(`/vendors/${id}`);
+  revalidateTag("vendor-options");
   return { ok: true };
 }
 
-export async function deactivateVendor(id: string): Promise<{ ok: boolean; message?: string }> {
+export async function deactivateVendor(id: string): Promise<MutationResult> {
   await requireRoles([Role.OPS_HEAD]);
-  await prisma.vendor.update({
-    where: { id },
-    data: { status: VendorStatus.INACTIVE },
-  });
+  try {
+    await prisma.vendor.update({
+      where: { id },
+      data: { status: VendorStatus.INACTIVE },
+    });
+  } catch (err) {
+    logger.error({ err, vendorId: id }, "deactivateVendor failed");
+    return { ok: false, message: "Failed to deactivate vendor." };
+  }
   revalidatePath("/vendors");
   revalidatePath(`/vendors/${id}`);
+  revalidateTag("vendor-options");
   return { ok: true };
 }
 
-export async function reactivateVendor(id: string): Promise<{ ok: boolean; message?: string }> {
+export async function reactivateVendor(id: string): Promise<MutationResult> {
   await requireRoles([Role.OPS_HEAD]);
-  await prisma.vendor.update({
-    where: { id },
-    data: { status: VendorStatus.ACTIVE },
-  });
+  try {
+    await prisma.vendor.update({
+      where: { id },
+      data: { status: VendorStatus.ACTIVE },
+    });
+  } catch (err) {
+    logger.error({ err, vendorId: id }, "reactivateVendor failed");
+    return { ok: false, message: "Failed to reactivate vendor." };
+  }
   revalidatePath("/vendors");
   revalidatePath(`/vendors/${id}`);
+  revalidateTag("vendor-options");
   return { ok: true };
 }
 
 export async function mergeVendors(
   primaryId: string,
   secondaryId: string,
-): Promise<{ ok: boolean; message?: string }> {
+): Promise<MutationResult> {
   const user = await requireRoles([Role.OPS_HEAD]);
 
   if (primaryId === secondaryId) {
     return { ok: false, message: "Cannot merge a vendor into itself." };
   }
 
-  const [primary, secondary] = await dbSerial(
+  const [primary, secondary] = await dbParallel(
     () => prisma.vendor.findUnique({ where: { id: primaryId } }),
     () => prisma.vendor.findUnique({ where: { id: secondaryId } }),
   );
@@ -642,6 +430,7 @@ export async function mergeVendors(
   revalidatePath("/vendors");
   revalidatePath(`/vendors/${primaryId}`);
   revalidatePath(`/vendors/${secondaryId}`);
+  revalidateTag("vendor-options");
   return { ok: true };
 }
 
@@ -723,14 +512,13 @@ export async function reviewVendorRequest(
   });
 
   revalidatePath("/vendors");
+  revalidatePath("/purchase-requests");
+  revalidateTag("vendor-options");
+  revalidateDashboardMetrics();
   return { ok: true, vendorId: vendor.id };
 }
 
 export async function getActiveVendors(): Promise<{ id: string; businessName: string }[]> {
   await requireRoles([Role.SM, Role.OPS_HEAD]);
-  return prisma.vendor.findMany({
-    where: { status: VendorStatus.ACTIVE },
-    orderBy: { businessName: "asc" },
-    select: { id: true, businessName: true },
-  });
+  return getActiveVendorsQuery();
 }

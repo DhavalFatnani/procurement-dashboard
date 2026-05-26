@@ -7,8 +7,8 @@ function Skeleton({ className, ...props }: ComponentProps<"div">) {
     <div
       data-slot="skeleton"
       className={cn(
-        "rounded bg-[length:200%_100%] bg-[linear-gradient(90deg,var(--bg-elevated)_25%,#252525_50%,var(--bg-elevated)_75%)]",
-        "animate-[ds-shimmer_1.5s_ease-in-out_infinite]",
+        "rounded bg-[color-mix(in_srgb,var(--border-subtle)_60%,var(--surface-2)_40%)]",
+        "animate-ds-pulse",
         className,
       )}
       {...props}

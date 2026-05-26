@@ -2,10 +2,12 @@ export const DEFAULT_PAGE_SIZE = 25;
 
 export type Paginated<T> = {
   items: T[];
-  total: number;
+  /** null when exact count was skipped for speed */
+  total: number | null;
   page: number;
   pageSize: number;
-  totalPages: number;
+  totalPages: number | null;
+  hasNextPage: boolean;
 };
 
 export function parsePagination(
@@ -32,5 +34,44 @@ export function toPaginated<T>(
     page,
     pageSize,
     totalPages: Math.max(1, Math.ceil(total / pageSize)),
+    hasNextPage: page * pageSize < total,
+  };
+}
+
+/** Single findMany (+ optional count). Default skips COUNT for faster remote DB. */
+export async function paginatedListQuery<T>({
+  page,
+  pageSize,
+  findMany,
+  count,
+  includeExactCount = false,
+}: {
+  page: number;
+  pageSize: number;
+  findMany: (args: { skip: number; take: number }) => Promise<T[]>;
+  count?: () => Promise<number>;
+  includeExactCount?: boolean;
+}): Promise<Paginated<T>> {
+  const skip = (page - 1) * pageSize;
+  const raw = await findMany({ skip, take: pageSize + 1 });
+  const hasNextPage = raw.length > pageSize;
+  const items = hasNextPage ? raw.slice(0, pageSize) : raw;
+
+  if (includeExactCount && count) {
+    const total = await count();
+    return toPaginated(items, total, page, pageSize);
+  }
+
+  const estimatedTotal = hasNextPage
+    ? page * pageSize + 1
+    : skip + items.length;
+
+  return {
+    items,
+    total: estimatedTotal,
+    page,
+    pageSize,
+    totalPages: hasNextPage ? page + 1 : page,
+    hasNextPage,
   };
 }

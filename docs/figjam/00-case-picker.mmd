@@ -1,0 +1,24 @@
+flowchart LR
+    start([Start]) --> q{What are you doing?}
+
+    q -->|Buy from vendor| c2[Case 2: Vendor happy path]
+    q -->|Ops sent PR back| c5[Case 5: Revision loop]
+    q -->|Print barcodes in-house| c3[Case 3: Internal print]
+    q -->|New supplier on PR| c8[Case 8: Vendor request]
+    q -->|Goods arrived| grn[GRN on open PO]
+    q -->|Supplier invoice| inv[Case 7: Invoice and payment]
+    q -->|Close the PO| close[Case 6: PO auto-close]
+
+    c2 --> screens2["Screens: PR list, new PR, PR detail, PO detail, GRN new, invoice new, payments"]
+    c3 --> screens3["Screens: PR new, print execution"]
+    c5 --> screens5["Screens: PR detail resubmit"]
+    c8 --> screens8["Screens: PR new, vendors"]
+
+    style c2 fill:#DAE8FC,stroke:#007AD2
+    style c3 fill:#DAE8FC,stroke:#007AD2
+    style c5 fill:#E8DAFF,stroke:#7B61FF
+    style c8 fill:#DAE8FC,stroke:#007AD2
+    style grn fill:#DAE8FC,stroke:#007AD2
+    style inv fill:#D5F5E3,stroke:#0E7A3E
+    style close fill:#E8DAFF,stroke:#7B61FF
+    style q fill:#FFF9C4,stroke:#E8A302

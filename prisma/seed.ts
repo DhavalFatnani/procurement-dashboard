@@ -10,12 +10,18 @@ import { randomUUID } from "crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import * as dotenv from "dotenv";
 
+import { getSeriesStartNumber } from "../lib/serial-series";
+
 dotenv.config({ path: ".env.local" });
 
 const prisma = new PrismaClient();
 
-const PASSWORD =
-  process.env.SEED_AUTH_PASSWORD ?? "KnotSeed!ChangeMe-2026";
+const PASSWORD = process.env.SEED_AUTH_PASSWORD;
+if (!PASSWORD) {
+  throw new Error(
+    "SEED_AUTH_PASSWORD is required to seed auth users. Set it in .env.local before running the seed.",
+  );
+}
 
 type SeedUserDef = { email: string; name: string; role: Role };
 
@@ -241,35 +247,58 @@ async function seedUsersAndSeriesConfig(warehouseIds: string[]) {
   for (let i = 0; i < SEED_USERS.length; i++) {
     const seed = SEED_USERS[i]!;
     const id = await resolveSupabaseUserId(admin, seed);
+    const warehouseId = warehouseIds[i] ?? warehouseIds[0]!;
+    const assignedWarehouseIds =
+      seed.role === Role.FINANCE
+        ? warehouseIds
+        : seed.role === Role.OPS_HEAD
+          ? warehouseIds.slice(0, Math.min(2, warehouseIds.length))
+          : [warehouseId];
+
     await admin.auth.admin.updateUserById(id, {
       user_metadata: { role: seed.role },
+      app_metadata: {
+        role: seed.role,
+        ...(seed.role === Role.SM
+          ? { warehouseId, warehouseIds: null }
+          : {
+              warehouseId: assignedWarehouseIds[0]!,
+              warehouseIds: assignedWarehouseIds,
+            }),
+      },
     });
 
-    const warehouseId = warehouseIds[i] ?? warehouseIds[0]!;
     await prisma.user.upsert({
       where: { id },
       update: {
         email: seed.email,
         name: seed.name,
         role: seed.role,
-        warehouseId,
+        warehouseId: assignedWarehouseIds[0]!,
       },
       create: {
         id,
         email: seed.email,
         name: seed.name,
         role: seed.role,
-        warehouseId,
+        warehouseId: assignedWarehouseIds[0]!,
       },
     });
+
+    await prisma.userWarehouse.deleteMany({ where: { userId: id } });
+    await prisma.userWarehouse.createMany({
+      data: assignedWarehouseIds.map((whId) => ({ userId: id, warehouseId: whId })),
+      skipDuplicates: true,
+    });
+
     userIds.push(id);
   }
 
   const configuredById = userIds[0]!;
   const seriesRows: { series: SerialSeries; ceiling: bigint }[] = [
-    { series: SerialSeries.LOCK_TAGS, ceiling: BigInt(9_000_000) },
-    { series: SerialSeries.JEWELLERY_BARCODES, ceiling: BigInt(9_000_000) },
-    { series: SerialSeries.APPAREL_BARCODES, ceiling: BigInt(9_000_000) },
+    { series: SerialSeries.LOCK_TAGS, ceiling: BigInt(9_999_999) },
+    { series: SerialSeries.JEWELLERY_BARCODES, ceiling: BigInt(9_999_999_999) },
+    { series: SerialSeries.APPAREL_BARCODES, ceiling: BigInt(9_999_999_999) },
   ];
 
   for (const row of seriesRows) {
@@ -320,9 +349,10 @@ async function seedSampleVendorsAndPRs() {
   const printSub = await prisma.subcategory.findFirst({
     where: { id: "seed-sub-lock-1" },
   });
-  if (!packagingSub || !lockVendorSub || !printSub) {
+  if (!packagingSub || !lockVendorSub || !printSub || !printSub.series) {
     return;
   }
+  const printSeries = printSub.series;
 
   await prisma.vendor.upsert({
     where: { id: "seed-vendor-alpha" },
@@ -374,6 +404,47 @@ async function seedSampleVendorsAndPRs() {
       executionType: ExecutionType.VENDOR_PURCHASE,
       status: PRStatus.DRAFT,
       createdById: sm.id,
+      lines: {
+        create: {
+          lineNumber: 1,
+          categoryId: packagingSub.categoryId,
+          subcategoryId: packagingSub.id,
+          quantity: 500,
+        },
+      },
+    },
+  });
+
+  const prMultiId = "PR-seed-multi-001";
+  await prisma.purchaseRequest.upsert({
+    where: { id: prMultiId },
+    update: {},
+    create: {
+      id: prMultiId,
+      categoryId: lockVendorSub.categoryId,
+      subcategoryId: lockVendorSub.id,
+      quantity: 1500,
+      warehouseId: sm.warehouseId,
+      vendorId: "seed-vendor-beta",
+      executionType: ExecutionType.VENDOR_PURCHASE,
+      status: PRStatus.DRAFT,
+      createdById: sm.id,
+      lines: {
+        create: [
+          {
+            lineNumber: 1,
+            categoryId: lockVendorSub.categoryId,
+            subcategoryId: lockVendorSub.id,
+            quantity: 1000,
+          },
+          {
+            lineNumber: 2,
+            categoryId: packagingSub.categoryId,
+            subcategoryId: packagingSub.id,
+            quantity: 500,
+          },
+        ],
+      },
     },
   });
 
@@ -392,6 +463,14 @@ async function seedSampleVendorsAndPRs() {
       status: PRStatus.PENDING_APPROVAL,
       currentVersion: 1,
       createdById: sm.id,
+      lines: {
+        create: {
+          lineNumber: 1,
+          categoryId: lockVendorSub.categoryId,
+          subcategoryId: lockVendorSub.id,
+          quantity: 1000,
+        },
+      },
       versions: {
         create: {
           versionNumber: 1,
@@ -417,16 +496,24 @@ async function seedSampleVendorsAndPRs() {
         executionType: ExecutionType.INTERNAL_PRINT,
         status: PRStatus.EXECUTED_PRINT,
         createdById: sm.id,
+        lines: {
+          create: {
+            lineNumber: 1,
+            categoryId: printSub.categoryId,
+            subcategoryId: printSub.id,
+            quantity: 50,
+          },
+        },
         serialReservation: {
           create: {
-            id: `seed-res-${printSub.series}`,
-            series: printSub.series!,
-            rangeStart: BigInt(1),
-            rangeEnd: BigInt(50),
+            id: `seed-res-${printSeries}`,
+            series: printSeries,
+            rangeStart: getSeriesStartNumber(printSeries),
+            rangeEnd: getSeriesStartNumber(printSeries) + BigInt(49),
             quantity: 50,
             warehouseId: sm.warehouseId,
             createdById: sm.id,
-            idempotencyKey: `seed-${printSub.series}-1`,
+            idempotencyKey: `seed-${printSeries}-1`,
           },
         },
       },
@@ -439,8 +526,21 @@ async function seedSampleVendorsAndPRs() {
 async function main() {
   await seedWarehouses();
   await seedCategoriesAndSubcategories();
-  await seedUsersAndSeriesConfig(WAREHOUSES.map((w) => w.id));
-  await seedSampleVendorsAndPRs();
+
+  const warehouseIds = (
+    await prisma.warehouse.findMany({
+      select: { id: true },
+      orderBy: { createdAt: "asc" },
+    })
+  ).map((w) => w.id);
+
+  await seedUsersAndSeriesConfig(warehouseIds);
+
+  if (process.env.SEED_SKIP_SAMPLES !== "1") {
+    await seedSampleVendorsAndPRs();
+  } else {
+    console.log("[seed] Skipping sample vendors and purchase requests (SEED_SKIP_SAMPLES=1).");
+  }
 
   console.log("[seed] Warehouses, categories, and subcategories are ready.");
 }

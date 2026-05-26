@@ -5,48 +5,24 @@ import * as React from "react";
 import { toast } from "sonner";
 
 import { createVendor, type CreateVendorResult } from "@/app/actions/vendors";
+import { FormDrawer } from "@/components/shared/Drawer";
+import { Field } from "@/components/shared/Field";
+import { SheetSection } from "@/components/shared/SheetSection";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet";
-import { cn } from "@/lib/utils";
+import { Textarea } from "@/components/ui/textarea";
 
-const fieldClass = cn(
-  "min-h-[72px] w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none transition-colors",
-  "placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
-  "disabled:opacity-50 dark:bg-input/30",
-);
-
-function Field({
-  id,
-  label,
-  required: req,
-  children,
+export function AddVendorSheet({
+  open: controlledOpen,
+  onOpenChange: controlledOnOpenChange,
+  showTrigger = true,
 }: {
-  id: string;
-  label: string;
-  required?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <label htmlFor={id} className="text-sm font-medium text-foreground">
-        {label}
-        {req ? <span className="text-destructive"> *</span> : null}
-      </label>
-      {children}
-    </div>
-  );
-}
-
-export function AddVendorSheet() {
-  const [open, setOpen] = React.useState(false);
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  showTrigger?: boolean;
+} = {}) {
+  const [internalOpen, setInternalOpen] = React.useState(false);
+  const open = controlledOpen ?? internalOpen;
   const [pending, startTransition] = React.useTransition();
   const [similar, setSimilar] = React.useState<
     CreateVendorResult & { ok: false; code: "SIMILAR_VENDORS" } | null
@@ -57,6 +33,7 @@ export function AddVendorSheet() {
   } | null>(null);
   const [confirmDifferent, setConfirmDifferent] = React.useState(false);
   const [ackReason, setAckReason] = React.useState("");
+  const formRef = React.useRef<HTMLFormElement>(null);
 
   const resetSoft = () => {
     setSimilar(null);
@@ -66,7 +43,11 @@ export function AddVendorSheet() {
   };
 
   const onOpenChange = (next: boolean) => {
-    setOpen(next);
+    if (controlledOnOpenChange) {
+      controlledOnOpenChange(next);
+    } else {
+      setInternalOpen(next);
+    }
     if (!next) {
       resetSoft();
     }
@@ -109,7 +90,7 @@ export function AddVendorSheet() {
         toast.success("Vendor saved.");
         form.reset();
         resetSoft();
-        setOpen(false);
+        onOpenChange(false);
         return;
       }
 
@@ -144,22 +125,46 @@ export function AddVendorSheet() {
     });
   }
 
-  return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetTrigger
-        render={<Button type="button">Add vendor</Button>}
-      />
-      <SheetContent side="right" className="flex w-full flex-col gap-0 overflow-y-auto sm:max-w-lg">
-        <SheetHeader>
-          <SheetTitle>Add vendor</SheetTitle>
-        </SheetHeader>
+  const submitDisabled =
+    pending || Boolean(similar && (!confirmDifferent || !ackReason.trim()));
 
-        <form onSubmit={onSubmit} className="flex flex-1 flex-col gap-4 px-4 pb-6">
+  return (
+    <>
+      {showTrigger ? (
+        <Button type="button" onClick={() => onOpenChange(true)}>
+          Add vendor
+        </Button>
+      ) : null}
+      <FormDrawer
+        open={open}
+        onOpenChange={onOpenChange}
+        title="Add vendor"
+        description="Capture business, contact, and bank details for a new vendor."
+        footer={
+          <>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              loading={pending}
+              disabled={submitDisabled}
+              onClick={() => formRef.current?.requestSubmit()}
+            >
+              {pending ? "Saving" : "Save vendor"}
+            </Button>
+          </>
+        }
+      >
+        <form ref={formRef} onSubmit={onSubmit} className="space-y-5">
           {dupField ? (
-            <p className="rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+            <p className="rounded-lg border border-[var(--status-error-border)] bg-[var(--status-error-bg)] px-3 py-2 text-ds-sm text-[var(--status-error)]">
               {dupField.message}{" "}
               {dupField.vendorId ? (
-                <Link href={`/vendors/${dupField.vendorId}`} className="font-medium underline">
+                <Link
+                  href={`/vendors/${dupField.vendorId}`}
+                  className="font-medium underline"
+                >
                   View existing vendor
                 </Link>
               ) : null}
@@ -167,8 +172,8 @@ export function AddVendorSheet() {
           ) : null}
 
           {similar ? (
-            <div className="space-y-3 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-sm">
-              <p className="font-medium text-amber-900 dark:text-amber-200">
+            <div className="space-y-3 rounded-lg border border-[var(--status-warning-border)] bg-[var(--status-warning-bg)] p-3 text-ds-sm">
+              <p className="font-medium text-[var(--status-warning)]">
                 Similar business names found (possible duplicate)
               </p>
               <ul className="list-inside list-disc space-y-1 text-muted-foreground">
@@ -183,96 +188,73 @@ export function AddVendorSheet() {
                   type="checkbox"
                   checked={confirmDifferent}
                   onChange={(ev) => setConfirmDifferent(ev.target.checked)}
-                  className="mt-1 size-4 rounded border-input"
+                  className="mt-1 size-3.5 rounded border-input"
                 />
                 <span>I confirm this is a different vendor from those listed above.</span>
               </label>
-              <div className="space-y-1.5">
-                <label htmlFor="ackReason" className="text-sm font-medium">
-                  Reason <span className="text-destructive">*</span>
-                </label>
-                <textarea
+              <Field label="Reason" htmlFor="ackReason" required>
+                <Textarea
                   id="ackReason"
                   value={ackReason}
                   onChange={(ev) => setAckReason(ev.target.value)}
-                  className={fieldClass}
                   rows={3}
                   placeholder="Why this vendor is distinct…"
                 />
-              </div>
+              </Field>
             </div>
           ) : null}
 
-          <Card size="sm">
-            <CardHeader>
-              <CardTitle>Basic info</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <Field id="businessName" label="Vendor business name" required>
-                <Input id="businessName" name="businessName" required autoComplete="organization" />
+          <SheetSection title="Basic info">
+            <div className="space-y-3">
+              <Field label="Vendor business name" htmlFor="businessName" required>
+                <Input
+                  id="businessName"
+                  name="businessName"
+                  required
+                  autoComplete="organization"
+                />
               </Field>
-              <Field id="gst" label="GST">
+              <Field label="GST" htmlFor="gst">
                 <Input id="gst" name="gst" autoComplete="off" />
               </Field>
-              <Field id="address" label="Address">
-                <textarea id="address" name="address" className={fieldClass} rows={2} />
+              <Field label="Address" htmlFor="address">
+                <Textarea id="address" name="address" rows={2} />
               </Field>
-            </CardContent>
-          </Card>
+            </div>
+          </SheetSection>
 
-          <Card size="sm">
-            <CardHeader>
-              <CardTitle>Contact</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <Field id="pocName" label="POC name" required>
+          <SheetSection title="Contact">
+            <div className="space-y-3">
+              <Field label="POC name" htmlFor="pocName" required>
                 <Input id="pocName" name="pocName" required autoComplete="name" />
               </Field>
-              <Field id="phone" label="Phone" required>
+              <Field label="Phone" htmlFor="phone" required>
                 <Input id="phone" name="phone" type="tel" required autoComplete="tel" />
               </Field>
-              <Field id="email" label="Email" required>
+              <Field label="Email" htmlFor="email" required>
                 <Input id="email" name="email" type="email" required autoComplete="email" />
               </Field>
-            </CardContent>
-          </Card>
+            </div>
+          </SheetSection>
 
-          <Card size="sm">
-            <CardHeader>
-              <CardTitle>Bank details</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <Field id="accountName" label="Account name" required>
+          <SheetSection title="Bank details">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Field label="Account name" htmlFor="accountName" required className="sm:col-span-2">
                 <Input id="accountName" name="accountName" required autoComplete="off" />
               </Field>
-              <Field id="accountNumber" label="Account number" required>
+              <Field label="Account number" htmlFor="accountNumber" required>
                 <Input id="accountNumber" name="accountNumber" required autoComplete="off" />
               </Field>
-              <Field id="ifsc" label="IFSC" required>
+              <Field label="IFSC" htmlFor="ifsc" required>
                 <Input id="ifsc" name="ifsc" required autoComplete="off" />
               </Field>
-              <Field id="bankName" label="Bank name" required>
+              <Field label="Bank name" htmlFor="bankName" required className="sm:col-span-2">
                 <Input id="bankName" name="bankName" required autoComplete="off" />
               </Field>
-            </CardContent>
-          </Card>
-
-          <div className="mt-auto flex justify-end gap-2 border-t pt-4">
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              disabled={
-                pending ||
-                Boolean(similar && (!confirmDifferent || !ackReason.trim()))
-              }
-            >
-              {pending ? "Saving…" : "Save vendor"}
-            </Button>
-          </div>
+            </div>
+          </SheetSection>
         </form>
-      </SheetContent>
-    </Sheet>
+      </FormDrawer>
+    </>
   );
 }

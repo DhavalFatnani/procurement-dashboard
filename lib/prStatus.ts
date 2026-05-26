@@ -33,19 +33,11 @@ export function assertPRStatusTransition(from: PRStatus, to: PRStatus): void {
   }
 }
 
-/** Validates whether a transition is allowed; returns the target status when valid. */
-export function evaluatePRStatusTransition(
-  current: PRStatus,
-  next: PRStatus,
-): PRStatus {
-  assertPRStatusTransition(current, next);
-  return next;
-}
-
-/** Spec alias: validate transition for a PR's current status. */
+/** Validates a PR's transition to `next`; returns the target status when valid. */
 export function evaluatePRStatus(
   pr: { status: PRStatus },
   next: PRStatus,
 ): PRStatus {
-  return evaluatePRStatusTransition(pr.status, next);
+  assertPRStatusTransition(pr.status, next);
+  return next;
 }

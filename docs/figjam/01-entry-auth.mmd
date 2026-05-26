@@ -1,0 +1,23 @@
+flowchart LR
+    root[/App root/] --> auth{Supabase session?}
+    auth -->|No| login[/login/]
+    auth -->|Yes| dash[/dashboard/]
+    login --> signIn[signInWithEmail]
+    signIn --> dash
+
+    dash --> layout[Dashboard layout]
+    layout --> role[Read role from metadata]
+    role --> nav[getNavItemsForRole]
+    nav --> smNav[SM nav items]
+    nav --> opsNav[OPS_HEAD nav items]
+    nav --> finNav[FINANCE nav items]
+
+    layout --> guard[Page assertRole]
+    guard --> actions[Server action requireRoles]
+
+    style login fill:#F0F0F0,stroke:#666666
+    style dash fill:#D5F5E3,stroke:#0E7A3E
+    style smNav fill:#DAE8FC,stroke:#007AD2
+    style opsNav fill:#E8DAFF,stroke:#7B61FF
+    style finNav fill:#D5F5E3,stroke:#0E7A3E
+    style auth fill:#FFF9C4,stroke:#E8A302

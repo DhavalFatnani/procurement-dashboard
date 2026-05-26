@@ -9,21 +9,12 @@ import {
   type ActivateVendorFromRequestInput,
   type PendingVendorRequestRow,
 } from "@/app/actions/vendors";
+import { FormDrawer } from "@/components/shared/Drawer";
+import { Field } from "@/components/shared/Field";
+import { SheetSection } from "@/components/shared/SheetSection";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet";
-import { cn } from "@/lib/utils";
-
-const fieldClass = cn(
-  "min-h-[72px] w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none",
-  "placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30",
-);
+import { Textarea } from "@/components/ui/textarea";
 
 const emptyBank: ActivateVendorFromRequestInput = {
   accountName: "",
@@ -34,7 +25,11 @@ const emptyBank: ActivateVendorFromRequestInput = {
   gst: "",
 };
 
-export function ReviewVendorRequestSheet({ request }: { request: PendingVendorRequestRow }) {
+export function ReviewVendorRequestSheet({
+  request,
+}: {
+  request: PendingVendorRequestRow;
+}) {
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
   const [pending, startTransition] = React.useTransition();
@@ -55,7 +50,9 @@ export function ReviewVendorRequestSheet({ request }: { request: PendingVendorRe
           setOpen(false);
           router.push(`/vendors/${result.vendorId}`);
         } else {
-          toast.success(action === "ACTIVATED" ? "Vendor activated." : "Request rejected.");
+          toast.success(
+            action === "ACTIVATED" ? "Vendor activated." : "Request rejected.",
+          );
           setOpen(false);
           router.refresh();
         }
@@ -65,115 +62,142 @@ export function ReviewVendorRequestSheet({ request }: { request: PendingVendorRe
     });
   }
 
+  const canActivate =
+    !pending &&
+    bank.accountName.trim() &&
+    bank.accountNumber.trim() &&
+    bank.ifsc.trim() &&
+    bank.bankName.trim();
+  const canReject = !pending && rejectReason.trim();
+
   return (
-    <Sheet open={open} onOpenChange={setOpen}>
-      <SheetTrigger render={<Button type="button" variant="outline" size="sm">Review</Button>} />
-      <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-md">
-        <SheetHeader>
-          <SheetTitle>Review vendor request</SheetTitle>
-        </SheetHeader>
-        <div className="space-y-4 px-4 pb-6 text-sm">
-          <dl className="space-y-2">
-            <div>
-              <dt className="text-muted-foreground">Business name</dt>
-              <dd className="font-medium">{request.businessName}</dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground">POC</dt>
-              <dd>{request.pocName}</dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground">Phone</dt>
-              <dd>{request.phone}</dd>
-            </div>
-            {request.linkedPRId ? (
-              <div>
-                <dt className="text-muted-foreground">Linked PR</dt>
-                <dd>{request.linkedPRId}</dd>
-              </div>
-            ) : null}
-          </dl>
-
-          <div className="space-y-3 rounded-lg border p-3">
-            <p className="font-medium">Bank details (required to activate)</p>
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium">Account name</label>
-              <Input
-                value={bank.accountName}
-                onChange={(e) => setBank((b) => ({ ...b, accountName: e.target.value }))}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium">Account number</label>
-              <Input
-                value={bank.accountNumber}
-                onChange={(e) => setBank((b) => ({ ...b, accountNumber: e.target.value }))}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium">IFSC</label>
-              <Input value={bank.ifsc} onChange={(e) => setBank((b) => ({ ...b, ifsc: e.target.value }))} />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium">Bank name</label>
-              <Input
-                value={bank.bankName}
-                onChange={(e) => setBank((b) => ({ ...b, bankName: e.target.value }))}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium">Address (optional)</label>
-              <Input
-                value={bank.address ?? ""}
-                onChange={(e) => setBank((b) => ({ ...b, address: e.target.value }))}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium">GST (optional)</label>
-              <Input value={bank.gst ?? ""} onChange={(e) => setBank((b) => ({ ...b, gst: e.target.value }))} />
-            </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <label htmlFor="reject-reason" className="text-sm font-medium">
-              Rejection reason (required to reject)
-            </label>
-            <textarea
-              id="reject-reason"
-              className={fieldClass}
-              rows={3}
-              value={rejectReason}
-              onChange={(e) => setRejectReason(e.target.value)}
-            />
-          </div>
-
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <Button
-              type="button"
-              className="flex-1"
-              disabled={
-                pending ||
-                !bank.accountName.trim() ||
-                !bank.accountNumber.trim() ||
-                !bank.ifsc.trim() ||
-                !bank.bankName.trim()
-              }
-              onClick={() => run("ACTIVATED")}
-            >
-              Activate vendor
-            </Button>
+    <>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={() => setOpen(true)}
+      >
+        Review
+      </Button>
+      <FormDrawer
+        open={open}
+        onOpenChange={setOpen}
+        title="Review vendor request"
+        description={request.businessName}
+        footer={
+          <>
             <Button
               type="button"
               variant="destructive"
-              className="flex-1"
-              disabled={pending || !rejectReason.trim()}
+              disabled={!canReject}
               onClick={() => run("REJECTED")}
             >
               Reject
             </Button>
+            <Button
+              type="button"
+              disabled={!canActivate}
+              loading={pending}
+              onClick={() => run("ACTIVATED")}
+            >
+              {pending ? "Activating" : "Activate vendor"}
+            </Button>
+          </>
+        }
+      >
+        <SheetSection title="Request summary">
+          <dl className="grid grid-cols-2 gap-2 rounded-lg border border-border-subtle bg-card p-3 text-ds-sm">
+            <div>
+              <dt className="text-ds-xs text-muted-foreground">Business name</dt>
+              <dd className="font-medium">{request.businessName}</dd>
+            </div>
+            <div>
+              <dt className="text-ds-xs text-muted-foreground">POC</dt>
+              <dd>{request.pocName}</dd>
+            </div>
+            <div>
+              <dt className="text-ds-xs text-muted-foreground">Phone</dt>
+              <dd>{request.phone}</dd>
+            </div>
+            {request.linkedPRId ? (
+              <div>
+                <dt className="text-ds-xs text-muted-foreground">Linked PR</dt>
+                <dd className="font-mono">{request.linkedPRId}</dd>
+              </div>
+            ) : null}
+          </dl>
+        </SheetSection>
+
+        <SheetSection
+          title="Bank details"
+          description="Required to activate the vendor."
+        >
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Field label="Account name" htmlFor="rev-accountName" required className="sm:col-span-2">
+              <Input
+                id="rev-accountName"
+                value={bank.accountName}
+                onChange={(e) =>
+                  setBank((b) => ({ ...b, accountName: e.target.value }))
+                }
+              />
+            </Field>
+            <Field label="Account number" htmlFor="rev-accountNumber" required>
+              <Input
+                id="rev-accountNumber"
+                value={bank.accountNumber}
+                onChange={(e) =>
+                  setBank((b) => ({ ...b, accountNumber: e.target.value }))
+                }
+              />
+            </Field>
+            <Field label="IFSC" htmlFor="rev-ifsc" required>
+              <Input
+                id="rev-ifsc"
+                value={bank.ifsc}
+                onChange={(e) => setBank((b) => ({ ...b, ifsc: e.target.value }))}
+              />
+            </Field>
+            <Field label="Bank name" htmlFor="rev-bankName" required className="sm:col-span-2">
+              <Input
+                id="rev-bankName"
+                value={bank.bankName}
+                onChange={(e) =>
+                  setBank((b) => ({ ...b, bankName: e.target.value }))
+                }
+              />
+            </Field>
+            <Field label="Address" htmlFor="rev-address" className="sm:col-span-2">
+              <Input
+                id="rev-address"
+                value={bank.address ?? ""}
+                onChange={(e) => setBank((b) => ({ ...b, address: e.target.value }))}
+              />
+            </Field>
+            <Field label="GST" htmlFor="rev-gst" className="sm:col-span-2">
+              <Input
+                id="rev-gst"
+                value={bank.gst ?? ""}
+                onChange={(e) => setBank((b) => ({ ...b, gst: e.target.value }))}
+              />
+            </Field>
           </div>
-        </div>
-      </SheetContent>
-    </Sheet>
+        </SheetSection>
+
+        <SheetSection
+          title="Rejection reason"
+          description="Required only if rejecting the request."
+        >
+          <Textarea
+            id="reject-reason"
+            rows={3}
+            value={rejectReason}
+            onChange={(e) => setRejectReason(e.target.value)}
+            placeholder="Document why this request is being rejected…"
+          />
+        </SheetSection>
+      </FormDrawer>
+    </>
   );
 }

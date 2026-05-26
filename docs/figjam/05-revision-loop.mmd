@@ -1,0 +1,25 @@
+flowchart LR
+    pending[PENDING_APPROVAL] --> sendRev[OPS sendForRevision]
+    sendRev --> revReq[REVISION_REQUIRED]
+    revReq --> smEdit[SM edit PR fields]
+    smEdit --> resubmit{resubmitPR}
+    resubmit -->|revisionCount under 3| pending2[PENDING_APPROVAL version++]
+    resubmit -->|revisionCount 3 or more| forceFc[FORCE_CANCELLED]
+    pending2 --> opsReview{OPS decision}
+    opsReview -->|Approve| approved[APPROVED plus PO]
+    opsReview -->|Reject| rejected[REJECTED]
+    opsReview -->|Revision again| revReq
+
+    opsForce[OPS forceClosePR] --> forceFc2[FORCE_CANCELLED]
+
+    style pending fill:#E8DAFF,stroke:#7B61FF
+    style sendRev fill:#E8DAFF,stroke:#7B61FF
+    style revReq fill:#FFECBD,stroke:#FFC943
+    style smEdit fill:#DAE8FC,stroke:#007AD2
+    style pending2 fill:#DAE8FC,stroke:#007AD2
+    style approved fill:#CDF4D3,stroke:#66D575
+    style rejected fill:#FFCDC2,stroke:#FF7556
+    style forceFc fill:#FFCDC2,stroke:#FF7556
+    style forceFc2 fill:#FFCDC2,stroke:#FF7556
+    style resubmit fill:#FFF9C4,stroke:#E8A302
+    style opsReview fill:#FFF9C4,stroke:#E8A302

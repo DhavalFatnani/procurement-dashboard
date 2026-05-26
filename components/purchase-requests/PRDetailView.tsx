@@ -27,297 +27,362 @@ import { TextareaActionDialog } from "@/components/shared/TextareaActionDialog";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { resolveCreatePRSelection } from "@/lib/create-pr-selection";
+import {
+  linesFromDetail,
+  PRLineEditor,
+  toLineInputs,
+  type PRLineDraft,
+} from "@/components/purchase-requests/PRLineEditor";
+import { ProcurementRefText } from "@/components/shared/ProcurementRef";
+import {
+  formatPrPageTitle,
+  formatProcurementRef,
+} from "@/lib/display-ref";
+import { formatDateTimeMedium } from "@/lib/format-datetime";
 import { cn } from "@/lib/utils";
 
-type ActiveVendor = { id: string; businessName: string };
-
-function formatDate(iso: string) {
-  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(
-    new Date(iso),
-  );
-}
-
-const PROGRESS_STEPS = [
-  { key: "prApproved", label: "PR approved" },
-  { key: "poCreated", label: "PO created" },
-  { key: "grnRecorded", label: "GRN recorded" },
-  { key: "invoiceUploaded", label: "Invoice uploaded" },
-  { key: "paymentReceived", label: "Payment received" },
-] as const;
+const FORCE_CLOSE_ALLOWED: PRStatus[] = [
+  PRStatus.DRAFT,
+  PRStatus.PENDING_APPROVAL,
+  PRStatus.REVISION_REQUIRED,
+  PRStatus.APPROVED,
+  PRStatus.REJECTED,
+];
 
 export function PRDetailView({
   pr,
   role,
   categories,
   subcategories,
-  activeVendors,
+  progressSlot,
+  printSlot,
+  versionHistorySlot,
+  embeddedInShell = false,
 }: {
   pr: PRDetail;
   role: Role;
   categories: CategoryOption[];
   subcategories: SubcategoryOption[];
-  activeVendors: ActiveVendor[];
+  progressSlot?: React.ReactNode;
+  printSlot?: React.ReactNode;
+  versionHistorySlot?: React.ReactNode;
+  /** When true, header and progress sidebar are rendered by DetailPageShell. */
+  embeddedInShell?: boolean;
 }) {
   const router = useRouter();
   const isOps = role === Role.OPS_HEAD;
-  const canEditSm =
-    role === Role.SM &&
-    (pr.status === PRStatus.DRAFT || pr.status === PRStatus.REVISION_REQUIRED);
+  const isSm = role === Role.SM;
+
+  const [draftEditMode, setDraftEditMode] = React.useState(false);
+  const isRevisionEditing = isSm && pr.status === PRStatus.REVISION_REQUIRED;
+  const isDraftEditing = isSm && pr.status === PRStatus.DRAFT && draftEditMode;
+  const showEditableFields = isRevisionEditing || isDraftEditing;
 
   const [categoryId, setCategoryId] = React.useState(pr.categoryId);
   const [subcategoryId, setSubcategoryId] = React.useState(pr.subcategoryId);
   const [quantity, setQuantity] = React.useState(pr.quantity);
-  const [vendorId, setVendorId] = React.useState(pr.vendorId ?? "");
+  const [vendorLines, setVendorLines] = React.useState<PRLineDraft[]>(() =>
+    linesFromDetail(pr.lines),
+  );
+  const awaitingPurchaseOrder =
+    pr.executionType === ExecutionType.VENDOR_PURCHASE &&
+    pr.status === PRStatus.APPROVED &&
+    !pr.purchaseOrder;
   const [approveOpen, setApproveOpen] = React.useState(false);
   const [rejectOpen, setRejectOpen] = React.useState(false);
   const [revisionOpen, setRevisionOpen] = React.useState(false);
   const [cancelOpen, setCancelOpen] = React.useState(false);
   const [forceOpen, setForceOpen] = React.useState(false);
-  const [historyOpen, setHistoryOpen] = React.useState(false);
-  const [, startTransition] = React.useTransition();
+  const [pending, startTransition] = React.useTransition();
+
+  const selection = React.useMemo(
+    () => resolveCreatePRSelection(categories, subcategories, categoryId, subcategoryId),
+    [categories, subcategories, categoryId, subcategoryId],
+  );
 
   const subs = subcategories.filter((s) => s.categoryId === categoryId);
+  const canForceClose = isOps && FORCE_CLOSE_ALLOWED.includes(pr.status);
+
+  const isVendorMultiLine =
+    pr.executionType === ExecutionType.VENDOR_PURCHASE && pr.lineCount > 1;
+  const vendorLinesValid = vendorLines.every(
+    (line) => line.categoryId && line.subcategoryId && line.quantity >= 1,
+  );
 
   function payload() {
+    if (pr.executionType === ExecutionType.VENDOR_PURCHASE) {
+      return {
+        lines: toLineInputs(vendorLines),
+        vendorId: null,
+        vendorRequestId: pr.vendorRequestId,
+      };
+    }
+    if (!selection && showEditableFields) {
+      throw new Error("Invalid category or subcategory.");
+    }
     return {
-      categoryId,
-      subcategoryId,
-      quantity,
-      vendorId: vendorId || null,
+      lines: [
+        {
+          categoryId: selection?.categoryId ?? pr.categoryId,
+          subcategoryId: selection?.subcategoryId ?? pr.subcategoryId,
+          quantity,
+        },
+      ],
+      vendorId: null,
       vendorRequestId: pr.vendorRequestId,
     };
   }
 
+  function handleCategoryChange(nextCategoryId: string) {
+    setCategoryId(nextCategoryId);
+    setSubcategoryId("");
+  }
+
   return (
     <div className="space-y-6">
-      <PageHeader
-        title={pr.id}
-        subtitle={`Created by ${pr.createdByName} on ${formatDate(pr.createdAt)}`}
-        action={
-          <Link href="/purchase-requests" className={cn(buttonVariants({ variant: "outline" }))}>
-            Back to list
-          </Link>
-        }
-      />
+      {!embeddedInShell ? (
+        <PageHeader
+          title={formatPrPageTitle({
+            id: pr.id,
+            categoryName: pr.categoryName,
+            subcategoryName: pr.subcategoryName,
+          })}
+          subtitle={`${formatProcurementRef(pr.id)} · Created by ${pr.createdByName} on ${formatDateTimeMedium(pr.createdAt)}`}
+          action={
+            <Link href="/purchase-requests" className={cn(buttonVariants({ variant: "outline" }))}>
+              Back to list
+            </Link>
+          }
+        />
+      ) : null}
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        <div className="space-y-4 lg:col-span-2">
-          {pr.status === PRStatus.REVISION_REQUIRED && pr.latestRevision ? (
-            <div className="border-b border-status-warning/30 border-l-[3px] border-l-status-warning bg-[var(--status-warning-bg)] px-4 py-3.5">
-              <p className="text-ds-xs text-status-warning">
-                Revision requested by {pr.latestRevision.byName} · {formatDate(pr.latestRevision.at)}
-              </p>
-              <p className="mt-1 text-ds-base font-medium text-foreground">
-                {pr.latestRevision.comment}
-              </p>
-            </div>
-          ) : null}
-
+      <div className={cn("grid gap-6", !embeddedInShell && "lg:grid-cols-3")}>
+        <div className={cn("space-y-4", !embeddedInShell && "lg:col-span-2")}>
           <Card size="sm">
             <CardHeader>
               <CardTitle>Request summary</CardTitle>
             </CardHeader>
-            <CardContent className="grid gap-3 text-sm sm:grid-cols-2">
-              {canEditSm ? (
-                <>
-                  <div className="space-y-1.5 sm:col-span-2">
-                    <label className="text-xs font-medium text-muted-foreground">Category</label>
-                    <select
-                      className="h-8 w-full rounded-lg border border-input bg-transparent px-2 text-sm dark:bg-input/30"
-                      value={categoryId}
-                      onChange={(e) => {
-                        setCategoryId(e.target.value);
-                        setSubcategoryId("");
-                      }}
-                    >
-                      {categories.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="space-y-1.5 sm:col-span-2">
-                    <label className="text-xs font-medium text-muted-foreground">Subcategory</label>
-                    <select
-                      className="h-8 w-full rounded-lg border border-input bg-transparent px-2 text-sm dark:bg-input/30"
-                      value={subcategoryId}
-                      onChange={(e) => setSubcategoryId(e.target.value)}
-                    >
-                      {subs.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-muted-foreground">Quantity</label>
-                    <Input
-                      type="number"
-                      min={1}
-                      value={quantity}
-                      onChange={(e) => setQuantity(Math.max(1, Number(e.target.value) || 1))}
+            <CardContent className="space-y-4">
+              {pr.status === PRStatus.REVISION_REQUIRED && pr.latestRevision ? (
+                <div
+                  className="rounded-lg border border-status-warning/40 border-l-[3px] border-l-status-warning bg-[var(--status-warning-bg)] px-4 py-3"
+                  role="alert"
+                >
+                  <p className="text-ds-xs font-medium text-status-warning">
+                    Revision requested by {pr.latestRevision.byName} on{" "}
+                    {formatDateTimeMedium(pr.latestRevision.at)}
+                  </p>
+                  <p className="mt-2 text-ds-sm font-medium text-foreground">
+                    {pr.latestRevision.comment}
+                  </p>
+                </div>
+              ) : null}
+
+              <div className="grid gap-3 text-sm sm:grid-cols-2">
+                {showEditableFields && pr.executionType === ExecutionType.VENDOR_PURCHASE ? (
+                  <div className="space-y-3 sm:col-span-2">
+                    <PRLineEditor
+                      categories={categories}
+                      subcategories={subcategories}
+                      lines={vendorLines}
+                      onChange={setVendorLines}
+                      vendorPurchaseOnly
                     />
                   </div>
-                  {pr.executionType === ExecutionType.VENDOR_PURCHASE ? (
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-muted-foreground">Vendor</label>
-                      <select
-                        className="h-8 w-full rounded-lg border border-input bg-transparent px-2 text-sm dark:bg-input/30"
-                        value={vendorId}
-                        onChange={(e) => setVendorId(e.target.value)}
-                        disabled={pr.vendorRequestStatus === "PENDING"}
+                ) : showEditableFields ? (
+                  <>
+                    <div className="space-y-1.5 sm:col-span-2">
+                      <label className="text-ds-xs font-medium text-muted-foreground">
+                        Category
+                      </label>
+                      <Select
+                        value={categoryId}
+                        onValueChange={handleCategoryChange}
                       >
-                        <option value="">Select vendor</option>
-                        {activeVendors.map((v) => (
-                          <option key={v.id} value={v.id}>
-                            {v.businessName}
-                          </option>
-                        ))}
-                      </select>
-                      {pr.vendorRequestStatus === "PENDING" ? (
-                        <p className="text-xs text-amber-600">
-                          Vendor request pending activation — cannot submit until approved.
-                        </p>
-                      ) : null}
+                        <SelectTrigger size="sm" aria-label="Category">
+                          <SelectValue placeholder="Select category" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {categories.map((c) => (
+                            <SelectItem key={c.id} value={c.id}>
+                              {c.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
-                  ) : null}
-                </>
-              ) : (
-                <>
-                  <SummaryField label="Category" value={pr.categoryName} />
-                  <SummaryField label="Subcategory" value={pr.subcategoryName} />
-                  <SummaryField label="Quantity" value={String(pr.quantity)} />
-                  <SummaryField label="Warehouse" value={pr.warehouseName} />
-                  <SummaryField
-                    label="Execution"
-                    value={<ExecutionTypeBadge type={pr.executionType} />}
-                  />
-                  {pr.vendorName ? <SummaryField label="Vendor" value={pr.vendorName} /> : null}
-                </>
-              )}
-              {!canEditSm ? (
-                <>
-                  <SummaryField label="Warehouse" value={pr.warehouseName} />
-                  <div>
-                    <p className="text-xs text-muted-foreground">Status</p>
-                    <StatusBadge kind="PRStatus" status={pr.status} />
+                    <div className="space-y-1.5 sm:col-span-2">
+                      <label className="text-ds-xs font-medium text-muted-foreground">
+                        Subcategory
+                      </label>
+                      <Select
+                        key={categoryId}
+                        value={subcategoryId}
+                        onValueChange={setSubcategoryId}
+                      >
+                        <SelectTrigger size="sm" aria-label="Subcategory">
+                          <SelectValue placeholder="Select subcategory" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {subs.map((s) => (
+                            <SelectItem key={s.id} value={s.id}>
+                              {s.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-ds-xs font-medium text-muted-foreground">
+                        Quantity
+                      </label>
+                      <Input
+                        type="number"
+                        min={1}
+                        value={quantity}
+                        onChange={(e) => setQuantity(Math.max(1, Number(e.target.value) || 1))}
+                        className="h-8"
+                      />
+                    </div>
+                  </>
+                ) : isVendorMultiLine || pr.lines.length > 1 ? (
+                  <div className="sm:col-span-2">
+                    <p className="mb-2 text-ds-xs font-medium text-muted-foreground">
+                      Requirements ({pr.lineCount} items · {pr.quantity} total qty)
+                    </p>
+                    <div className="overflow-x-auto rounded-md border border-border-subtle">
+                      <table className="w-full text-ds-sm">
+                        <thead>
+                          <tr className="border-b border-border-subtle bg-muted/30 text-left text-ds-xs text-muted-foreground">
+                            <th className="px-3 py-2 font-medium">#</th>
+                            <th className="px-3 py-2 font-medium">Category</th>
+                            <th className="px-3 py-2 font-medium">Subcategory</th>
+                            <th className="px-3 py-2 font-medium text-right">Qty</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {pr.lines.map((line) => (
+                            <tr key={line.id} className="border-b border-border-subtle last:border-0">
+                              <td className="px-3 py-2">{line.lineNumber}</td>
+                              <td className="px-3 py-2">{line.categoryName}</td>
+                              <td className="px-3 py-2">{line.subcategoryName}</td>
+                              <td className="px-3 py-2 text-right tabular-nums">{line.quantity}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {pr.vendorName ? (
+                      <p className="mt-3 text-ds-sm">
+                        <span className="text-muted-foreground">Vendor: </span>
+                        {pr.vendorName}
+                      </p>
+                    ) : pr.vendorRequestStatus === "PENDING" ? (
+                      <p className="mt-3 text-ds-sm text-muted-foreground">
+                        Vendor request pending Ops Head activation
+                      </p>
+                    ) : null}
                   </div>
-                </>
-              ) : (
+                ) : (
+                  <>
+                    <SummaryField label="Category" value={pr.categoryName} />
+                    <SummaryField label="Subcategory" value={pr.subcategoryName} />
+                    <SummaryField label="Quantity" value={String(pr.quantity)} />
+                    {pr.vendorName ? (
+                      <SummaryField label="Vendor" value={pr.vendorName} />
+                    ) : pr.vendorRequestStatus === "PENDING" ? (
+                      <SummaryField
+                        label="Vendor request"
+                        value="Pending Ops Head activation"
+                      />
+                    ) : null}
+                  </>
+                )}
+
+                <SummaryField label="Warehouse" value={pr.warehouseName} />
+                <SummaryField
+                  label="Execution type"
+                  value={<ExecutionTypeBadge type={pr.executionType} />}
+                />
                 <div>
-                  <p className="text-xs text-muted-foreground">Status</p>
-                  <StatusBadge kind="PRStatus" status={pr.status} />
+                  <p className="text-ds-xs text-muted-foreground">Status</p>
+                  <StatusBadge
+                    kind="PRStatus"
+                    status={pr.status}
+                    awaitingPurchaseOrder={awaitingPurchaseOrder}
+                  />
                 </div>
-              )}
+              </div>
             </CardContent>
           </Card>
 
-          {pr.executionType === ExecutionType.VENDOR_PURCHASE ? (
-            <Card size="sm">
-              <CardHeader>
-                <CardTitle>Procurement progress</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ol className="space-y-2">
-                  {PROGRESS_STEPS.map((step) => (
-                    <li key={step.key} className="flex items-center gap-2 text-sm">
-                      <span
-                        className={cn(
-                          "size-2 rounded-full",
-                          pr.progress[step.key] ? "bg-emerald-500" : "bg-muted-foreground/40",
-                        )}
-                      />
-                      {step.label}
-                    </li>
-                  ))}
-                </ol>
-              </CardContent>
-            </Card>
-          ) : null}
+          {progressSlot}
 
-          {pr.executionType === ExecutionType.INTERNAL_PRINT && pr.serialReservation ? (
-            <Card size="sm">
-              <CardHeader>
-                <CardTitle>Print execution</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2 text-sm">
-                <p>
-                  <span className="text-muted-foreground">Series: </span>
-                  {pr.serialReservation.series}
-                </p>
-                <p>
-                  <span className="text-muted-foreground">Range: </span>
-                  {pr.serialReservation.rangeStart} → {pr.serialReservation.rangeEnd}
-                </p>
-                <p>
-                  <span className="text-muted-foreground">Quantity: </span>
-                  {pr.serialReservation.quantity}
-                </p>
-                <p>
-                  <span className="text-muted-foreground">Printed by: </span>
-                  {pr.serialReservation.createdByName} on{" "}
-                  {formatDate(pr.serialReservation.createdAt)}
-                </p>
-                <Link
-                  href={`/purchase-requests/${pr.id}/print`}
-                  className="text-primary text-sm underline-offset-4 hover:underline"
-                >
-                  Open print execution →
-                </Link>
-                <Link
-                  href="/serial-governance"
-                  className="block text-sm text-muted-foreground underline-offset-4 hover:underline"
-                >
-                  View in Serial Governance →
-                </Link>
-              </CardContent>
-            </Card>
-          ) : null}
+          {printSlot}
 
-          <Card size="sm">
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle>Version history</CardTitle>
-              <Button type="button" variant="ghost" size="sm" onClick={() => setHistoryOpen((o) => !o)}>
-                {historyOpen ? "Collapse" : "Expand"}
-              </Button>
-            </CardHeader>
-            {historyOpen ? (
-              <CardContent className="space-y-3 text-sm">
-                {pr.versions.length === 0 ? (
-                  <p className="text-muted-foreground">No versions yet.</p>
-                ) : (
-                  pr.versions.map((v) => (
-                    <div key={v.id} className="border-b pb-2 last:border-0">
-                      <p className="font-medium">
-                        V{v.versionNumber} — {v.changedByName} on {formatDate(v.changedAt)}
-                      </p>
-                      {v.revisionComment ? (
-                        <p className="text-muted-foreground">{v.revisionComment}</p>
-                      ) : null}
-                    </div>
-                  ))
-                )}
-              </CardContent>
-            ) : null}
-          </Card>
+          {versionHistorySlot}
         </div>
 
-        <aside className="space-y-3 rounded-xl border bg-card p-4 lg:col-span-1">
-          <h2 className="text-sm font-semibold">Actions</h2>
+        <aside
+          className={cn(
+            "space-y-3 rounded-2xl border border-border-subtle bg-card p-4 shadow-ds",
+            !embeddedInShell && "lg:col-span-1",
+          )}
+        >
+          <h2 className="text-ds-sm font-semibold">Actions</h2>
 
-          {role === Role.SM && pr.status === PRStatus.DRAFT ? (
+          {isSm && pr.status === PRStatus.DRAFT ? (
             <>
+              {!draftEditMode ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => setDraftEditMode(true)}
+                >
+                  Edit PR
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  disabled={pending || (draftEditMode && !vendorLinesValid && !selection)}
+                  onClick={() => {
+                    startTransition(async () => {
+                      const u = await updatePR(pr.id, payload());
+                      if (u.ok) {
+                        toast.success("Changes saved.");
+                        router.refresh();
+                      } else {
+                        toast.error(u.message ?? "Update failed.");
+                      }
+                    });
+                  }}
+                >
+                  Save changes
+                </Button>
+              )}
               <Button
                 type="button"
                 className="w-full"
+                disabled={pending || (draftEditMode && !vendorLinesValid && !selection)}
                 onClick={() => {
                   startTransition(async () => {
-                    const u = await updatePR(pr.id, payload());
-                    if (!u.ok) {
-                      toast.error(u.message ?? "Update failed.");
-                      return;
+                    if (draftEditMode && selection) {
+                      const u = await updatePR(pr.id, payload());
+                      if (!u.ok) {
+                        toast.error(u.message ?? "Update failed.");
+                        return;
+                      }
                     }
                     const s = await submitPR(pr.id);
                     if (s.ok) {
@@ -331,17 +396,23 @@ export function PRDetailView({
               >
                 Submit for approval
               </Button>
-              <Button type="button" variant="outline" className="w-full" onClick={() => setCancelOpen(true)}>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={() => setCancelOpen(true)}
+              >
                 Cancel PR
               </Button>
             </>
           ) : null}
 
-          {role === Role.SM && pr.status === PRStatus.REVISION_REQUIRED ? (
+          {isSm && pr.status === PRStatus.REVISION_REQUIRED ? (
             <>
               <Button
                 type="button"
                 className="w-full"
+                disabled={pending || !selection}
                 onClick={() => {
                   startTransition(async () => {
                     const r = await resubmitPR(pr.id, payload());
@@ -356,14 +427,24 @@ export function PRDetailView({
               >
                 Resubmit for approval
               </Button>
-              <Button type="button" variant="outline" className="w-full" onClick={() => setCancelOpen(true)}>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={() => setCancelOpen(true)}
+              >
                 Cancel PR
               </Button>
             </>
           ) : null}
 
-          {role === Role.SM && pr.status === PRStatus.PENDING_APPROVAL ? (
-            <Button type="button" variant="outline" className="w-full" onClick={() => setCancelOpen(true)}>
+          {isSm && pr.status === PRStatus.PENDING_APPROVAL ? (
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full"
+              onClick={() => setCancelOpen(true)}
+            >
               Cancel PR
             </Button>
           ) : null}
@@ -387,11 +468,26 @@ export function PRDetailView({
           {isOps ? (
             <button
               type="button"
-              className="w-full text-left text-xs text-muted-foreground underline-offset-4 hover:underline"
-              onClick={() => setForceOpen(true)}
+              disabled={!canForceClose}
+              className={cn(
+                "w-full text-left text-ds-xs underline-offset-4",
+                canForceClose
+                  ? "text-muted-foreground hover:underline"
+                  : "cursor-not-allowed text-muted-foreground/50",
+              )}
+              onClick={() => canForceClose && setForceOpen(true)}
             >
               Force close PR
             </button>
+          ) : null}
+
+          {isOps && awaitingPurchaseOrder ? (
+            <Link
+              href={`/purchase-orders?fulfill=${encodeURIComponent(pr.id)}`}
+              className={cn(buttonVariants({ size: "sm" }), "w-full")}
+            >
+              Create purchase order
+            </Link>
           ) : null}
 
           {pr.purchaseOrder ? (
@@ -399,7 +495,7 @@ export function PRDetailView({
               href={`/purchase-orders/${pr.purchaseOrder.id}`}
               className={cn(buttonVariants({ variant: "outline", size: "sm" }), "w-full")}
             >
-              View PO {pr.purchaseOrder.id}
+              View PO <ProcurementRefText id={pr.purchaseOrder.id} />
             </Link>
           ) : null}
         </aside>
@@ -409,7 +505,7 @@ export function PRDetailView({
         open={approveOpen}
         onOpenChange={setApproveOpen}
         title="Approve purchase request?"
-        description="Creates a linked purchase order."
+        description="Approves the request. Configure vendor, pricing, and delivery under Purchase Orders."
         confirmLabel="Approve"
         onConfirm={() => {
           startTransition(async () => {
@@ -428,6 +524,7 @@ export function PRDetailView({
         open={rejectOpen}
         onOpenChange={setRejectOpen}
         title="Reject purchase request"
+        description="Provide a reason for rejection. This is recorded in version history."
         label="Rejection reason"
         confirmLabel="Reject"
         onConfirm={(text) => {
@@ -447,8 +544,9 @@ export function PRDetailView({
         open={revisionOpen}
         onOpenChange={setRevisionOpen}
         title="Send for revision"
+        description="The store manager must address your comments and resubmit."
         label="Revision comment"
-        confirmLabel="Send"
+        confirmLabel="Send for revision"
         onConfirm={(text) => {
           startTransition(async () => {
             const r = await sendForRevision(pr.id, text);
@@ -486,6 +584,7 @@ export function PRDetailView({
         open={forceOpen}
         onOpenChange={setForceOpen}
         title="Force close PR"
+        description="Provide a reason. This permanently closes the purchase request."
         label="Reason"
         confirmLabel="Force close"
         onConfirm={(text) => {
@@ -507,7 +606,7 @@ export function PRDetailView({
 function SummaryField({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div>
-      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="text-ds-xs text-muted-foreground">{label}</p>
       <div className="font-medium">{value}</div>
     </div>
   );

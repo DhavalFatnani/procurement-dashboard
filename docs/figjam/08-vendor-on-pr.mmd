@@ -1,0 +1,18 @@
+flowchart LR
+    smCreate[SM on Create PR] --> optional[Optional vendor request]
+    optional --> vr[createVendorRequest PENDING]
+    vr --> link[PR vendorRequestId set]
+    link --> submitOk[submitPR allowed]
+    optional --> submitOk
+    submitOk --> pending[PENDING_APPROVAL]
+    pending --> approve[approvePR APPROVED]
+    approve --> poFulfill[OPS createPOFromPR on Purchase Orders]
+    poFulfill --> vendorPick[Select vendor unit price delivery]
+    vendorPick --> converted[PR CONVERTED_TO_PO]
+
+    style smCreate fill:#DAE8FC,stroke:#007AD2
+    style vr fill:#DAE8FC,stroke:#007AD2
+    style submitOk fill:#CDF4D3,stroke:#66D575
+    style approve fill:#E8DAFF,stroke:#7B61FF
+    style poFulfill fill:#E8DAFF,stroke:#7B61FF
+    style converted fill:#CDF4D3,stroke:#66D575

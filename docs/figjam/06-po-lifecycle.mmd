@@ -1,0 +1,35 @@
+flowchart LR
+    poOpen[PO OPEN] --> grnAdd[GRN recorded]
+    grnAdd --> partial[PARTIALLY_RECEIVED]
+    partial --> full[FULLY_RECEIVED]
+    full --> invoiced[INVOICED]
+    invoiced --> paid[PAID]
+
+    paid --> checks{Four closure checks}
+    checks -->|All pass| closed[CLOSED]
+    checks -->|Paid but delivery incomplete| partClosed[PARTIALLY_CLOSED]
+
+    subgraph checksDetail ["Closure checks"]
+        c1[Delivery complete]
+        c2[Invoiced within tolerance]
+        c3[All invoices PAID]
+        c4[No open GRN exceptions]
+    end
+
+    checks --> c1
+    checks --> c2
+    checks --> c3
+    checks --> c4
+
+    opsMark[OPS markDeliveryComplete] --> checks
+    opsForce[OPS forceClosePO] --> forceClosed[FORCE_CLOSED]
+
+    style poOpen fill:#F0F0F0,stroke:#666666
+    style partial fill:#FFECBD,stroke:#FFC943
+    style full fill:#FFECBD,stroke:#FFC943
+    style invoiced fill:#DAE8FC,stroke:#007AD2
+    style paid fill:#D5F5E3,stroke:#0E7A3E
+    style closed fill:#CDF4D3,stroke:#66D575
+    style partClosed fill:#FFECBD,stroke:#FFC943
+    style forceClosed fill:#FFCDC2,stroke:#FF7556
+    style checks fill:#FFF9C4,stroke:#E8A302

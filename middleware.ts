@@ -1,7 +1,11 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
+import { getVerifiedIdentity } from "@/lib/auth-claims";
+import { applyIdentityHeaders } from "@/lib/auth-headers";
+import { defaultLandingFor } from "@/lib/navigation";
 import { tryGetSupabasePublishableConfig } from "@/lib/supabase-env";
+import { isRole } from "@/types";
 
 const publicPaths = new Set(["/login", "/login/forgot-password", "/unauthorized"]);
 
@@ -34,9 +38,26 @@ export async function middleware(request: NextRequest) {
     },
   });
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const authStart =
+    process.env.NODE_ENV !== "production" ? performance.now() : 0;
+  const user = await getVerifiedIdentity(supabase);
+  if (process.env.NODE_ENV !== "production") {
+    console.warn(
+      `⏱  middleware.auth (${request.nextUrl.pathname}): ${Math.round(performance.now() - authStart)}ms`,
+    );
+  }
+
+  if (user) {
+    const requestHeaders = new Headers(request.headers);
+    applyIdentityHeaders(requestHeaders, user);
+    const withIdentity = NextResponse.next({
+      request: { headers: requestHeaders },
+    });
+    supabaseResponse.cookies.getAll().forEach((cookie) => {
+      withIdentity.cookies.set(cookie);
+    });
+    supabaseResponse = withIdentity;
+  }
 
   const pathname = request.nextUrl.pathname;
 
@@ -44,10 +65,18 @@ export async function middleware(request: NextRequest) {
     return supabaseResponse;
   }
 
-  if (user && pathname === "/login") {
-    const url = request.nextUrl.clone();
-    url.pathname = "/dashboard";
-    return NextResponse.redirect(url);
+  if (user) {
+    const rawRole =
+      (user.userMetadata as Record<string, unknown>)?.role ??
+      (user.appMetadata as Record<string, unknown>)?.role;
+    const role = isRole(rawRole) ? rawRole : null;
+    const landing = role ? defaultLandingFor(role) : "/dashboard";
+
+    if (pathname === "/login" || pathname === "/") {
+      const url = request.nextUrl.clone();
+      url.pathname = landing;
+      return NextResponse.redirect(url);
+    }
   }
 
   if (!user && !publicPaths.has(pathname)) {

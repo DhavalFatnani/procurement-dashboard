@@ -12,74 +12,287 @@
   }
 
   .transition-table-row {
-    transition: background-color 80ms ease;
+    transition: background-color var(--duration-fast) var(--ease-out);
   }
 
   .transition-row-actions {
-    transition: opacity 120ms ease;
+    transition: opacity var(--duration) var(--ease-out);
+  }
+
+  /* Subtle spotlight gradient for hero / metric tiles. */
+  .surface-glow {
+    background:
+      radial-gradient(60% 90% at 0% 0%, color-mix(in srgb, var(--brand-accent) 10%, transparent), transparent 60%),
+      var(--surface-2);
+  }
+
+  /* App shell ambient mesh (sidebar + main backdrop). */
+  .bg-shell-gradient {
+    background: var(--gradient-shell);
+  }
+
+  /* Frosted glass surfaces — sticky bars, drawer headers. */
+  .surface-glass {
+    background: var(--surface-glass);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+  }
+
+  /* Primary CTA gradient fill. */
+  .bg-accent-gradient {
+    background: var(--gradient-accent);
+  }
+
+  /* Page-level vertical rhythm. */
+  .page-stack {
+    @apply flex flex-col gap-8;
+  }
+
+  .section-stack {
+    @apply flex flex-col gap-6;
   }
 }
 
 @layer base {
   :root {
-    /* KNOT procurement — dark-first (docs/knot_procurement_ui_ux.md) */
-    --bg-app: #0a0a0a;
-    --bg-base: #111111;
-    --bg-elevated: #1a1a1a;
-    --bg-hover: #222222;
-    --bg-selected: #2a2a2a;
-    --bg-input: #161616;
+    /* ────────── SURFACES (light) ─────────────────────────────────── */
+    --surface-base: #f4f4f6;          /* outermost app background */
+    --surface-1: #fafafa;             /* main content surface */
+    --surface-2: #ffffff;             /* cards, sheets */
+    --surface-3: #ffffff;             /* raised overlays, modals */
+    --surface-glass: rgba(255, 255, 255, 0.82);
+    --surface-overlay: rgba(15, 23, 42, 0.45);
+    --surface-hover: #f1f1f3;
+    --surface-selected: #ebebee;
+    --surface-input: #ffffff;
 
-    --border-subtle: #222222;
-    --border-default: #2e2e2e;
-    --border-strong: #3d3d3d;
+    /* ────────── BORDERS ──────────────────────────────────────────── */
+    --border-subtle: #e7e7ea;
+    --border-default: #d4d4d8;
+    --border-strong: #a1a1aa;
+    --border-focus: #4f46e5;
 
-    --text-primary: #ededed;
-    --text-secondary: #888888;
-    --text-tertiary: #555555;
-    --text-disabled: #333333;
+    /* ────────── TEXT ─────────────────────────────────────────────── */
+    --text-primary: #18181b;
+    --text-secondary: #52525b;
+    --text-tertiary: #71717a;
+    --text-disabled: #a1a1aa;
+    --text-on-accent: #ffffff;
+    --text-on-status: #ffffff;
 
-    --brand-accent: #3b82f6;
-    --accent-subtle: #1e3a5f;
-    --accent-hover: #2563eb;
+    /* ────────── ACCENT (indigo for default; role-tinted) ─────────── */
+    --brand-accent: #4f46e5;          /* indigo-600 */
+    --accent-subtle: #eef2ff;         /* indigo-50 */
+    --accent-hover: #4338ca;          /* indigo-700 */
 
-    --status-success: #22c55e;
-    --status-success-bg: #052e16;
-    --status-warning: #f59e0b;
-    --status-warning-bg: #2d1f00;
-    --status-error: #ef4444;
-    --status-error-bg: #2d0a0a;
-    --status-neutral: #6b7280;
-    --status-neutral-bg: #1a1a1a;
-    --status-info: #3b82f6;
-    --status-info-bg: #1e3a5f;
+    --accent-role-sm: #0d9488;        /* teal-600 */
+    --accent-role-ops: #4f46e5;       /* indigo-600 */
+    --accent-role-finance: #7c3aed;   /* violet-600 */
 
-    /* shadcn semantic mapping */
-    --background: var(--bg-base);
+    /* ────────── STATUS (each: fg + bg + border + strong-bg) ──────── */
+    --status-success: #16a34a;
+    --status-success-bg: #dcfce7;
+    --status-success-border: #86efac;
+    --status-success-strong-bg: #16a34a;
+    --status-warning: #b45309;
+    --status-warning-bg: #fef3c7;
+    --status-warning-border: #fcd34d;
+    --status-warning-strong-bg: #b45309;
+    --status-error: #b91c1c;
+    --status-error-bg: #fee2e2;
+    --status-error-border: #fca5a5;
+    --status-error-strong-bg: #b91c1c;
+    --status-info: #1d4ed8;
+    --status-info-bg: #dbeafe;
+    --status-info-border: #93c5fd;
+    --status-info-strong-bg: #1d4ed8;
+    --status-neutral: #52525b;
+    --status-neutral-bg: #f4f4f5;
+    --status-neutral-border: #d4d4d8;
+    --status-neutral-strong-bg: #52525b;
+
+    /* ────────── ELEVATION ────────────────────────────────────────── */
+    --shadow-1: 0 1px 2px 0 rgba(15, 23, 42, 0.05), 0 1px 3px 0 rgba(15, 23, 42, 0.04);
+    --shadow-2: 0 4px 8px -2px rgba(15, 23, 42, 0.08), 0 2px 4px -2px rgba(15, 23, 42, 0.06);
+    --shadow-3: 0 16px 48px -12px rgba(15, 23, 42, 0.18), 0 6px 16px -8px rgba(15, 23, 42, 0.12);
+    --shadow-focus: 0 0 0 3px color-mix(in srgb, var(--brand-accent) 28%, transparent);
+
+    /* ────────── RADIUS ───────────────────────────────────────────── */
+    --radius: 0.625rem;               /* 10px — softer than before */
+    --radius-xs: 4px;
+    --radius-sm: 6px;
+    --radius-md: 8px;
+    --radius-lg: 10px;
+    --radius-xl: 14px;
+    --radius-2xl: 16px;
+
+    /* ────────── GRADIENTS ────────────────────────────────────────── */
+    --gradient-shell:
+      radial-gradient(ellipse 80% 60% at 0% 0%, color-mix(in srgb, var(--brand-accent) 6%, transparent), transparent 50%),
+      radial-gradient(ellipse 60% 50% at 100% 100%, color-mix(in srgb, var(--accent-role-finance) 5%, transparent), transparent 50%),
+      var(--surface-base);
+    --gradient-accent: linear-gradient(135deg, var(--brand-accent) 0%, color-mix(in srgb, var(--brand-accent) 85%, #6366f1) 100%);
+    --gradient-sidebar:
+      linear-gradient(180deg, color-mix(in srgb, var(--surface-2) 96%, var(--brand-accent)) 0%, var(--surface-2) 100%);
+
+    /* ────────── SPACING ──────────────────────────────────────────── */
+    --space-page: 2rem;
+    --space-section: 1.5rem;
+
+    /* ────────── MOTION ───────────────────────────────────────────── */
+    --duration-fast: 120ms;
+    --duration: 180ms;
+    --duration-slow: 280ms;
+    --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+    --ease-emphasized: cubic-bezier(0.2, 0, 0, 1);
+
+    /* ────────── LEGACY tokens (kept for unmigrated components) ───── */
+    --bg-app: var(--surface-base);
+    --bg-base: var(--surface-1);
+    --bg-elevated: var(--surface-2);
+    --bg-hover: var(--surface-hover);
+    --bg-selected: var(--surface-selected);
+    --bg-input: var(--surface-input);
+
+    /* ────────── shadcn semantic mapping ──────────────────────────── */
+    --background: var(--surface-base);
     --foreground: var(--text-primary);
-    --card: var(--bg-elevated);
+    --card: var(--surface-1);
     --card-foreground: var(--text-primary);
-    --popover: var(--bg-elevated);
+    --popover: var(--surface-2);
     --popover-foreground: var(--text-primary);
     --primary: var(--brand-accent);
-    --primary-foreground: #ffffff;
-    --secondary: var(--bg-selected);
+    --primary-foreground: var(--text-on-accent);
+    --secondary: var(--surface-selected);
     --secondary-foreground: var(--text-primary);
-    --muted: var(--bg-hover);
+    --muted: var(--surface-hover);
     --muted-foreground: var(--text-secondary);
-    --accent: var(--bg-hover);
+    --accent: var(--surface-hover);
     --accent-foreground: var(--text-primary);
     --destructive: var(--status-error);
     --border: var(--border-default);
-    --input: var(--bg-input);
+    --input: var(--surface-input);
     --ring: var(--brand-accent);
-    --radius: 0.5rem;
 
-    --sidebar: var(--bg-elevated);
+    --sidebar: var(--surface-1);
     --sidebar-foreground: var(--text-primary);
     --sidebar-primary: var(--brand-accent);
-    --sidebar-primary-foreground: #ffffff;
-    --sidebar-accent: var(--bg-selected);
+    --sidebar-primary-foreground: var(--text-on-accent);
+    --sidebar-accent: var(--surface-selected);
+    --sidebar-accent-foreground: var(--text-primary);
+    --sidebar-border: var(--border-subtle);
+    --sidebar-ring: var(--brand-accent);
+  }
+
+  .dark {
+    /* ────────── SURFACES (dark) ──────────────────────────────────── */
+    --surface-base: #0b0b10;
+    --surface-1: #111118;
+    --surface-2: #161620;
+    --surface-3: #1c1c28;
+    --surface-overlay: rgba(0, 0, 0, 0.6);
+    --surface-hover: #1f1f2b;
+    --surface-selected: #25253a;
+    --surface-input: #14141d;
+    --surface-glass: rgba(17, 17, 24, 0.78);
+
+    /* ────────── BORDERS ──────────────────────────────────────────── */
+    --border-subtle: #1f1f2b;
+    --border-default: #2a2a3a;
+    --border-strong: #3a3a4f;
+    --border-focus: #818cf8;
+
+    /* ────────── TEXT ─────────────────────────────────────────────── */
+    --text-primary: #f5f5f7;
+    --text-secondary: #a1a1aa;
+    --text-tertiary: #71717a;
+    --text-disabled: #52525b;
+    --text-on-accent: #ffffff;
+    --text-on-status: #ffffff;
+
+    /* ────────── ACCENT (indigo) ──────────────────────────────────── */
+    --brand-accent: #818cf8;          /* indigo-400 — lifts against dark */
+    --accent-subtle: rgba(99, 102, 241, 0.18);
+    --accent-hover: #a5b4fc;
+
+    --accent-role-sm: #2dd4bf;        /* teal-400 */
+    --accent-role-ops: #818cf8;       /* indigo-400 */
+    --accent-role-finance: #c4b5fd;   /* violet-300 */
+
+    /* ────────── STATUS ───────────────────────────────────────────── */
+    --status-success: #4ade80;
+    --status-success-bg: rgba(34, 197, 94, 0.14);
+    --status-success-border: rgba(74, 222, 128, 0.32);
+    --status-success-strong-bg: #16a34a;
+    --status-warning: #fbbf24;
+    --status-warning-bg: rgba(245, 158, 11, 0.14);
+    --status-warning-border: rgba(251, 191, 36, 0.32);
+    --status-warning-strong-bg: #b45309;
+    --status-error: #f87171;
+    --status-error-bg: rgba(239, 68, 68, 0.14);
+    --status-error-border: rgba(248, 113, 113, 0.32);
+    --status-error-strong-bg: #b91c1c;
+    --status-info: #60a5fa;
+    --status-info-bg: rgba(59, 130, 246, 0.14);
+    --status-info-border: rgba(96, 165, 250, 0.32);
+    --status-info-strong-bg: #1d4ed8;
+    --status-neutral: #a1a1aa;
+    --status-neutral-bg: rgba(161, 161, 170, 0.12);
+    --status-neutral-border: rgba(161, 161, 170, 0.32);
+    --status-neutral-strong-bg: #52525b;
+
+    /* ────────── ELEVATION ────────────────────────────────────────── */
+    --shadow-1: 0 1px 2px 0 rgba(0, 0, 0, 0.3), 0 1px 3px 0 rgba(0, 0, 0, 0.2);
+    --shadow-2: 0 4px 8px -2px rgba(0, 0, 0, 0.4), 0 2px 4px -2px rgba(0, 0, 0, 0.3);
+    --shadow-3: 0 16px 48px -12px rgba(0, 0, 0, 0.55), 0 6px 16px -8px rgba(0, 0, 0, 0.4);
+    --shadow-focus: 0 0 0 3px color-mix(in srgb, var(--brand-accent) 36%, transparent);
+
+    --radius-2xl: 16px;
+
+    --gradient-shell:
+      radial-gradient(ellipse 70% 50% at 0% 0%, color-mix(in srgb, var(--brand-accent) 10%, transparent), transparent 45%),
+      radial-gradient(ellipse 50% 40% at 100% 100%, color-mix(in srgb, var(--accent-role-finance) 8%, transparent), transparent 45%),
+      var(--surface-base);
+    --gradient-accent: linear-gradient(135deg, var(--brand-accent) 0%, color-mix(in srgb, var(--brand-accent) 80%, #a5b4fc) 100%);
+    --gradient-sidebar:
+      linear-gradient(180deg, color-mix(in srgb, var(--surface-1) 92%, var(--brand-accent)) 0%, var(--surface-1) 100%);
+
+    --space-page: 2rem;
+    --space-section: 1.5rem;
+
+    /* ────────── LEGACY tokens ────────────────────────────────────── */
+    --bg-app: var(--surface-base);
+    --bg-base: var(--surface-1);
+    --bg-elevated: var(--surface-2);
+    --bg-hover: var(--surface-hover);
+    --bg-selected: var(--surface-selected);
+    --bg-input: var(--surface-input);
+
+    /* ────────── shadcn semantic mapping ──────────────────────────── */
+    --background: var(--surface-base);
+    --foreground: var(--text-primary);
+    --card: var(--surface-2);
+    --card-foreground: var(--text-primary);
+    --popover: var(--surface-3);
+    --popover-foreground: var(--text-primary);
+    --primary: var(--brand-accent);
+    --primary-foreground: #0b0b10;
+    --secondary: var(--surface-selected);
+    --secondary-foreground: var(--text-primary);
+    --muted: var(--surface-hover);
+    --muted-foreground: var(--text-secondary);
+    --accent: var(--surface-hover);
+    --accent-foreground: var(--text-primary);
+    --destructive: var(--status-error);
+    --border: var(--border-default);
+    --input: var(--surface-input);
+    --ring: var(--brand-accent);
+
+    --sidebar: var(--surface-1);
+    --sidebar-foreground: var(--text-primary);
+    --sidebar-primary: var(--brand-accent);
+    --sidebar-primary-foreground: #0b0b10;
+    --sidebar-accent: var(--surface-selected);
     --sidebar-accent-foreground: var(--text-primary);
     --sidebar-border: var(--border-subtle);
     --sidebar-ring: var(--brand-accent);
@@ -90,12 +303,17 @@
   }
 
   *:focus-visible {
-    outline: 2px solid color-mix(in srgb, var(--brand-accent) 50%, transparent);
-    outline-offset: 2px;
+    outline: none;
+    box-shadow: var(--shadow-focus);
+    border-radius: inherit;
   }
 
   html {
     @apply font-sans antialiased;
+    color-scheme: light dark;
+  }
+
+  html.dark {
     color-scheme: dark;
   }
 
@@ -103,20 +321,39 @@
     @apply bg-background text-foreground text-sm leading-normal;
     background-color: var(--bg-app);
   }
+
+  /* Honour reduced motion via single switch on durations. */
+  @media (prefers-reduced-motion: reduce) {
+    :root,
+    .dark {
+      --duration-fast: 0.01ms;
+      --duration: 0.01ms;
+      --duration-slow: 0.01ms;
+    }
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
 }
 
-/* Sonner — bottom-right, accent bar, no icons (design system) */
+/* ──────────────────────── Sonner ──────────────────────────────────── */
+
 [data-sonner-toaster][data-y-position="bottom"] {
-  --width: 360px;
+  --width: 380px;
 }
 
 [data-sonner-toast].ds-toast {
-  background: var(--bg-elevated) !important;
-  border: 1px solid var(--border-default) !important;
-  border-radius: 8px !important;
-  box-shadow: 0 8px 24px rgb(0 0 0 / 0.4) !important;
+  background: var(--surface-2) !important;
+  border: 1px solid var(--border-subtle) !important;
+  border-radius: var(--radius) !important;
+  box-shadow: var(--shadow-2) !important;
   color: var(--text-primary) !important;
   font-size: 13px !important;
+  padding: 12px 14px !important;
 }
 
 [data-sonner-toast].ds-toast[data-type="success"] {
@@ -131,6 +368,6 @@
   border-left: 3px solid var(--status-warning) !important;
 }
 
-[data-sonner-toast].ds-toast [data-icon] {
-  display: none !important;
+[data-sonner-toast].ds-toast[data-type="info"] {
+  border-left: 3px solid var(--status-info) !important;
 }

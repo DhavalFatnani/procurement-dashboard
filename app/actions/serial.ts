@@ -1,13 +1,43 @@
 "use server";
 
-import { PRStatus, Role } from "@prisma/client";
-import { revalidatePath } from "next/cache";
+import { PRStatus, Role, SerialSeries } from "@prisma/client";
+import { revalidatePath, revalidateTag } from "next/cache";
+
+import type { MutationResult } from "@/lib/action-result";
+import { revalidateDashboardMetrics } from "@/lib/revalidate-tags";
 
 import { newPurchaseRequestId } from "@/lib/ids";
 import { prisma } from "@/lib/prisma";
+import {
+  getSerialActivity as getSerialActivityQuery,
+  getSerialGovernanceFilterOptions as getSerialGovernanceFilterOptionsQuery,
+  getSeriesConfigsForAdvanced as getSeriesConfigsForAdvancedQuery,
+  getWarehouseSeriesSnapshot as getWarehouseSeriesSnapshotQuery,
+  searchSerialNumber as searchSerialNumberQuery,
+  type SerialActivityFilters,
+} from "@/lib/queries/serial";
 import { assertPRStatusTransition } from "@/lib/prStatus";
+import {
+  computeNextRangeStart,
+  formatSerialNumberForSeries,
+  getSeriesDisplayName,
+  resolveSeriesCeiling,
+  validateInternalPrintQuantity,
+  validReservationsForSeriesWhere,
+} from "@/lib/serial-series";
 import { atomicReserveSerialRange } from "@/lib/serialReservation";
 import { requireRoles } from "@/lib/server-action-guard";
+import { userCanActForWarehouse } from "@/lib/warehouse-scope";
+
+export type {
+  SerialActivityFilters,
+  SerialActivityRow,
+  SerialSearchResult,
+  SeriesConfigSummary,
+  WarehouseSeriesSnapshot,
+} from "@/lib/queries/serial";
+
+const WAREHOUSE_SCOPE_ERROR = "You cannot reserve serials for this warehouse.";
 
 export async function getSerialSeriesHint(subcategoryId: string) {
   await requireRoles([Role.SM, Role.OPS_HEAD]);
@@ -20,20 +50,33 @@ export async function getSerialSeriesHint(subcategoryId: string) {
   }
 
   const latest = await prisma.serialReservation.findFirst({
-    where: { series: sub.series },
+    where: validReservationsForSeriesWhere(sub.series),
     orderBy: { rangeEnd: "desc" },
   });
 
   const lastEnd = latest?.rangeEnd ?? null;
-  const nextStart = lastEnd != null ? lastEnd + BigInt(1) : null;
+  const nextStart = computeNextRangeStart(sub.series, lastEnd);
 
   return {
     categoryName: sub.category.name,
     series: sub.series,
+    seriesName: getSeriesDisplayName(sub.series),
     executionType: sub.executionType,
-    lastRangeEnd: lastEnd?.toString() ?? null,
-    nextStart: nextStart?.toString() ?? null,
+    lastRangeEnd: lastEnd != null ? formatSerialNumberForSeries(sub.series, lastEnd) : null,
+    nextStart: formatSerialNumberForSeries(sub.series, nextStart),
   };
+}
+
+/** Reserve serial range for a PR print execution (Prompt 5.1). */
+export async function reserveSerialRange(input: {
+  prId?: string;
+  categoryId: string;
+  subcategoryId: string;
+  quantity: number;
+  warehouseId: string;
+  idempotencyKey: string;
+}): Promise<{ ok: boolean; prId?: string; reservationId?: string; error?: string }> {
+  return reserveSerialRangeForPR(input);
 }
 
 export async function reserveSerialRangeForPR(input: {
@@ -46,9 +89,21 @@ export async function reserveSerialRangeForPR(input: {
 }): Promise<{ ok: boolean; prId?: string; reservationId?: string; error?: string }> {
   const user = await requireRoles([Role.SM, Role.OPS_HEAD]);
 
+  if (!userCanActForWarehouse(user, input.warehouseId)) {
+    return { ok: false, error: WAREHOUSE_SCOPE_ERROR };
+  }
+
   const sub = await prisma.subcategory.findUnique({ where: { id: input.subcategoryId } });
   if (!sub?.series) {
     return { ok: false, error: "Subcategory has no serial series." };
+  }
+
+  const quantityError = validateInternalPrintQuantity(
+    input.quantity,
+    sub.executionType,
+  );
+  if (quantityError) {
+    return { ok: false, error: quantityError };
   }
 
   let prId = input.prId;
@@ -64,6 +119,14 @@ export async function reserveSerialRangeForPR(input: {
         executionType: sub.executionType,
         status: PRStatus.DRAFT,
         createdById: user.id,
+        lines: {
+          create: {
+            lineNumber: 1,
+            categoryId: input.categoryId,
+            subcategoryId: input.subcategoryId,
+            quantity: input.quantity,
+          },
+        },
       },
     });
   }
@@ -100,6 +163,8 @@ export async function reserveSerialRangeForPR(input: {
   revalidatePath("/purchase-requests");
   revalidatePath(`/purchase-requests/${prId}`);
   revalidatePath("/serial-governance");
+  revalidatePath("/dashboard");
+  revalidateDashboardMetrics();
 
   return { ok: true, prId, reservationId: result.reservation.id };
 }
@@ -153,4 +218,77 @@ export async function generateSerialLabelTxt(reservationId: string): Promise<str
     nums.push(n.toString());
   }
   return nums.join("\t");
+}
+
+export async function getSerialActivity(filters: SerialActivityFilters) {
+  await requireRoles([Role.SM, Role.OPS_HEAD]);
+  return getSerialActivityQuery(filters);
+}
+
+export async function getWarehouseSeriesSnapshot(ensureWarehouseIds?: string[]) {
+  await requireRoles([Role.SM, Role.OPS_HEAD]);
+  return getWarehouseSeriesSnapshotQuery({ ensureWarehouseIds });
+}
+
+export async function getSeriesConfigsForAdvanced() {
+  await requireRoles([Role.OPS_HEAD]);
+  return getSeriesConfigsForAdvancedQuery();
+}
+
+export async function searchSerialNumber(serialNumber: string) {
+  await requireRoles([Role.SM, Role.OPS_HEAD]);
+  return searchSerialNumberQuery(serialNumber);
+}
+
+export async function getSerialGovernanceFilterOptions() {
+  await requireRoles([Role.SM, Role.OPS_HEAD]);
+  return getSerialGovernanceFilterOptionsQuery();
+}
+
+export async function updateSeriesConfig(
+  series: SerialSeries,
+  config: {
+    ceilingNumber: string;
+  },
+): Promise<MutationResult> {
+  const user = await requireRoles([Role.OPS_HEAD]);
+
+  let ceilingNumber: bigint;
+  try {
+    ceilingNumber = BigInt(config.ceilingNumber.trim());
+  } catch {
+    return { ok: false, message: "Invalid ceiling number." };
+  }
+  if (ceilingNumber <= BigInt(0)) {
+    return { ok: false, message: "Ceiling must be greater than zero." };
+  }
+
+  const resolved = resolveSeriesCeiling(series, ceilingNumber);
+  if (resolved !== ceilingNumber) {
+    return {
+      ok: false,
+      message: "Ceiling must be at or above the series start number.",
+    };
+  }
+
+  await prisma.seriesConfig.upsert({
+    where: { series },
+    update: {
+      ceilingNumber,
+      configuredById: user.id,
+      configuredAt: new Date(),
+    },
+    create: {
+      series,
+      inactivityThresholdDays: 30,
+      ceilingAlertPct: 80,
+      ceilingNumber,
+      configuredById: user.id,
+    },
+  });
+
+  revalidateTag("series-configs");
+  revalidatePath("/serial-governance");
+
+  return { ok: true };
 }

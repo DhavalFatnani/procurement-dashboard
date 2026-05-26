@@ -13,11 +13,13 @@ This is a serious operational tool. Every screen must be fast, information-dense
 
 ## DESIGN DIRECTION
 
-**Reference:** Linear + Supabase dashboard. Steal Linear's interaction speed, keyboard philosophy, and information density. Steal Supabase's neutral gray palette, clean data presentation, and developer-grade precision.
+**Reference:** Modern SaaS (Notion, Stripe dashboard) with Linear-grade interaction speed and keyboard philosophy. Airy spacing, soft layered surfaces, subtle ambient gradients, rounded-2xl cards, and tinted icon badges — while preserving information density for daily ops work.
 
-**Tone:** Industrial minimal. No gradients on hero sections, no illustrations, no decorative elements that don't carry information. Every pixel either communicates something or creates breathing room for something that does.
+**Tone:** Polished and interactive. Subtle gradients on shell backgrounds and hero strips; micro-motion on hover, press, and route transitions. Motion enhances feedback — never blocks work. Respect `prefers-reduced-motion`.
 
-**The one thing to remember:** This tool should feel like it was built by engineers who deeply respect the people using it — not designed to impress, designed to disappear so the work can happen.
+**Theme:** Light and dark modes via `next-themes`. Indigo primary accent; role tints (teal SM, indigo Ops, violet Finance) for sidebar strip and role-specific UI.
+
+**The one thing to remember:** This tool should feel premium and responsive to use — built for hours of daily work with clear hierarchy, click-through metrics, and consistent detail-page anatomy.
 
 ---
 

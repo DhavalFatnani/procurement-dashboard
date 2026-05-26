@@ -1,0 +1,24 @@
+flowchart LR
+    createInv[createInvoice link PO and GRNs] --> match[computeInvoiceMatch]
+    match --> within{Within 2.5 pct?}
+    within -->|Yes| matched[MATCHED]
+    within -->|No| mismatch[MISMATCH]
+
+    mismatch --> payBlock[FINANCE payment blocked]
+    payBlock --> ovr[OPS overrideInvoiceMatch]
+    ovr --> ovrOk[OVERRIDE_ACCEPTED]
+    ovrOk --> payOk[FINANCE updatePayment]
+
+    matched --> payOk
+    payOk --> poEval[evaluatePOClosure on PO]
+
+    style createInv fill:#DAE8FC,stroke:#007AD2
+    style match fill:#F0F0F0,stroke:#666666
+    style matched fill:#CDF4D3,stroke:#66D575
+    style mismatch fill:#FFCDC2,stroke:#FF7556
+    style payBlock fill:#FFCDC2,stroke:#FF7556
+    style ovr fill:#E8DAFF,stroke:#7B61FF
+    style ovrOk fill:#FFECBD,stroke:#FFC943
+    style payOk fill:#D5F5E3,stroke:#0E7A3E
+    style within fill:#FFF9C4,stroke:#E8A302
+    style poEval fill:#F0F0F0,stroke:#666666

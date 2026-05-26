@@ -1,27 +1,12 @@
-import { DashboardShell } from "@/components/dashboard/DashboardShell";
-import { checkRole } from "@/lib/auth";
-import { getNavItemsForRole, ROLE_LABELS } from "@/lib/navigation";
+import { Suspense } from "react";
 
-export default async function DashboardLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  const user = await checkRole([]);
-  const displayName =
-    (typeof user.user_metadata?.name === "string" && user.user_metadata.name) ||
-    user.email ||
-    "User";
-  const navItems = getNavItemsForRole(user.role);
+import { DashboardLayoutFallback } from "@/components/dashboard/DashboardLayoutFallback";
+import { DashboardLayoutShell } from "@/components/dashboard/DashboardLayoutShell";
 
+export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
-    <DashboardShell
-      displayName={displayName}
-      role={user.role}
-      roleLabel={ROLE_LABELS[user.role]}
-      navItems={navItems}
-    >
-      {children}
-    </DashboardShell>
+    <Suspense fallback={<DashboardLayoutFallback />}>
+      <DashboardLayoutShell>{children}</DashboardLayoutShell>
+    </Suspense>
   );
 }

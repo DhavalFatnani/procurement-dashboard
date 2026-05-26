@@ -111,6 +111,8 @@ model User {
 
   warehouse Warehouse @relation(fields: [warehouseId], references: [id])
 
+  warehouseAssignments UserWarehouse[]
+
   vendorsCreated            Vendor[]            @relation("VendorCreatedBy")
   vendorChangeLogs          VendorChangeLog[]
   vendorRequestsRequested   VendorRequest[]     @relation("VendorRequestRequestedBy")
@@ -133,9 +135,21 @@ model Warehouse {
   location  String
   createdAt DateTime @default(now())
 
-  users             User[]
-  purchaseRequests  PurchaseRequest[]
+  users              User[]
+  userAssignments    UserWarehouse[]
+  purchaseRequests   PurchaseRequest[]
   serialReservations SerialReservation[]
+}
+
+model UserWarehouse {
+  userId      String
+  warehouseId String
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+
+  @@id([userId, warehouseId])
+  @@index([warehouseId])
 }
 
 model Vendor {
@@ -157,14 +171,18 @@ model Vendor {
   createdAt            DateTime     @default(now())
   updatedAt            DateTime     @updatedAt
 
-  createdBy User    @relation("VendorCreatedBy", fields: [createdById], references: [id])
-  similarTo Vendor? @relation("VendorSimilarity", fields: [similarVendorId], references: [id])
+  createdBy User     @relation("VendorCreatedBy", fields: [createdById], references: [id])
+  similarTo Vendor?  @relation("VendorSimilarity", fields: [similarVendorId], references: [id])
   similarOf Vendor[] @relation("VendorSimilarity")
 
-  purchaseOrders           PurchaseOrder[]
-  vendorChangeLogs         VendorChangeLog[]
-  vendorRequestsActivated  VendorRequest[] @relation("VendorRequestActivatedVendor")
-  purchaseRequests         PurchaseRequest[]
+  purchaseOrders          PurchaseOrder[]
+  vendorChangeLogs        VendorChangeLog[]
+  vendorRequestsActivated VendorRequest[]   @relation("VendorRequestActivatedVendor")
+  purchaseRequests        PurchaseRequest[]
+
+  @@index([status])
+  @@index([updatedAt])
+  @@index([createdById])
 }
 
 model VendorChangeLog {
@@ -179,6 +197,9 @@ model VendorChangeLog {
 
   vendor    Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   changedBy User   @relation(fields: [changedById], references: [id])
+
+  @@index([vendorId])
+  @@index([changedById])
 }
 
 model VendorRequest {
@@ -196,60 +217,97 @@ model VendorRequest {
   createdAt         DateTime            @default(now())
   updatedAt         DateTime            @updatedAt
 
-  requestedBy     User               @relation("VendorRequestRequestedBy", fields: [requestedById], references: [id])
-  reviewedBy      User?              @relation("VendorRequestReviewedBy", fields: [reviewedById], references: [id])
-  linkedPR        PurchaseRequest?   @relation("VendorRequestLinkedPR", fields: [linkedPRId], references: [id])
-  activatedVendor Vendor?            @relation("VendorRequestActivatedVendor", fields: [activatedVendorId], references: [id])
-  purchaseRequest PurchaseRequest?  @relation("PurchaseRequestVendorRequest")
+  requestedBy     User             @relation("VendorRequestRequestedBy", fields: [requestedById], references: [id])
+  reviewedBy      User?            @relation("VendorRequestReviewedBy", fields: [reviewedById], references: [id])
+  linkedPR        PurchaseRequest? @relation("VendorRequestLinkedPR", fields: [linkedPRId], references: [id])
+  activatedVendor Vendor?          @relation("VendorRequestActivatedVendor", fields: [activatedVendorId], references: [id])
+  purchaseRequest PurchaseRequest? @relation("PurchaseRequestVendorRequest")
+
+  @@index([status])
 }
 
 model Category {
-  id     String @id @default(cuid())
-  name   String
+  id   String @id @default(cuid())
+  name String
 
-  subcategories    Subcategory[]
-  purchaseRequests PurchaseRequest[]
+  subcategories         Subcategory[]
+  purchaseRequests      PurchaseRequest[]
+  purchaseRequestLines  PurchaseRequestLine[]
+  purchaseOrderLines    PurchaseOrderLine[]
 }
 
 model Subcategory {
-  id             String          @id @default(cuid())
-  categoryId     String
-  name           String
-  series         SerialSeries?
-  executionType  ExecutionType
+  id            String        @id @default(cuid())
+  categoryId    String
+  name          String
+  series        SerialSeries?
+  executionType ExecutionType
 
-  category         Category          @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  purchaseRequests PurchaseRequest[]
+  category              Category               @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  purchaseRequests      PurchaseRequest[]
+  purchaseRequestLines  PurchaseRequestLine[]
+  purchaseOrderLines    PurchaseOrderLine[]
 }
 
 /// Human-facing id: use prefix `PR-` in application (e.g. `PR-${cuid()}`) when creating rows.
 model PurchaseRequest {
-  id              String          @id
-  categoryId      String
-  subcategoryId   String
-  quantity        Int
+  id              String        @id
+  /// Legacy header fields — prefer `lines`. Kept for internal-print single-item rows.
+  categoryId      String?
+  subcategoryId   String?
+  quantity        Int?
   warehouseId     String
   vendorId        String?
   executionType   ExecutionType
-  status          PRStatus        @default(DRAFT)
-  currentVersion  Int             @default(1)
-  revisionCount   Int             @default(0)
-  vendorRequestId String?         @unique
+  status          PRStatus      @default(DRAFT)
+  currentVersion  Int           @default(1)
+  revisionCount   Int           @default(0)
+  vendorRequestId String?       @unique
   createdById     String
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
 
-  category      Category        @relation(fields: [categoryId], references: [id])
-  subcategory   Subcategory     @relation(fields: [subcategoryId], references: [id])
-  warehouse     Warehouse       @relation(fields: [warehouseId], references: [id])
-  vendor        Vendor?         @relation(fields: [vendorId], references: [id])
-  vendorRequest VendorRequest?  @relation("PurchaseRequestVendorRequest", fields: [vendorRequestId], references: [id])
-  createdBy     User            @relation(fields: [createdById], references: [id])
+  category      Category?      @relation(fields: [categoryId], references: [id])
+  subcategory   Subcategory?   @relation(fields: [subcategoryId], references: [id])
+  warehouse     Warehouse      @relation(fields: [warehouseId], references: [id])
+  vendor        Vendor?        @relation(fields: [vendorId], references: [id])
+  vendorRequest VendorRequest? @relation("PurchaseRequestVendorRequest", fields: [vendorRequestId], references: [id])
+  createdBy     User           @relation(fields: [createdById], references: [id])
 
-  linkedVendorRequests VendorRequest[] @relation("VendorRequestLinkedPR")
+  lines                PurchaseRequestLine[]
+  linkedVendorRequests VendorRequest[]       @relation("VendorRequestLinkedPR")
   versions             PRVersion[]
   purchaseOrder        PurchaseOrder?
   serialReservation    SerialReservation?
+
+  @@index([status])
+  @@index([warehouseId, status])
+  @@index([createdAt])
+  @@index([executionType, status])
+  @@index([createdById])
+  @@index([categoryId])
+  @@index([subcategoryId])
+  @@index([vendorId])
+}
+
+model PurchaseRequestLine {
+  id            String  @id @default(cuid())
+  prId          String
+  lineNumber    Int
+  categoryId    String
+  subcategoryId String
+  quantity      Int
+  notes         String?
+
+  purchaseRequest PurchaseRequest @relation(fields: [prId], references: [id], onDelete: Cascade)
+  category        Category        @relation(fields: [categoryId], references: [id])
+  subcategory     Subcategory     @relation(fields: [subcategoryId], references: [id])
+  purchaseOrderLine PurchaseOrderLine?
+
+  @@unique([prId, lineNumber])
+  @@index([prId])
+  @@index([categoryId])
+  @@index([subcategoryId])
 }
 
 model PRVersion {
@@ -263,6 +321,8 @@ model PRVersion {
 
   pr        PurchaseRequest @relation(fields: [prId], references: [id], onDelete: Cascade)
   changedBy User            @relation(fields: [changedById], references: [id])
+
+  @@index([prId])
 }
 
 /// Human-facing id: use prefix `PO-` when creating rows.
@@ -270,7 +330,8 @@ model PurchaseOrder {
   id               String    @id
   prId             String    @unique
   vendorId         String
-  orderedQty       Int
+  /// Legacy totals — prefer summing `lines`. Kept for list queries during transition.
+  orderedQty       Int?
   unitPrice        Decimal?  @db.Decimal(18, 4)
   status           POStatus  @default(OPEN)
   expectedDelivery DateTime?
@@ -284,31 +345,78 @@ model PurchaseOrder {
   vendor          Vendor          @relation(fields: [vendorId], references: [id])
   forceClosedBy   User?           @relation("POForceClosedBy", fields: [forceClosedById], references: [id])
 
-  grns               GoodsReceipt[]
-  invoices           Invoice[]
-  serialReservation  SerialReservation?
+  lines             PurchaseOrderLine[]
+  grns              GoodsReceipt[]
+  invoices          Invoice[]
+  serialReservation SerialReservation?
+
+  @@index([status])
+  @@index([vendorId])
+  @@index([createdAt])
+  @@index([status, createdAt])
+}
+
+model PurchaseOrderLine {
+  id            String  @id @default(cuid())
+  poId          String
+  prLineId      String  @unique
+  categoryId    String
+  subcategoryId String
+  orderedQty    Int
+  unitPrice     Decimal @db.Decimal(18, 4)
+
+  purchaseOrder   PurchaseOrder       @relation(fields: [poId], references: [id], onDelete: Cascade)
+  prLine          PurchaseRequestLine @relation(fields: [prLineId], references: [id])
+  category        Category            @relation(fields: [categoryId], references: [id])
+  subcategory     Subcategory         @relation(fields: [subcategoryId], references: [id])
+  goodsReceiptLines GoodsReceiptLine[]
+
+  @@index([poId])
+  @@index([categoryId])
+  @@index([subcategoryId])
 }
 
 model GoodsReceipt {
-  id               String    @id @default(cuid())
-  poId             String
-  receivedQty      Int
-  acceptedQty      Int
-  disputedQty      Int       @default(0)
-  receivedById     String
-  receivedAt       DateTime  @default(now())
-  deliveryNoteRef  String?
-  createdAt        DateTime  @default(now())
+  id              String   @id @default(cuid())
+  poId            String
+  receivedQty     Int
+  acceptedQty     Int
+  disputedQty     Int      @default(0)
+  receivedById    String
+  receivedAt      DateTime @default(now())
+  deliveryNoteRef String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @default(now()) @updatedAt
 
   purchaseOrder PurchaseOrder @relation(fields: [poId], references: [id], onDelete: Cascade)
   receivedBy    User          @relation(fields: [receivedById], references: [id])
 
   exceptions   GRNException[]
   invoiceLinks InvoiceGRNLink[]
+  lines        GoodsReceiptLine[]
+
+  @@index([poId])
+  @@index([receivedAt])
+}
+
+model GoodsReceiptLine {
+  id           String @id @default(cuid())
+  grnId        String
+  poLineId     String
+  receivedQty  Int
+  acceptedQty  Int
+  disputedQty  Int    @default(0)
+
+  goodsReceipt    GoodsReceipt    @relation(fields: [grnId], references: [id], onDelete: Cascade)
+  purchaseOrderLine PurchaseOrderLine @relation(fields: [poLineId], references: [id])
+
+  @@unique([grnId, poLineId])
+  @@index([grnId])
+  @@index([poLineId])
 }
 
 model GRNException {
-  id               String                   @id @default(cuid())
+  id               String                  @id @default(cuid())
   grnId            String
   exceptionType    GRNExceptionType
   exceptionQty     Int
@@ -317,28 +425,31 @@ model GRNException {
   resolvedById     String?
   resolvedAt       DateTime?
   resolutionNote   String?
-  createdAt        DateTime                 @default(now())
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @default(now()) @updatedAt
 
-  grn       GoodsReceipt @relation(fields: [grnId], references: [id], onDelete: Cascade)
-  resolvedBy User?       @relation(fields: [resolvedById], references: [id])
+  grn        GoodsReceipt @relation(fields: [grnId], references: [id], onDelete: Cascade)
+  resolvedBy User?        @relation(fields: [resolvedById], references: [id])
+
+  @@index([grnId])
 }
 
 model Invoice {
-  id             String              @id @default(cuid())
+  id             String             @id @default(cuid())
   poId           String
   invoiceNumber  String
-  amount         Decimal             @db.Decimal(18, 4)
+  amount         Decimal            @db.Decimal(18, 4)
   invoiceDate    DateTime
   fileUrl        String
   uploadedById   String
-  matchStatus    InvoiceMatchStatus  @default(PENDING)
-  expectedAmount Decimal?            @db.Decimal(18, 4)
-  tolerancePct   Decimal             @default(2.5) @db.Decimal(6, 3)
+  matchStatus    InvoiceMatchStatus @default(PENDING)
+  expectedAmount Decimal?           @db.Decimal(18, 4)
+  tolerancePct   Decimal            @default(2.5) @db.Decimal(6, 3)
   overrideById   String?
   overrideReason String?
-  paymentStatus  PaymentStatus       @default(UNPAID)
-  createdAt      DateTime            @default(now())
-  updatedAt      DateTime            @updatedAt
+  paymentStatus  PaymentStatus      @default(UNPAID)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
 
   purchaseOrder PurchaseOrder @relation(fields: [poId], references: [id], onDelete: Cascade)
   uploadedBy    User          @relation("InvoiceUploadedBy", fields: [uploadedById], references: [id])
@@ -348,6 +459,7 @@ model Invoice {
   payments Payment[]
 
   @@unique([poId, invoiceNumber])
+  @@index([createdAt])
 }
 
 model InvoiceGRNLink {
@@ -355,46 +467,55 @@ model InvoiceGRNLink {
   invoiceId String
   grnId     String
 
-  invoice Invoice        @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  grn     GoodsReceipt   @relation(fields: [grnId], references: [id], onDelete: Cascade)
+  invoice Invoice      @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  grn     GoodsReceipt @relation(fields: [grnId], references: [id], onDelete: Cascade)
 
   @@unique([invoiceId, grnId])
+  @@index([grnId])
 }
 
 model Payment {
-  id             String         @id @default(cuid())
+  id             String        @id @default(cuid())
   invoiceId      String
   status         PaymentStatus
+  amount         Decimal?      @db.Decimal(18, 4)
   method         String?
   proofUrl       String?
   transactionRef String?
   paidById       String?
   paidAt         DateTime?
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
 
   invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   paidBy  User?   @relation(fields: [paidById], references: [id])
+
+  @@index([invoiceId])
 }
 
 model SerialReservation {
-  id              String                  @id @default(cuid())
-  series          SerialSeries
-  rangeStart      BigInt
-  rangeEnd        BigInt
-  quantity        Int
-  warehouseId     String
-  status          SerialReservationStatus @default(PENDING)
-  prId            String?                 @unique
-  poId            String?                 @unique
-  idempotencyKey  String                  @unique
-  createdById     String
-  createdAt       DateTime                @default(now())
+  id             String                  @id @default(cuid())
+  series         SerialSeries
+  rangeStart     BigInt
+  rangeEnd       BigInt
+  quantity       Int
+  warehouseId    String
+  status         SerialReservationStatus @default(PENDING)
+  prId           String?                 @unique
+  poId           String?                 @unique
+  idempotencyKey String                  @unique
+  createdById    String
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @default(now()) @updatedAt
 
   warehouse Warehouse        @relation(fields: [warehouseId], references: [id])
   pr        PurchaseRequest? @relation(fields: [prId], references: [id])
   po        PurchaseOrder?   @relation(fields: [poId], references: [id])
   createdBy User             @relation(fields: [createdById], references: [id])
+
+  @@index([series])
+  @@index([warehouseId])
+  @@index([createdById])
 }
 
 model SeriesConfig {
@@ -405,6 +526,7 @@ model SeriesConfig {
   ceilingAlertPct         Int          @default(80)
   configuredById          String
   configuredAt            DateTime     @default(now())
+  updatedAt               DateTime     @default(now()) @updatedAt
 
   configuredBy User @relation(fields: [configuredById], references: [id])
 }

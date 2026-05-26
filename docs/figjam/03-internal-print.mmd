@@ -1,0 +1,20 @@
+flowchart LR
+    newPr[/purchase-requests/new/] --> pick[Pick INTERNAL_PRINT subcategory]
+    pick --> draft[createPR or update DRAFT]
+    draft --> modal[Confirm Print modal]
+    modal --> confirm{Confirm?}
+    confirm -->|No| draft
+    confirm -->|Yes| reserve[reserveSerialRangeForPR]
+    reserve --> atomic[atomicReserveSerialRange]
+    atomic --> ok{Success?}
+    ok -->|No| err[Show error]
+    ok -->|Yes| executed[PR EXECUTED_PRINT]
+    executed --> printPage[/purchase-requests/id/print/]
+    printPage --> export[CSV or label export]
+
+    style newPr fill:#DAE8FC,stroke:#007AD2
+    style reserve fill:#DAE8FC,stroke:#007AD2
+    style atomic fill:#F0F0F0,stroke:#666666
+    style executed fill:#CDF4D3,stroke:#66D575
+    style confirm fill:#FFF9C4,stroke:#E8A302
+    style err fill:#FFCDC2,stroke:#FF7556

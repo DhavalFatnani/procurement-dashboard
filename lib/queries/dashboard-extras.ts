@@ -1,0 +1,204 @@
+import { POStatus, Prisma } from "@prisma/client";
+
+import { prisma } from "@/lib/prisma";
+
+export type POStageDistribution = {
+  status: POStatus;
+  label: string;
+  count: number;
+};
+
+const POSTatusLabels: Record<POStatus, string> = {
+  [POStatus.OPEN]: "Open",
+  [POStatus.PARTIALLY_RECEIVED]: "Partial",
+  [POStatus.FULLY_RECEIVED]: "Received",
+  [POStatus.INVOICED]: "Invoiced",
+  [POStatus.PAID]: "Paid",
+  [POStatus.CLOSED]: "Closed",
+  [POStatus.PARTIALLY_CLOSED]: "Partially closed",
+  [POStatus.FORCE_CLOSED]: "Force closed",
+};
+
+const STAGE_ORDER: POStatus[] = [
+  POStatus.OPEN,
+  POStatus.PARTIALLY_RECEIVED,
+  POStatus.FULLY_RECEIVED,
+  POStatus.INVOICED,
+  POStatus.PAID,
+  POStatus.CLOSED,
+];
+
+export async function getPOStageDistribution(): Promise<POStageDistribution[]> {
+  const rows = await prisma.purchaseOrder.groupBy({
+    by: ["status"],
+    _count: { _all: true },
+  });
+  const map = new Map<POStatus, number>();
+  for (const row of rows) {
+    map.set(row.status, row._count._all);
+  }
+  return STAGE_ORDER.map((status) => ({
+    status,
+    label: POSTatusLabels[status],
+    count: map.get(status) ?? 0,
+  }));
+}
+
+export type RecentActivityItem = {
+  id: string;
+  kind: "pr" | "po" | "grn" | "invoice" | "payment";
+  title: string;
+  actor: string;
+  timestamp: string;
+  href: string;
+};
+
+export async function getRecentActivity(limit = 10): Promise<RecentActivityItem[]> {
+  const [prs, pos, grns, invoices, payments] = await Promise.all([
+    prisma.purchaseRequest.findMany({
+      select: {
+        id: true,
+        updatedAt: true,
+        status: true,
+        createdBy: { select: { name: true } },
+        lines: {
+          orderBy: { lineNumber: "asc" },
+          select: { subcategory: { select: { name: true } } },
+          take: 1,
+        },
+      },
+      orderBy: { updatedAt: "desc" },
+      take: limit,
+    }),
+    prisma.purchaseOrder.findMany({
+      select: {
+        id: true,
+        updatedAt: true,
+        status: true,
+        vendor: { select: { businessName: true } },
+      },
+      orderBy: { updatedAt: "desc" },
+      take: limit,
+    }),
+    prisma.goodsReceipt.findMany({
+      select: {
+        id: true,
+        receivedAt: true,
+        poId: true,
+        receivedBy: { select: { name: true } },
+        purchaseOrder: { select: { vendor: { select: { businessName: true } } } },
+      },
+      orderBy: { receivedAt: "desc" },
+      take: limit,
+    }),
+    prisma.invoice.findMany({
+      select: {
+        id: true,
+        updatedAt: true,
+        invoiceNumber: true,
+        poId: true,
+        purchaseOrder: { select: { vendor: { select: { businessName: true } } } },
+        uploadedBy: { select: { name: true } },
+      },
+      orderBy: { updatedAt: "desc" },
+      take: limit,
+    }),
+    prisma.payment.findMany({
+      where: { amount: { not: null } },
+      select: {
+        id: true,
+        createdAt: true,
+        amount: true,
+        paidBy: { select: { name: true } },
+        invoice: {
+          select: {
+            invoiceNumber: true,
+            purchaseOrder: { select: { id: true, vendor: { select: { businessName: true } } } },
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+      take: limit,
+    }),
+  ]);
+
+  const items: RecentActivityItem[] = [
+    ...prs.map((pr) => ({
+      id: pr.id,
+      kind: "pr" as const,
+      title: `${pr.lines[0]?.subcategory.name ?? "PR"} — ${pr.status.replaceAll("_", " ")}`,
+      actor: pr.createdBy.name,
+      timestamp: pr.updatedAt.toISOString(),
+      href: `/purchase-requests/${pr.id}`,
+    })),
+    ...pos.map((po) => ({
+      id: po.id,
+      kind: "po" as const,
+      title: `${po.vendor.businessName} — ${po.status.replaceAll("_", " ")}`,
+      actor: po.vendor.businessName,
+      timestamp: po.updatedAt.toISOString(),
+      href: `/purchase-orders/${po.id}`,
+    })),
+    ...grns.map((grn) => ({
+      id: grn.id,
+      kind: "grn" as const,
+      title: `GRN — ${grn.purchaseOrder.vendor.businessName}`,
+      actor: grn.receivedBy?.name ?? "System",
+      timestamp: grn.receivedAt.toISOString(),
+      href: `/purchase-orders/${grn.poId}?tab=grns`,
+    })),
+    ...invoices.map((inv) => ({
+      id: inv.id,
+      kind: "invoice" as const,
+      title: `Invoice ${inv.invoiceNumber} — ${inv.purchaseOrder.vendor.businessName}`,
+      actor: inv.uploadedBy?.name ?? "System",
+      timestamp: inv.updatedAt.toISOString(),
+      href: `/purchase-orders/${inv.poId}?tab=invoices`,
+    })),
+    ...payments.map((p) => ({
+      id: p.id,
+      kind: "payment" as const,
+      title: `Payment ₹${Number(p.amount ?? 0).toLocaleString("en-IN")} — invoice ${p.invoice.invoiceNumber}`,
+      actor: p.paidBy?.name ?? "Finance",
+      timestamp: p.createdAt.toISOString(),
+      href: `/purchase-orders/${p.invoice.purchaseOrder.id}?tab=payments`,
+    })),
+  ];
+
+  return items
+    .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
+    .slice(0, limit);
+}
+
+/**
+ * 7-day sparkline of PR creation count for the given warehouse scope.
+ */
+export async function getPrCreationSparkline(
+  scope: { warehouseIds: string[] },
+  days = 7,
+): Promise<{ day: string; count: number }[]> {
+  const since = new Date();
+  since.setDate(since.getDate() - days + 1);
+  since.setHours(0, 0, 0, 0);
+
+  const warehouseFilter =
+    scope.warehouseIds.length === 0
+      ? Prisma.empty
+      : scope.warehouseIds.length === 1
+        ? Prisma.sql`AND pr."warehouseId" = ${scope.warehouseIds[0]!}`
+        : Prisma.sql`AND pr."warehouseId" IN (${Prisma.join(scope.warehouseIds)})`;
+
+  const rows = await prisma.$queryRaw<{ day: string; count: bigint }[]>`
+    WITH series AS (
+      SELECT generate_series(${since}::date, CURRENT_DATE, INTERVAL '1 day')::date AS day
+    )
+    SELECT to_char(s.day, 'YYYY-MM-DD') as day, COUNT(pr.id)::bigint as count
+    FROM series s
+    LEFT JOIN "PurchaseRequest" pr
+      ON pr."createdAt"::date = s.day
+      ${warehouseFilter}
+    GROUP BY s.day
+    ORDER BY s.day ASC
+  `;
+  return rows.map((r) => ({ day: r.day, count: Number(r.count) }));
+}

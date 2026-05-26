@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 import { Toaster } from "sonner";
 
+import { ThemeProvider } from "@/components/providers/theme-provider";
 import { cn } from "@/lib/utils";
 
 import "./globals.css";
@@ -28,20 +29,32 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={cn("dark", geistSans.variable, geistMono.variable)}>
+    <html
+      lang="en"
+      className={cn(geistSans.variable, geistMono.variable)}
+      suppressHydrationWarning
+    >
       <body className="min-h-screen font-sans antialiased">
-        {children}
-        <Toaster
-          position="bottom-right"
-          richColors={false}
-          closeButton
-          duration={4000}
-          toastOptions={{
-            classNames: {
-              toast: "ds-toast",
-            },
-          }}
-        />
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+          disableTransitionOnChange
+        >
+          {children}
+          <Toaster
+            position="bottom-right"
+            richColors={false}
+            closeButton
+            duration={4000}
+            theme="system"
+            toastOptions={{
+              classNames: {
+                toast: "ds-toast",
+              },
+            }}
+          />
+        </ThemeProvider>
       </body>
     </html>
   );

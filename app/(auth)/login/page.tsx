@@ -22,7 +22,7 @@ export default async function LoginPage({ searchParams }: Props) {
   const resetSuccess = sp.reset === "1";
 
   return (
-    <Card className="w-full max-w-sm">
+    <Card className="w-full border-border-subtle shadow-ds-2">
       <CardHeader className="text-center">
         <CardTitle className="text-ds-lg font-semibold tracking-tight">Sign in</CardTitle>
         <CardDescription>Use your KNOT procurement account.</CardDescription>
@@ -72,7 +72,7 @@ export default async function LoginPage({ searchParams }: Props) {
               {error}
             </p>
           ) : null}
-          <Button type="submit" className="w-full">
+          <Button type="submit" variant="gradient" className="w-full">
             Continue
           </Button>
         </form>

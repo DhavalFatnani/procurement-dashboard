@@ -1,26 +1,20 @@
-import Link from "next/link";
+import { notFound } from "next/navigation";
 
-import { ModulePlaceholder } from "@/components/shared/ModulePlaceholder";
-import { checkRole } from "@/lib/auth";
+import { PODetailPageShell } from "@/components/purchase-orders/PODetailPageShell";
+import { getPOById } from "@/lib/queries/purchase-orders";
 import { ACCESS } from "@/lib/route-access";
-import { buttonVariants } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { assertRole, getRequestSession } from "@/lib/session";
 
 type Params = Promise<{ id: string }>;
 
 export default async function PurchaseOrderDetailPage({ params }: { params: Params }) {
-  await checkRole([...ACCESS.purchaseOrders]);
+  const user = assertRole(await getRequestSession(), [...ACCESS.purchaseOrders]);
   const { id } = await params;
 
-  return (
-    <ModulePlaceholder
-      title={`Purchase order ${id}`}
-      subtitle="PO reconciliation and GRN panels ship in Phase 3."
-      action={
-        <Link href="/purchase-orders" className={cn(buttonVariants({ variant: "outline" }))}>
-          Back to list
-        </Link>
-      }
-    />
-  );
+  const po = await getPOById(id);
+  if (!po) {
+    notFound();
+  }
+
+  return <PODetailPageShell po={po} role={user.role} />;
 }

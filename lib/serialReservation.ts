@@ -1,6 +1,14 @@
 import { Prisma, SerialSeries, type SerialReservation } from "@prisma/client";
 
+import { logger } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
+import {
+  computeNextRangeStart,
+  getSeriesNumericBounds,
+  getSeriesStartNumber,
+  isValidReservationRange,
+  resolveSeriesCeiling,
+} from "@/lib/serial-series";
 
 export type ReserveSerialInput = {
   series: SerialSeries;
@@ -15,16 +23,7 @@ export type ReserveSerialResult =
   | { success: true; reservation: SerialReservation }
   | { success: false; error: string };
 
-function getSeriesStartNumber(series: SerialSeries): bigint {
-  switch (series) {
-    case SerialSeries.LOCK_TAGS:
-      return BigInt(100_000);
-    case SerialSeries.JEWELLERY_BARCODES:
-      return BigInt(1_000_000_000);
-    case SerialSeries.APPAREL_BARCODES:
-      return BigInt(2_000_000_000);
-  }
-}
+export { getSeriesStartNumber } from "@/lib/serial-series";
 
 async function reserveInTransaction(
   input: ReserveSerialInput,
@@ -38,21 +37,33 @@ async function reserveInTransaction(
         return existing;
       }
 
+      const { start: seriesStart } = getSeriesNumericBounds(input.series);
+
       const latest = await tx.serialReservation.findFirst({
-        where: { series: input.series },
+        where: {
+          series: input.series,
+          rangeStart: { gte: seriesStart },
+          rangeEnd: { gte: seriesStart },
+        },
         orderBy: { rangeEnd: "desc" },
       });
 
-      const rangeStart = latest
-        ? latest.rangeEnd + BigInt(1)
-        : getSeriesStartNumber(input.series);
+      const rangeStart = computeNextRangeStart(input.series, latest?.rangeEnd ?? null);
       const rangeEnd = rangeStart + BigInt(input.quantity) - BigInt(1);
 
       const config = await tx.seriesConfig.findUnique({
         where: { series: input.series },
       });
-      if (config && rangeEnd > config.ceilingNumber) {
+      const ceiling = resolveSeriesCeiling(
+        input.series,
+        config?.ceilingNumber,
+      );
+      if (rangeEnd > ceiling) {
         throw new Error("Range ceiling exceeded");
+      }
+
+      if (!isValidReservationRange(input.series, rangeStart, rangeEnd)) {
+        throw new Error("Reservation range outside series bounds");
       }
 
       return tx.serialReservation.create({
@@ -73,6 +84,37 @@ async function reserveInTransaction(
   );
 }
 
+const CEILING_ERROR =
+  "Serial range ceiling reached for this series. Contact Ops Head to update the ceiling.";
+const CONFLICT_ERROR =
+  "Another print request was being processed. Please try again.";
+
+/** Backoff before each retry of a serialization conflict (ms). */
+const RETRY_DELAYS_MS = [100, 200, 400];
+
+function isCeilingError(err: unknown): boolean {
+  return err instanceof Error && err.message.includes("ceiling");
+}
+
+/**
+ * A Postgres serialization failure under SERIALIZABLE isolation. Prisma surfaces
+ * this as the typed error code P2034; we keep the message-string checks as a
+ * fallback for environments that don't produce the typed error.
+ */
+function isSerializationConflict(err: unknown): boolean {
+  if (err instanceof Prisma.PrismaClientKnownRequestError) {
+    return err.code === "P2034";
+  }
+  if (!(err instanceof Error)) {
+    return false;
+  }
+  return (
+    err.message.includes("could not serialize") ||
+    err.message.includes("Serialization failure") ||
+    err.message.includes("P2034")
+  );
+}
+
 export async function atomicReserveSerialRange(
   input: ReserveSerialInput,
 ): Promise<ReserveSerialResult> {
@@ -83,42 +125,35 @@ export async function atomicReserveSerialRange(
     return { success: true, reservation: existing };
   }
 
-  try {
-    const reservation = await reserveInTransaction(input);
-    return { success: true, reservation };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Reservation failed";
-    if (message.includes("ceiling")) {
-      return {
-        success: false,
-        error:
-          "Serial range ceiling reached for this series. Contact Ops Head to update the ceiling.",
-      };
+  // Retry transient serialization conflicts with bounded exponential backoff.
+  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
+    if (attempt > 0) {
+      await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt - 1]!));
     }
-    if (
-      message.includes("could not serialize") ||
-      message.includes("Serialization failure") ||
-      message.includes("P2034")
-    ) {
-      await new Promise((r) => setTimeout(r, 200));
-      try {
-        const reservation = await reserveInTransaction(input);
-        return { success: true, reservation };
-      } catch (retryErr) {
-        const retryMsg = retryErr instanceof Error ? retryErr.message : message;
-        if (retryMsg.includes("ceiling")) {
-          return {
-            success: false,
-            error:
-              "Serial range ceiling reached for this series. Contact Ops Head to update the ceiling.",
-          };
-        }
+    try {
+      const reservation = await reserveInTransaction(input);
+      return { success: true, reservation };
+    } catch (err) {
+      if (isCeilingError(err)) {
+        return { success: false, error: CEILING_ERROR };
+      }
+      if (!isSerializationConflict(err)) {
+        logger.error(
+          { err, series: input.series, prId: input.prId },
+          "serial reservation failed",
+        );
         return {
           success: false,
-          error: "Another print request was being processed. Please try again.",
+          error: err instanceof Error ? err.message : "Reservation failed",
         };
       }
+      // Serialization conflict: fall through to the next attempt.
     }
-    return { success: false, error: message };
   }
+
+  logger.warn(
+    { series: input.series, prId: input.prId, attempts: RETRY_DELAYS_MS.length + 1 },
+    "serial reservation exhausted retries on serialization conflict",
+  );
+  return { success: false, error: CONFLICT_ERROR };
 }

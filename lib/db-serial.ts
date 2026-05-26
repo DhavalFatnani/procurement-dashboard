@@ -1,5 +1,6 @@
 import type { Paginated } from "@/lib/pagination";
 import { toPaginated } from "@/lib/pagination";
+import { dbParallel } from "@/lib/db-parallel";
 
 /**
  * Supabase transaction-mode PgBouncer (DATABASE_URL with connection_limit=1) allows
@@ -27,7 +28,9 @@ export async function paginatedQuery<T>({
   count: () => Promise<number>;
   findMany: () => Promise<T[]>;
 }): Promise<Paginated<T>> {
-  const total = await count();
-  const items = await findMany();
+  const [total, items] = await dbParallel(
+    () => count(),
+    () => findMany(),
+  );
   return toPaginated(items, total, page, pageSize);
 }

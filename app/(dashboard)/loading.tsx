@@ -1,4 +1,12 @@
+import { TableSkeleton } from "@/components/shared/TableSkeleton";
 import { Skeleton } from "@/components/ui/skeleton";
+
+const DEFAULT_COLUMNS = [
+  { id: "a", header: "ID", width: "w-20" },
+  { id: "b", header: "Name", width: "w-32" },
+  { id: "c", header: "Status", width: "w-24" },
+  { id: "d", header: "Updated", width: "w-28" },
+];
 
 export default function DashboardLoading() {
   return (
@@ -8,12 +16,12 @@ export default function DashboardLoading() {
         <Skeleton className="h-4 w-full max-w-md" />
       </div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Skeleton className="h-24 rounded-xl" />
-        <Skeleton className="h-24 rounded-xl" />
-        <Skeleton className="h-24 rounded-xl" />
-        <Skeleton className="h-24 rounded-xl" />
+        <Skeleton className="h-24 rounded-lg" />
+        <Skeleton className="h-24 rounded-lg" />
+        <Skeleton className="h-24 rounded-lg" />
+        <Skeleton className="h-24 rounded-lg" />
       </div>
-      <Skeleton className="h-64 w-full rounded-xl" />
+      <TableSkeleton columns={DEFAULT_COLUMNS} />
     </div>
   );
 }

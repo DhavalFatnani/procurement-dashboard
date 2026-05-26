@@ -1,0 +1,23 @@
+stateDiagram-v2
+    direction LR
+
+    [*] --> DRAFT
+    DRAFT --> PENDING_APPROVAL: submitPR
+    DRAFT --> CANCELLED: cancelPR
+    DRAFT --> EXECUTED_PRINT: reserveSerial INTERNAL_PRINT only
+
+    PENDING_APPROVAL --> APPROVED: approvePR
+    PENDING_APPROVAL --> REJECTED: rejectPR
+    PENDING_APPROVAL --> REVISION_REQUIRED: sendForRevision
+    PENDING_APPROVAL --> CANCELLED: cancelPR
+
+    REVISION_REQUIRED --> PENDING_APPROVAL: resubmitPR count under 3
+    REVISION_REQUIRED --> FORCE_CANCELLED: resubmitPR count 3 or more
+
+    APPROVED --> CONVERTED_TO_PO: createPOFromPR
+
+    REJECTED --> [*]
+    CANCELLED --> [*]
+    FORCE_CANCELLED --> [*]
+    CONVERTED_TO_PO --> [*]
+    EXECUTED_PRINT --> [*]

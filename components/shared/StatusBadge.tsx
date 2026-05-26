@@ -5,38 +5,11 @@ import {
   PRStatus,
   VendorStatus,
 } from "@prisma/client";
+import { memo } from "react";
 
-import { cn } from "@/lib/utils";
+import { Chip, type ChipTone } from "@/components/shared/Chip";
 
-type StatusTone = "neutral" | "warning" | "info" | "success" | "error";
-
-const toneStyles: Record<
-  StatusTone,
-  { badge: string; dot: string }
-> = {
-  neutral: {
-    badge: "bg-[var(--status-neutral-bg)] text-[var(--text-secondary)]",
-    dot: "bg-[var(--status-neutral)]",
-  },
-  warning: {
-    badge: "bg-[var(--status-warning-bg)] text-[var(--status-warning)]",
-    dot: "bg-[var(--status-warning)]",
-  },
-  info: {
-    badge: "bg-[var(--status-info-bg)] text-[var(--status-info)]",
-    dot: "bg-[var(--status-info)]",
-  },
-  success: {
-    badge: "bg-[var(--status-success-bg)] text-[var(--status-success)]",
-    dot: "bg-[var(--status-success)]",
-  },
-  error: {
-    badge: "bg-[var(--status-error-bg)] text-[var(--status-error)]",
-    dot: "bg-[var(--status-error)]",
-  },
-};
-
-const prTone: Record<PRStatus, StatusTone> = {
+const prTone: Record<PRStatus, ChipTone> = {
   [PRStatus.DRAFT]: "neutral",
   [PRStatus.PENDING_APPROVAL]: "warning",
   [PRStatus.APPROVED]: "info",
@@ -48,7 +21,7 @@ const prTone: Record<PRStatus, StatusTone> = {
   [PRStatus.FORCE_CANCELLED]: "error",
 };
 
-const poTone: Record<POStatus, StatusTone> = {
+const poTone: Record<POStatus, ChipTone> = {
   [POStatus.OPEN]: "neutral",
   [POStatus.PARTIALLY_RECEIVED]: "warning",
   [POStatus.FULLY_RECEIVED]: "info",
@@ -59,26 +32,26 @@ const poTone: Record<POStatus, StatusTone> = {
   [POStatus.FORCE_CLOSED]: "neutral",
 };
 
-const paymentTone: Record<PaymentStatus, StatusTone> = {
+const paymentTone: Record<PaymentStatus, ChipTone> = {
   [PaymentStatus.UNPAID]: "error",
   [PaymentStatus.PARTIALLY_PAID]: "warning",
   [PaymentStatus.PAID]: "success",
 };
 
-const invoiceTone: Record<InvoiceMatchStatus, StatusTone> = {
+const invoiceTone: Record<InvoiceMatchStatus, ChipTone> = {
   [InvoiceMatchStatus.PENDING]: "neutral",
   [InvoiceMatchStatus.MATCHED]: "success",
   [InvoiceMatchStatus.MISMATCH]: "error",
   [InvoiceMatchStatus.OVERRIDE_ACCEPTED]: "warning",
 };
 
-const vendorTone: Record<VendorStatus, StatusTone> = {
+const vendorTone: Record<VendorStatus, ChipTone> = {
   [VendorStatus.ACTIVE]: "success",
   [VendorStatus.INACTIVE]: "neutral",
 };
 
 export type StatusBadgeProps =
-  | { kind: "PRStatus"; status: PRStatus }
+  | { kind: "PRStatus"; status: PRStatus; awaitingPurchaseOrder?: boolean }
   | { kind: "POStatus"; status: POStatus }
   | { kind: "PaymentStatus"; status: PaymentStatus }
   | { kind: "InvoiceMatchStatus"; status: InvoiceMatchStatus }
@@ -88,38 +61,42 @@ function formatStatus(status: string) {
   return status.replaceAll("_", " ");
 }
 
-function DotStatusBadge({ label, tone }: { label: string; tone: StatusTone }) {
-  const styles = toneStyles[tone];
-  return (
-    <span
-      className={cn(
-        "inline-flex w-fit items-center gap-1.5 whitespace-nowrap rounded px-2 py-0.5 text-ds-xs font-medium leading-snug",
-        styles.badge,
-      )}
-    >
-      <span className={cn("size-1.5 shrink-0 rounded-full", styles.dot)} aria-hidden />
-      {label}
-    </span>
-  );
-}
-
-export function StatusBadge(props: StatusBadgeProps) {
+export const StatusBadge = memo(function StatusBadge(props: StatusBadgeProps) {
   switch (props.kind) {
-    case "PRStatus":
-      return <DotStatusBadge label={formatStatus(props.status)} tone={prTone[props.status]} />;
+    case "PRStatus": {
+      const label =
+        props.awaitingPurchaseOrder && props.status === PRStatus.APPROVED
+          ? "Approved — awaiting PO"
+          : formatStatus(props.status);
+      return (
+        <Chip tone={prTone[props.status]} showDot>
+          {label}
+        </Chip>
+      );
+    }
     case "POStatus":
-      return <DotStatusBadge label={formatStatus(props.status)} tone={poTone[props.status]} />;
+      return (
+        <Chip tone={poTone[props.status]} showDot>
+          {formatStatus(props.status)}
+        </Chip>
+      );
     case "PaymentStatus":
       return (
-        <DotStatusBadge label={formatStatus(props.status)} tone={paymentTone[props.status]} />
+        <Chip tone={paymentTone[props.status]} showDot>
+          {formatStatus(props.status)}
+        </Chip>
       );
     case "InvoiceMatchStatus":
       return (
-        <DotStatusBadge label={formatStatus(props.status)} tone={invoiceTone[props.status]} />
+        <Chip tone={invoiceTone[props.status]} showDot>
+          {formatStatus(props.status)}
+        </Chip>
       );
     case "VendorStatus":
       return (
-        <DotStatusBadge label={formatStatus(props.status)} tone={vendorTone[props.status]} />
+        <Chip tone={vendorTone[props.status]} showDot>
+          {formatStatus(props.status)}
+        </Chip>
       );
   }
-}
+});

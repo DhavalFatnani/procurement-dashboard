@@ -1,24 +1,80 @@
-import { PageHeader } from "@/components/shared/PageHeader";
-import { checkRole } from "@/lib/auth";
+import { Suspense } from "react";
+import Link from "next/link";
+import { Inbox } from "lucide-react";
+
+import { DashboardMetricsSection } from "@/components/dashboard/DashboardMetricsSection";
+import { DashboardQuickActions } from "@/components/dashboard/DashboardQuickActions";
+import { DashboardWelcomeStrip } from "@/components/dashboard/DashboardWelcomeStrip";
+import { POStageDistributionCard } from "@/components/dashboard/POStageDistribution";
+import { RecentActivityCard } from "@/components/dashboard/RecentActivityCard";
+import { SkeletonMetrics } from "@/components/shared/SkeletonMetrics";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { ACCESS } from "@/lib/route-access";
+import { getDashboardMetricsForSession } from "@/lib/queries/dashboard";
+import {
+  getPOStageDistribution,
+  getRecentActivity,
+} from "@/lib/queries/dashboard-extras";
+import { assertRole, getRequestSession } from "@/lib/session";
+
+export const dynamic = "force-dynamic";
 
 export default async function DashboardHomePage() {
-  const user = await checkRole([...ACCESS.dashboard]);
+  const user = assertRole(await getRequestSession(), [...ACCESS.dashboard]);
+  const metrics = await getDashboardMetricsForSession(user);
+  const displayName =
+    (typeof user.user_metadata?.name === "string" && user.user_metadata.name) ||
+    user.email ||
+    "User";
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        title="Dashboard"
-        subtitle="Overview of procurement activity and quick links."
+    <div className="page-stack">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="space-y-1">
+          <h1 className="text-ds-lg font-semibold tracking-tight text-foreground">
+            Dashboard
+          </h1>
+          <p className="text-ds-sm text-muted-foreground">
+            Operational snapshot across procurement workflows.
+          </p>
+        </div>
+        <Button variant="soft" size="sm" render={<Link href="/inbox" />}>
+          <Inbox className="size-3.5" strokeWidth={1.5} aria-hidden />
+          Open inbox
+        </Button>
+      </div>
+
+      <DashboardWelcomeStrip
+        displayName={displayName}
+        role={user.role}
+        metrics={metrics}
       />
-      <p className="text-muted-foreground">
-        Signed in as <span className="font-medium text-foreground">{user.email}</span> ({user.role})
-      </p>
-      <p className="text-sm text-muted-foreground">
-        Invoice and payment proof uploads use Supabase Storage buckets{" "}
-        <code className="rounded bg-muted px-1 py-0.5 text-xs">invoices</code> and{" "}
-        <code className="rounded bg-muted px-1 py-0.5 text-xs">payment-proofs</code>.
-      </p>
+
+      <Suspense fallback={<SkeletonMetrics count={4} />}>
+        <DashboardMetricsSection user={user} />
+      </Suspense>
+
+      <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr]">
+        <Suspense fallback={<Skeleton className="h-52 rounded-2xl" />}>
+          <PODistributionSection />
+        </Suspense>
+        <Suspense fallback={<Skeleton className="h-52 rounded-2xl" />}>
+          <ActivitySection />
+        </Suspense>
+      </div>
+
+      <DashboardQuickActions role={user.role} />
     </div>
   );
+}
+
+async function PODistributionSection() {
+  const stages = await getPOStageDistribution();
+  return <POStageDistributionCard stages={stages} />;
+}
+
+async function ActivitySection() {
+  const items = await getRecentActivity(8);
+  return <RecentActivityCard items={items} />;
 }
