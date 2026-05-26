@@ -27,6 +27,11 @@ export type POClosureSnapshot = {
 };
 
 export const PO_WITH_RELATIONS = {
+  lineItems: {
+    include: {
+      goodsReceiptLineItems: { select: { acceptedQty: true } },
+    },
+  },
   lines: {
     include: {
       goodsReceiptLines: { select: { acceptedQty: true } },
@@ -41,8 +46,13 @@ export type POWithRelations = Prisma.PurchaseOrderGetPayload<{
 }>;
 
 function resolveOrderedQty(po: POWithRelations): number {
-  if (po.lines.length > 0) {
-    return sumOrderedQty(po.lines);
+  const lineItems = po.lineItems ?? [];
+  const lines = po.lines ?? [];
+  if (lineItems.length > 0) {
+    return lineItems.reduce((sum, line) => sum + line.orderedQty, 0);
+  }
+  if (lines.length > 0) {
+    return sumOrderedQty(lines);
   }
   return po.orderedQty ?? 0;
 }
@@ -53,7 +63,7 @@ function sumAcceptedQty(grns: POWithRelations["grns"]): number {
 
 function acceptedQtyByPoLine(po: POWithRelations): Map<string, number> {
   const map = new Map<string, number>();
-  for (const line of po.lines) {
+  for (const line of po.lines ?? []) {
     const accepted = line.goodsReceiptLines.reduce((s, grl) => s + grl.acceptedQty, 0);
     map.set(line.id, accepted);
   }
@@ -61,7 +71,21 @@ function acceptedQtyByPoLine(po: POWithRelations): Map<string, number> {
 }
 
 function computeExpectedInvoicedAmount(po: POWithRelations): number | null {
-  if (po.lines.length === 0) {
+  const lineItems = po.lineItems ?? [];
+  const lines = po.lines ?? [];
+  if (lineItems.length > 0) {
+    let total = 0;
+    for (const line of lineItems) {
+      const accepted = line.goodsReceiptLineItems.reduce(
+        (s, grl) => s + grl.acceptedQty,
+        0,
+      );
+      total += accepted * Number(line.unitPrice);
+    }
+    return total;
+  }
+
+  if (lines.length === 0) {
     const receivedQty = sumAcceptedQty(po.grns);
     if (po.unitPrice == null) {
       return receivedQty > 0 ? null : 0;
@@ -71,7 +95,7 @@ function computeExpectedInvoicedAmount(po: POWithRelations): number | null {
 
   const acceptedByLine = acceptedQtyByPoLine(po);
   let total = 0;
-  for (const line of po.lines) {
+  for (const line of lines) {
     const accepted = acceptedByLine.get(line.id) ?? 0;
     total += accepted * Number(line.unitPrice);
   }
@@ -182,9 +206,10 @@ export function buildClosureSnapshot(po: POWithRelations): POClosureSnapshot {
     }
   }
 
+  const lines = po.lines ?? [];
   const legacyUnitPrice =
-    po.lines.length === 1
-      ? Number(po.lines[0]!.unitPrice)
+    lines.length === 1
+      ? Number(lines[0]!.unitPrice)
       : po.unitPrice != null
         ? Number(po.unitPrice)
         : null;

@@ -37,6 +37,7 @@ export default async function NewPurchaseRequestPage() {
     <CreatePRForm
       categories={filterOptions.categories}
       subcategories={filterOptions.subcategories}
+      catalogItems={filterOptions.catalogItems}
       warehouses={assignedWarehouses}
       defaultWarehouseId={assignedWarehouses[0]!.id}
     />

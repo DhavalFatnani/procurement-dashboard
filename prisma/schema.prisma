@@ -92,6 +92,13 @@ enum SerialReservationStatus {
   RESERVED
 }
 
+enum CatalogItemStatus {
+  PENDING_APPROVAL
+  ACTIVE
+  REJECTED
+  INACTIVE
+}
+
 /// Reserved for operational/UI state around serial ceilings (not yet on `SeriesConfig` per domain spec).
 enum SeriesConfigStatus {
   ACTIVE
@@ -127,6 +134,8 @@ model User {
   paymentsPaid              Payment[]
   serialReservationsCreated SerialReservation[]
   seriesConfigsConfigured   SeriesConfig[]
+  catalogItemsCreated       CatalogItem[]       @relation("CatalogItemCreatedBy")
+  catalogItemsApproved      CatalogItem[]       @relation("CatalogItemApprovedBy")
 }
 
 model Warehouse {
@@ -231,9 +240,10 @@ model Category {
   name String
 
   subcategories         Subcategory[]
-  purchaseRequests      PurchaseRequest[]
-  purchaseRequestLines  PurchaseRequestLine[]
-  purchaseOrderLines    PurchaseOrderLine[]
+  purchaseRequests         PurchaseRequest[]
+  purchaseRequestLines     PurchaseRequestLine[]
+  purchaseOrderLines       PurchaseOrderLine[]
+  purchaseOrderLineItems   PurchaseOrderLineItem[]
 }
 
 model Subcategory {
@@ -244,9 +254,36 @@ model Subcategory {
   executionType ExecutionType
 
   category              Category               @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  purchaseRequests      PurchaseRequest[]
-  purchaseRequestLines  PurchaseRequestLine[]
-  purchaseOrderLines    PurchaseOrderLine[]
+  purchaseRequests         PurchaseRequest[]
+  purchaseRequestLines     PurchaseRequestLine[]
+  purchaseOrderLines       PurchaseOrderLine[]
+  purchaseOrderLineItems   PurchaseOrderLineItem[]
+  catalogItems             CatalogItem[]
+}
+
+model CatalogItem {
+  id             String            @id @default(cuid())
+  subcategoryId  String
+  name           String
+  sku            String?
+  unit           String            @default("pcs")
+  status         CatalogItemStatus @default(PENDING_APPROVAL)
+  createdById    String
+  approvedById   String?
+  approvedAt     DateTime?
+  rejectedReason String?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  subcategory  Subcategory               @relation(fields: [subcategoryId], references: [id], onDelete: Cascade)
+  createdBy    User                      @relation("CatalogItemCreatedBy", fields: [createdById], references: [id])
+  approvedBy   User?                     @relation("CatalogItemApprovedBy", fields: [approvedById], references: [id])
+  prLineItems  PurchaseRequestLineItem[]
+  poLineItems  PurchaseOrderLineItem[]
+
+  @@unique([subcategoryId, name])
+  @@index([subcategoryId, status])
+  @@index([createdById])
 }
 
 /// Human-facing id: use prefix `PR-` in application (e.g. `PR-${cuid()}`) when creating rows.
@@ -296,18 +333,37 @@ model PurchaseRequestLine {
   lineNumber    Int
   categoryId    String
   subcategoryId String
-  quantity      Int
+  /// Legacy / internal-print fallback — vendor qty is on `items`.
+  quantity      Int?
   notes         String?
 
-  purchaseRequest PurchaseRequest @relation(fields: [prId], references: [id], onDelete: Cascade)
-  category        Category        @relation(fields: [categoryId], references: [id])
-  subcategory     Subcategory     @relation(fields: [subcategoryId], references: [id])
+  purchaseRequest   PurchaseRequest            @relation(fields: [prId], references: [id], onDelete: Cascade)
+  category          Category                   @relation(fields: [categoryId], references: [id])
+  subcategory       Subcategory                @relation(fields: [subcategoryId], references: [id])
+  items             PurchaseRequestLineItem[]
   purchaseOrderLine PurchaseOrderLine?
 
   @@unique([prId, lineNumber])
   @@index([prId])
   @@index([categoryId])
   @@index([subcategoryId])
+}
+
+model PurchaseRequestLineItem {
+  id             String @id @default(cuid())
+  prLineId       String
+  catalogItemId  String
+  lineItemNumber Int
+  quantity       Int
+
+  prLine      PurchaseRequestLine      @relation(fields: [prLineId], references: [id], onDelete: Cascade)
+  catalogItem CatalogItem              @relation(fields: [catalogItemId], references: [id])
+  poLineItem  PurchaseOrderLineItem?
+
+  @@unique([prLineId, catalogItemId])
+  @@unique([prLineId, lineItemNumber])
+  @@index([prLineId])
+  @@index([catalogItemId])
 }
 
 model PRVersion {
@@ -346,6 +402,7 @@ model PurchaseOrder {
   forceClosedBy   User?           @relation("POForceClosedBy", fields: [forceClosedById], references: [id])
 
   lines             PurchaseOrderLine[]
+  lineItems         PurchaseOrderLineItem[]
   grns              GoodsReceipt[]
   invoices          Invoice[]
   serialReservation SerialReservation?
@@ -376,6 +433,29 @@ model PurchaseOrderLine {
   @@index([subcategoryId])
 }
 
+model PurchaseOrderLineItem {
+  id            String  @id @default(cuid())
+  poId          String
+  prLineItemId  String  @unique
+  catalogItemId String
+  categoryId    String
+  subcategoryId String
+  orderedQty    Int
+  unitPrice     Decimal @db.Decimal(18, 4)
+
+  purchaseOrder         PurchaseOrder              @relation(fields: [poId], references: [id], onDelete: Cascade)
+  prLineItem            PurchaseRequestLineItem    @relation(fields: [prLineItemId], references: [id])
+  catalogItem           CatalogItem                @relation(fields: [catalogItemId], references: [id])
+  category              Category                   @relation(fields: [categoryId], references: [id])
+  subcategory           Subcategory                @relation(fields: [subcategoryId], references: [id])
+  goodsReceiptLineItems GoodsReceiptLineItem[]
+
+  @@index([poId])
+  @@index([catalogItemId])
+  @@index([categoryId])
+  @@index([subcategoryId])
+}
+
 model GoodsReceipt {
   id              String   @id @default(cuid())
   poId            String
@@ -394,9 +474,26 @@ model GoodsReceipt {
   exceptions   GRNException[]
   invoiceLinks InvoiceGRNLink[]
   lines        GoodsReceiptLine[]
+  lineItems    GoodsReceiptLineItem[]
 
   @@index([poId])
   @@index([receivedAt])
+}
+
+model GoodsReceiptLineItem {
+  id           String @id @default(cuid())
+  grnId        String
+  poLineItemId String
+  receivedQty  Int
+  acceptedQty  Int
+  disputedQty  Int    @default(0)
+
+  goodsReceipt          GoodsReceipt          @relation(fields: [grnId], references: [id], onDelete: Cascade)
+  purchaseOrderLineItem PurchaseOrderLineItem @relation(fields: [poLineItemId], references: [id])
+
+  @@unique([grnId, poLineItemId])
+  @@index([grnId])
+  @@index([poLineItemId])
 }
 
 model GoodsReceiptLine {

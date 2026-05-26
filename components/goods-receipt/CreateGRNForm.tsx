@@ -6,7 +6,8 @@ import { useRouter } from "next/navigation";
 import * as React from "react";
 import { toast } from "sonner";
 
-import { createGRN, getPOForGRN, getPOsForGRN, type POForGRNOption } from "@/app/actions/grn";
+import { createGRN, getPOForGRN, getPOsForGRN } from "@/app/actions/grn";
+import type { POForGRNOption } from "@/lib/queries/grn";
 import { ProcurementRefLink } from "@/components/shared/ProcurementRef";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -93,11 +94,16 @@ export function CreateGRNForm({
       setLineQty({});
       return;
     }
-    setLineQty(Object.fromEntries(selected.lines.map((line) => [line.poLineId, ""])));
+    setLineQty(
+      Object.fromEntries(selected.lines.map((line) => [line.poLineItemId, ""])),
+    );
   }, [selected]);
 
   const receivedNum = selected
-    ? selected.lines.reduce((sum, line) => sum + (Number(lineQty[line.poLineId]) || 0), 0)
+    ? selected.lines.reduce(
+        (sum, line) => sum + (Number(lineQty[line.poLineItemId]) || 0),
+        0,
+      )
     : 0;
   const exceptionNum = flagException ? Number(exceptionQty) || 0 : 0;
   const acceptedPreview = Math.max(0, receivedNum - exceptionNum);
@@ -112,10 +118,10 @@ export function CreateGRNForm({
     setSubmitting(true);
     const res = await createGRN({
       poId,
-      lineReceipts: selected.lines
+      lineItemReceipts: selected.lines
         .map((line) => ({
-          poLineId: line.poLineId,
-          receivedQty: Number(lineQty[line.poLineId]) || 0,
+          poLineItemId: line.poLineItemId,
+          receivedQty: Number(lineQty[line.poLineItemId]) || 0,
         }))
         .filter((r) => r.receivedQty > 0),
       receivedAt,
@@ -233,27 +239,34 @@ export function CreateGRNForm({
             {selected ? (
               <div className="space-y-3">
                 {selected.lines.map((line) => (
-                  <div key={line.poLineId} className="rounded-lg border border-border-subtle p-3">
+                  <div
+                    key={line.poLineItemId}
+                    className="rounded-lg border border-border-subtle p-3"
+                  >
                     <p className="text-ds-sm font-medium">
-                      Line {line.lineNumber}: {line.label}
+                      Line {line.lineNumber}
+                      {line.lineItemNumber > 1 ? `.${line.lineItemNumber}` : ""}: {line.label}
                     </p>
                     <p className="text-ds-xs text-muted-foreground">
                       Pending {line.pendingQty} of {line.orderedQty} ordered
                     </p>
                     <label
-                      htmlFor={`line-qty-${line.poLineId}`}
+                      htmlFor={`line-qty-${line.poLineItemId}`}
                       className="mt-2 block text-ds-sm font-medium"
                     >
                       Received qty
                     </label>
                     <Input
-                      id={`line-qty-${line.poLineId}`}
+                      id={`line-qty-${line.poLineItemId}`}
                       type="number"
                       min={0}
                       max={line.pendingQty}
-                      value={lineQty[line.poLineId] ?? ""}
+                      value={lineQty[line.poLineItemId] ?? ""}
                       onChange={(e) =>
-                        setLineQty((prev) => ({ ...prev, [line.poLineId]: e.target.value }))
+                        setLineQty((prev) => ({
+                          ...prev,
+                          [line.poLineItemId]: e.target.value,
+                        }))
                       }
                       className="mt-1 max-w-[200px]"
                     />

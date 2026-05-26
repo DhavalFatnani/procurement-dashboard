@@ -10,8 +10,8 @@ import {
   deactivateVendor,
   mergeVendors,
   reactivateVendor,
-  type VendorDetail,
 } from "@/app/actions/vendors";
+import type { VendorDetail } from "@/lib/queries/vendors";
 import { ProcurementRefLink } from "@/components/shared/ProcurementRef";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { DataTable, getRowId, type DataTableColumn } from "@/components/shared/DataTable";

@@ -52,8 +52,11 @@ export type GRNDetail = {
 };
 
 export type POForGRNLine = {
-  poLineId: string;
+  poLineItemId: string;
+  /** @deprecated Legacy PO line id */
+  poLineId?: string;
   lineNumber: number;
+  lineItemNumber: number;
   label: string;
   orderedQty: number;
   previouslyReceivedQty: number;
@@ -209,6 +212,20 @@ const poForGrnSelect = {
   id: true,
   orderedQty: true,
   vendor: { select: { businessName: true } },
+  lineItems: {
+    orderBy: [{ categoryId: "asc" }, { subcategoryId: "asc" }],
+    select: {
+      id: true,
+      orderedQty: true,
+      category: { select: { name: true } },
+      subcategory: { select: { name: true } },
+      catalogItem: { select: { name: true } },
+      prLineItem: {
+        select: { lineItemNumber: true, prLine: { select: { lineNumber: true } } },
+      },
+      goodsReceiptLineItems: { select: { acceptedQty: true } },
+    },
+  },
   lines: {
     orderBy: { prLine: { lineNumber: "asc" } },
     select: {
@@ -229,28 +246,49 @@ const poForGrnSelect = {
     select: { series: true, rangeStart: true, rangeEnd: true },
   },
   grns: { select: { acceptedQty: true } },
-} as const;
+} satisfies Prisma.PurchaseOrderSelect;
 
 function mapPoToGrnOption(
   po: Prisma.PurchaseOrderGetPayload<{ select: typeof poForGrnSelect }>,
 ): POForGRNOption | null {
-  const lineRows: POForGRNLine[] = po.lines.map((line) => {
-    const previouslyReceivedQty = line.goodsReceiptLines.reduce(
-      (s, grl) => s + grl.acceptedQty,
-      0,
-    );
-    return {
-      poLineId: line.id,
-      lineNumber: line.prLine.lineNumber,
-      label: `${line.category.name} / ${line.subcategory.name}`,
-      orderedQty: line.orderedQty,
-      previouslyReceivedQty,
-      pendingQty: Math.max(0, line.orderedQty - previouslyReceivedQty),
-    };
-  });
+  const lineRows: POForGRNLine[] =
+    po.lineItems.length > 0
+      ? po.lineItems.map((line) => {
+          const previouslyReceivedQty = line.goodsReceiptLineItems.reduce(
+            (s, grl) => s + grl.acceptedQty,
+            0,
+          );
+          return {
+            poLineItemId: line.id,
+            lineNumber: line.prLineItem.prLine.lineNumber,
+            lineItemNumber: line.prLineItem.lineItemNumber,
+            label: `${line.category.name} / ${line.subcategory.name} · ${line.catalogItem.name}`,
+            orderedQty: line.orderedQty,
+            previouslyReceivedQty,
+            pendingQty: Math.max(0, line.orderedQty - previouslyReceivedQty),
+          };
+        })
+      : po.lines.map((line) => {
+          const previouslyReceivedQty = line.goodsReceiptLines.reduce(
+            (s, grl) => s + grl.acceptedQty,
+            0,
+          );
+          return {
+            poLineItemId: line.id,
+            poLineId: line.id,
+            lineNumber: line.prLine.lineNumber,
+            lineItemNumber: 1,
+            label: `${line.category.name} / ${line.subcategory.name}`,
+            orderedQty: line.orderedQty,
+            previouslyReceivedQty,
+            pendingQty: Math.max(0, line.orderedQty - previouslyReceivedQty),
+          };
+        });
 
   const orderedQty =
-    lineRows.length > 0 ? sumOrderedQty(lineRows) : (po.orderedQty ?? 0);
+    lineRows.length > 0
+      ? lineRows.reduce((s, l) => s + l.orderedQty, 0)
+      : (po.orderedQty ?? 0);
   const previouslyReceivedQty = po.grns.reduce((s, g) => s + g.acceptedQty, 0);
   const pendingQty = Math.max(0, orderedQty - previouslyReceivedQty);
   if (pendingQty <= 0) {
@@ -259,7 +297,11 @@ function mapPoToGrnOption(
 
   const isLockTags =
     lineRows.length > 0
-      ? hasLockTagsLines(po.lines.map((l) => ({ categoryName: l.category.name })))
+      ? hasLockTagsLines(
+          (po.lineItems.length > 0 ? po.lineItems : po.lines).map((l) => ({
+            categoryName: l.category.name,
+          })),
+        )
       : po.purchaseRequest.category?.name === "Lock Tags";
 
   return {

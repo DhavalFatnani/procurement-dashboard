@@ -9,6 +9,7 @@ import { FilterChipsRow } from "@/components/shared/FilterChipsRow";
 import { FilterSelect } from "@/components/shared/FilterSelect";
 import { compactChipSpecs, type FilterChipSpec } from "@/lib/filter-chips";
 import { formatDateTimeMedium } from "@/lib/format-datetime";
+import type { WarehouseOption } from "@/lib/format-warehouse";
 import { useListTransition } from "@/lib/list-transition-context";
 import { getSeriesDisplayName } from "@/lib/serial-series";
 
@@ -27,7 +28,7 @@ export function SerialGovernanceFilters({
   filterOptions,
 }: {
   filters: SerialGovernanceFiltersValue;
-  filterOptions: { warehouses: { id: string; name: string }[] };
+  filterOptions: { warehouses: WarehouseOption[] };
 }) {
   const { isPending, navigate } = useListTransition();
 
@@ -83,7 +84,7 @@ export function SerialGovernanceFilters({
     filterWarehouse && {
       key: "warehouseId",
       tone: "neutral",
-      label: `Warehouse: ${filterWarehouse.name}`,
+      label: `Warehouse: ${filterWarehouse.label}`,
       onClear: () => clearFilter("warehouseId"),
     },
     filters.dateFrom && {
@@ -142,7 +143,7 @@ export function SerialGovernanceFilters({
         searchable
         options={filterOptions.warehouses.map((w) => ({
           value: w.id,
-          label: w.name,
+          label: w.label,
         }))}
       />
       <DateRangeFilter

@@ -9,8 +9,8 @@ import {
   createInvoice,
   getPOForInvoice,
   getPOsForInvoice,
-  type POForInvoiceOption,
 } from "@/app/actions/invoices";
+import type { POForInvoiceOption } from "@/lib/queries/invoices";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { formatGrnReceiptLabel } from "@/lib/display-ref";
 import { formatDateMedium, formatInr } from "@/lib/format-datetime";

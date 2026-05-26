@@ -12,6 +12,8 @@ import {
   Plus,
   Receipt,
   Upload,
+  UserCircle,
+  Tags,
   Users,
   Wallet,
   Warehouse,
@@ -37,6 +39,7 @@ export type CommandGroup = {
 
 const NAV_COMMANDS: CommandItem[] = [
   { id: "nav-dashboard", label: "Go to Dashboard", href: "/dashboard", icon: LayoutDashboard },
+  { id: "nav-profile", label: "Go to Profile", href: "/profile", icon: UserCircle },
   { id: "nav-vendors", label: "Go to Vendors", href: "/vendors", icon: Building2 },
   {
     id: "nav-pr",
@@ -71,6 +74,12 @@ const NAV_COMMANDS: CommandItem[] = [
     label: "Go to Warehouses",
     href: "/admin/warehouses",
     icon: Warehouse,
+  },
+  {
+    id: "nav-admin-catalog",
+    label: "Go to Item catalog",
+    href: "/admin/catalog",
+    icon: Tags,
   },
 ];
 
@@ -126,6 +135,7 @@ function filterByRole(items: CommandItem[], role: Role) {
 
 function filterNavByRole(items: CommandItem[], role: Role) {
   const allowedHrefs = new Set(getNavItemsForRole(role).map((item) => item.href));
+  allowedHrefs.add("/profile");
   return items.filter((item) => item.href != null && allowedHrefs.has(item.href));
 }
 

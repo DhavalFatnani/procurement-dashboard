@@ -6,7 +6,7 @@ import { Role } from "@prisma/client";
 import { applyPOClosureInTransaction, PO_CLOSURE_TX_OPTS } from "@/lib/poAutoClose";
 import type { Paginated } from "@/lib/pagination";
 import { prisma } from "@/lib/prisma";
-import type { GRNLineInput } from "@/lib/purchase-lines";
+import type { GRNLineInput, GRNLineItemInput } from "@/lib/purchase-lines";
 import {
   getGRNById as getGRNByIdQuery,
   getGRNFilterOptions as getGRNFilterOptionsQuery,
@@ -24,17 +24,11 @@ import type {
 import { revalidateGRNMutation } from "@/lib/revalidate-tags";
 import { requireRoles } from "@/lib/server-action-guard";
 
-// Re-export types from source — see note in app/actions/finder.ts.
-export type {
-  GRNDetail,
-  GRNFilters,
-  GRNListRow,
-  POForGRNOption,
-} from "@/lib/queries/grn";
-
 export type CreateGRNInput = {
   poId: string;
-  lineReceipts: GRNLineInput[];
+  lineItemReceipts: GRNLineItemInput[];
+  /** @deprecated Use lineItemReceipts */
+  lineReceipts?: GRNLineInput[];
   receivedAt: string;
   deliveryNoteRef?: string;
   exception?: {
@@ -82,6 +76,11 @@ export async function createGRN(
   const po = await prisma.purchaseOrder.findUnique({
     where: { id: data.poId },
     include: {
+      lineItems: {
+        include: {
+          goodsReceiptLineItems: { select: { acceptedQty: true } },
+        },
+      },
       lines: {
         include: {
           goodsReceiptLines: { select: { acceptedQty: true } },
@@ -98,33 +97,66 @@ export async function createGRN(
     return { ok: false, message: "This PO is not open for goods receipt." };
   }
 
-  if (data.lineReceipts.length === 0) {
+  const useLineItems = po.lineItems.length > 0;
+  const receipts = useLineItems
+    ? data.lineItemReceipts
+    : (data.lineReceipts ?? []).map((r) => ({
+        poLineItemId: r.poLineId,
+        receivedQty: r.receivedQty,
+      }));
+
+  if (receipts.length === 0) {
     return { ok: false, message: "Enter received quantity for at least one line." };
   }
 
-  const poLineIds = new Set(po.lines.map((l) => l.id));
   let receivedQty = 0;
 
-  for (const receipt of data.lineReceipts) {
-    if (!poLineIds.has(receipt.poLineId)) {
-      return { ok: false, message: "Invalid PO line in receipt." };
+  if (useLineItems) {
+    const poLineItemIds = new Set(po.lineItems.map((l) => l.id));
+    for (const receipt of receipts) {
+      if (!poLineItemIds.has(receipt.poLineItemId)) {
+        return { ok: false, message: "Invalid PO catalog item in receipt." };
+      }
+      if (receipt.receivedQty < 0) {
+        return { ok: false, message: "Received quantity cannot be negative." };
+      }
+      const poLine = po.lineItems.find((l) => l.id === receipt.poLineItemId)!;
+      const previouslyReceived = poLine.goodsReceiptLineItems.reduce(
+        (s, grl) => s + grl.acceptedQty,
+        0,
+      );
+      const pending = poLine.orderedQty - previouslyReceived;
+      if (receipt.receivedQty > pending) {
+        return {
+          ok: false,
+          message: `Received quantity exceeds pending qty for ${receipt.poLineItemId}.`,
+        };
+      }
+      receivedQty += receipt.receivedQty;
     }
-    if (receipt.receivedQty < 0) {
-      return { ok: false, message: "Received quantity cannot be negative." };
+  } else {
+    const poLineIds = new Set(po.lines.map((l) => l.id));
+    for (const receipt of data.lineReceipts ?? []) {
+      if (!poLineIds.has(receipt.poLineId)) {
+        return { ok: false, message: "Invalid PO line in receipt." };
+      }
+      if (receipt.receivedQty < 0) {
+        return { ok: false, message: "Received quantity cannot be negative." };
+      }
+      const poLine = po.lines.find((l) => l.id === receipt.poLineId)!;
+      const previouslyReceived = poLine.goodsReceiptLines.reduce(
+        (s, grl) => s + grl.acceptedQty,
+        0,
+      );
+      const pending = poLine.orderedQty - previouslyReceived;
+      if (receipt.receivedQty > pending) {
+        return {
+          ok: false,
+          message: `Received quantity exceeds pending qty for line ${poLine.id}.`,
+        };
+      }
+      receivedQty += receipt.receivedQty;
     }
-    const poLine = po.lines.find((l) => l.id === receipt.poLineId)!;
-    const previouslyReceived = poLine.goodsReceiptLines.reduce(
-      (s, grl) => s + grl.acceptedQty,
-      0,
-    );
-    const pending = poLine.orderedQty - previouslyReceived;
-    if (receipt.receivedQty > pending) {
-      return {
-        ok: false,
-        message: `Received quantity exceeds pending qty for line ${poLine.id}.`,
-      };
-    }
-    receivedQty += receipt.receivedQty;
   }
 
   if (receivedQty < 1) {
@@ -175,7 +207,7 @@ export async function createGRN(
       },
     });
 
-    const positiveReceipts = data.lineReceipts.filter((r) => r.receivedQty > 0);
+    const positiveReceipts = receipts.filter((r) => r.receivedQty > 0);
     let remainingException = exceptionQty;
     for (const receipt of positiveReceipts) {
       let lineAccepted = receipt.receivedQty;
@@ -185,15 +217,27 @@ export async function createGRN(
         lineAccepted = receipt.receivedQty - lineDisputed;
         remainingException -= lineDisputed;
       }
-      await tx.goodsReceiptLine.create({
-        data: {
-          grnId: created.id,
-          poLineId: receipt.poLineId,
-          receivedQty: receipt.receivedQty,
-          acceptedQty: lineAccepted,
-          disputedQty: lineDisputed,
-        },
-      });
+      if (useLineItems) {
+        await tx.goodsReceiptLineItem.create({
+          data: {
+            grnId: created.id,
+            poLineItemId: receipt.poLineItemId,
+            receivedQty: receipt.receivedQty,
+            acceptedQty: lineAccepted,
+            disputedQty: lineDisputed,
+          },
+        });
+      } else {
+        await tx.goodsReceiptLine.create({
+          data: {
+            grnId: created.id,
+            poLineId: receipt.poLineItemId,
+            receivedQty: receipt.receivedQty,
+            acceptedQty: lineAccepted,
+            disputedQty: lineDisputed,
+          },
+        });
+      }
     }
 
     if (data.exception) {

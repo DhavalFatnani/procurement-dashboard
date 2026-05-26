@@ -1,4 +1,6 @@
+import Link from "next/link";
 import { Role } from "@prisma/client";
+import { ChevronRight } from "lucide-react";
 
 import { Avatar } from "@/components/shared/Avatar";
 import { cn } from "@/lib/utils";
@@ -23,9 +25,14 @@ export function SidebarUser({
   const accent = ROLE_ACCENT[role];
 
   return (
-    <div
-      className={cn("border-b border-border-subtle px-4 py-3", className)}
+    <Link
+      href="/profile"
+      className={cn(
+        "group block border-b border-border-subtle px-4 py-3 transition-colors hover:bg-foreground/[0.03]",
+        className,
+      )}
       style={{ borderLeftWidth: 2, borderLeftColor: accent }}
+      aria-label="Open profile"
     >
       <div className="flex items-center gap-2.5">
         <Avatar name={displayName} size="md" />
@@ -46,8 +53,13 @@ export function SidebarUser({
             {roleLabel}
           </span>
         </div>
+        <ChevronRight
+          className="size-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
+          strokeWidth={1.5}
+          aria-hidden
+        />
       </div>
-    </div>
+    </Link>
   );
 }
 

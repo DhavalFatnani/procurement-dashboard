@@ -27,13 +27,6 @@ import { requireRoles } from "@/lib/server-action-guard";
 
 const JW_THRESHOLD = 0.85;
 
-// Re-export types from source — see note in app/actions/finder.ts.
-export type {
-  PendingVendorRequestRow,
-  VendorDetail,
-  VendorListRow,
-} from "@/lib/queries/vendors";
-
 export async function getVendors(
   filters: {
     search?: string;

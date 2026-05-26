@@ -25,7 +25,12 @@ export function DetailPageShell({
   const hasSide = side != null;
 
   return (
-    <div className={cn("page-stack relative", actionBar ? "pb-20" : "pb-0")}>
+    <div
+      className={cn(
+        "page-stack relative",
+        actionBar ? "pb-24 lg:pb-0" : "pb-0",
+      )}
+    >
       <div
         className={cn(
           "grid gap-6",
@@ -93,8 +98,8 @@ function DetailHero({
 
 function DetailActionBar({ children }: { children: React.ReactNode }) {
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-0 z-30 flex justify-center px-4 pb-4">
-      <div className="pointer-events-auto flex w-full max-w-content items-center gap-2 rounded-2xl border border-border-subtle px-3 py-2.5 shadow-ds-2 surface-glass">
+    <div className="pointer-events-none fixed inset-x-0 bottom-0 z-30 flex justify-center px-4 pb-4 lg:hidden">
+      <div className="pointer-events-auto flex w-full max-w-content items-center justify-between gap-3 rounded-2xl border border-border-subtle px-3 py-2.5 shadow-ds-2 surface-glass">
         {children}
       </div>
     </div>

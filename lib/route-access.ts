@@ -11,5 +11,6 @@ export const ACCESS = {
   payments: [Role.OPS_HEAD, Role.FINANCE] as const,
   serialGovernance: [Role.SM, Role.OPS_HEAD] as const,
   reports: [Role.SM, Role.OPS_HEAD, Role.FINANCE] as const,
+  profile: [Role.SM, Role.OPS_HEAD, Role.FINANCE] as const,
   admin: [Role.OPS_HEAD] as const,
 } as const;

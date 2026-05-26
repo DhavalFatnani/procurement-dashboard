@@ -24,6 +24,7 @@ import { PageHeader } from "@/components/shared/PageHeader";
 import { Pagination } from "@/components/shared/Pagination";
 import { Button } from "@/components/ui/button";
 import { compactChipSpecs, type FilterChipSpec } from "@/lib/filter-chips";
+import type { WarehouseOption } from "@/lib/format-warehouse";
 import { formatDateMedium } from "@/lib/format-datetime";
 import { ROLE_LABELS } from "@/lib/navigation";
 import type { Paginated } from "@/lib/pagination";
@@ -46,7 +47,7 @@ export function UsersView({
     role: string;
     warehouseId: string;
   };
-  warehouses: { id: string; name: string }[];
+  warehouses: WarehouseOption[];
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -127,7 +128,7 @@ export function UsersView({
     warehouse && {
       key: "warehouseId",
       tone: "neutral",
-      label: `Warehouse: ${warehouse.name}`,
+      label: `Warehouse: ${warehouse.label}`,
       onClear: () => clearFilter("warehouseId"),
     },
   ]);
@@ -247,7 +248,7 @@ export function UsersView({
             placeholder="All warehouses"
             ariaLabel="Warehouse"
             triggerClassName="w-[180px]"
-            options={warehouses.map((w) => ({ value: w.id, label: w.name }))}
+            options={warehouses.map((w) => ({ value: w.id, label: w.label }))}
           />
           <Button type="submit" size="sm" className="h-8">
             Apply

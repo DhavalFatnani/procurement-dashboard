@@ -36,6 +36,7 @@ describe("getNavGroupsForRole", () => {
     expect(admin?.items.map((i) => i.href)).toEqual([
       "/admin/users",
       "/admin/warehouses",
+      "/admin/catalog",
     ]);
   });
 
@@ -61,12 +62,39 @@ describe("getNavGroupsForRole", () => {
 });
 
 describe("getNavItemsForRole (flat)", () => {
-  it("equals the flattened group items", () => {
+  it("equals the flattened group items including PO fulfillment children", () => {
     const flat = getNavItemsForRole(Role.OPS_HEAD).map((i) => i.href);
     const grouped = getNavGroupsForRole(Role.OPS_HEAD).flatMap((g) =>
-      g.items.map((i) => i.href),
+      g.items.flatMap((i) =>
+        i.children ? [i.href, ...i.children.map((c) => c.href)] : [i.href],
+      ),
     );
     expect(flat).toEqual(grouped);
+  });
+});
+
+describe("PO-centric procurement nav", () => {
+  it("nests GRN, invoices, and payments under Purchase Orders for Ops Head", () => {
+    const work = getNavGroupsForRole(Role.OPS_HEAD).find((g) => g.id === "work")!;
+    const po = work.items.find((i) => i.href === "/purchase-orders");
+    expect(po?.children?.map((c) => c.href)).toEqual([
+      "/goods-receipt",
+      "/invoices",
+      "/payments",
+    ]);
+  });
+
+  it("labels the work group Procurement", () => {
+    const work = getNavGroupsForRole(Role.OPS_HEAD).find((g) => g.id === "work")!;
+    expect(work.label).toBe("Procurement");
+  });
+
+  it("keeps Finance fulfillment under PO as invoices & payments only", () => {
+    const work = getNavGroupsForRole(Role.FINANCE).find((g) => g.id === "work")!;
+    expect(work.items.map((i) => i.href)).toEqual(["/inbox", "/purchase-orders"]);
+    const po = work.items.find((i) => i.href === "/purchase-orders");
+    expect(po?.children?.map((c) => c.href)).toEqual(["/payments"]);
+    expect(po?.children?.[0]?.label).toBe("Invoices & payments");
   });
 });
 
@@ -76,21 +104,24 @@ describe("Finance merged Invoices & payments entry", () => {
     expect(hrefs).not.toContain("/invoices");
   });
 
-  it("exposes a single /payments entry labelled 'Invoices & payments' in Work", () => {
+  it("exposes a single /payments entry labelled 'Invoices & payments' under PO", () => {
     const work = getNavGroupsForRole(Role.FINANCE).find((g) => g.id === "work")!;
-    const item = work.items.find((i) => i.href === "/payments");
+    const po = work.items.find((i) => i.href === "/purchase-orders");
+    const item = po?.children?.find((i) => i.href === "/payments");
     expect(item).toBeDefined();
     expect(item?.label).toBe("Invoices & payments");
   });
 
-  it("keeps Ops Head's separate Invoices and Payments entries", () => {
+  it("keeps Ops Head's separate Invoices and Payments entries under PO", () => {
     const hrefs = getNavItemsForRole(Role.OPS_HEAD).map((i) => i.href);
+    expect(hrefs).toContain("/purchase-orders");
     expect(hrefs).toContain("/invoices");
     expect(hrefs).toContain("/payments");
   });
 
-  it("keeps SM's Invoices entry", () => {
+  it("keeps SM's Invoices entry under PO", () => {
     const hrefs = getNavItemsForRole(Role.SM).map((i) => i.href);
     expect(hrefs).toContain("/invoices");
+    expect(hrefs).not.toContain("/payments");
   });
 });

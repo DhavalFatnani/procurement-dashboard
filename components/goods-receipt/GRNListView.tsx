@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import * as React from "react";
 
-import type { GRNDetail, GRNListRow } from "@/app/actions/grn";
+import type { GRNDetail, GRNListRow } from "@/lib/queries/grn";
 import { getGRNById } from "@/app/actions/grn";
 import { Chip } from "@/components/shared/Chip";
 import { DataTable, getRowId, type DataTableColumn } from "@/components/shared/DataTable";

@@ -305,6 +305,16 @@ export async function getPOForInvoiceById(poId: string): Promise<POForInvoiceOpt
       id: true,
       unitPrice: true,
       vendor: { select: { businessName: true } },
+      lineItems: {
+        orderBy: [{ categoryId: "asc" }, { subcategoryId: "asc" }],
+        select: {
+          id: true,
+          unitPrice: true,
+          category: { select: { name: true } },
+          subcategory: { select: { name: true } },
+          catalogItem: { select: { name: true } },
+        },
+      },
       lines: {
         orderBy: { prLine: { lineNumber: "asc" } },
         select: {
@@ -322,6 +332,7 @@ export async function getPOForInvoiceById(poId: string): Promise<POForInvoiceOpt
           acceptedQty: true,
           disputedQty: true,
           invoiceLinks: { select: { id: true } },
+          lineItems: { select: { poLineItemId: true, acceptedQty: true } },
           lines: { select: { poLineId: true, acceptedQty: true } },
         },
       },
@@ -337,11 +348,18 @@ export async function getPOForInvoiceById(poId: string): Promise<POForInvoiceOpt
     return null;
   }
 
-  const linePrices = po.lines.map((line) => ({
-    poLineId: line.id,
-    label: `${line.category.name} / ${line.subcategory.name}`,
-    unitPrice: line.unitPrice.toString(),
-  }));
+  const linePrices =
+    po.lineItems.length > 0
+      ? po.lineItems.map((line) => ({
+          poLineId: line.id,
+          label: `${line.category.name} / ${line.subcategory.name} · ${line.catalogItem.name}`,
+          unitPrice: line.unitPrice.toString(),
+        }))
+      : po.lines.map((line) => ({
+          poLineId: line.id,
+          label: `${line.category.name} / ${line.subcategory.name}`,
+          unitPrice: line.unitPrice.toString(),
+        }));
 
   return {
     id: po.id,
@@ -358,10 +376,16 @@ export async function getPOForInvoiceById(poId: string): Promise<POForInvoiceOpt
       acceptedQty: g.acceptedQty,
       disputedQty: g.disputedQty,
       alreadyInvoiced: g.invoiceLinks.length > 0,
-      lineAccepted: g.lines.map((l) => ({
-        poLineId: l.poLineId,
-        acceptedQty: l.acceptedQty,
-      })),
+      lineAccepted:
+        g.lineItems.length > 0
+          ? g.lineItems.map((l) => ({
+              poLineId: l.poLineItemId,
+              acceptedQty: l.acceptedQty,
+            }))
+          : g.lines.map((l) => ({
+              poLineId: l.poLineId,
+              acceptedQty: l.acceptedQty,
+            })),
     })),
   };
 }

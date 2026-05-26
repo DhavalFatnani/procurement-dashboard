@@ -9,7 +9,7 @@ import type {
   SubcategoryOption,
   UserOption,
   WarehouseOption,
-} from "@/app/actions/purchase-requests";
+} from "@/lib/queries/purchase-requests";
 import {
   PurchaseRequestsFilters,
   type PurchaseRequestsFiltersValue,

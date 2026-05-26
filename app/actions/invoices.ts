@@ -27,14 +27,6 @@ import { STORAGE_BUCKETS } from "@/lib/storage";
 import { uploadStorageObject } from "@/lib/upload-storage";
 import { prisma } from "@/lib/prisma";
 
-// Re-export types from source — see note in app/actions/finder.ts.
-export type {
-  InvoiceDetail,
-  InvoiceFilters,
-  InvoiceListRow,
-  POForInvoiceOption,
-} from "@/lib/queries/invoices";
-
 export async function getInvoices(
   filters: InvoiceFilters,
 ): Promise<Paginated<InvoiceListRow>> {
@@ -113,6 +105,15 @@ export async function createInvoice(
   const po = await prisma.purchaseOrder.findUnique({
     where: { id: poId },
     include: {
+      lineItems: {
+        include: {
+          catalogItem: { select: { name: true } },
+          goodsReceiptLineItems: {
+            where: { grnId: { in: grnIds } },
+            select: { acceptedQty: true },
+          },
+        },
+      },
       lines: {
         include: {
           goodsReceiptLines: {
@@ -144,7 +145,15 @@ export async function createInvoice(
   const acceptedQty = po.grns.reduce((s, g) => s + g.acceptedQty, 0);
 
   let expectedAmount: number | null = null;
-  if (po.lines.length > 0) {
+  if (po.lineItems.length > 0) {
+    expectedAmount = po.lineItems.reduce((sum, line) => {
+      const lineAccepted = line.goodsReceiptLineItems.reduce(
+        (s, grl) => s + grl.acceptedQty,
+        0,
+      );
+      return sum + lineAccepted * Number(line.unitPrice);
+    }, 0);
+  } else if (po.lines.length > 0) {
     expectedAmount = po.lines.reduce((sum, line) => {
       const lineAccepted = line.goodsReceiptLines.reduce((s, grl) => s + grl.acceptedQty, 0);
       return sum + lineAccepted * Number(line.unitPrice);

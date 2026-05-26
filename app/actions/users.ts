@@ -13,6 +13,7 @@ import {
   syncUserWarehouseAssignments,
 } from "@/lib/queries/users";
 import type { UserDetail, UserFilters, UserListRow } from "@/lib/queries/users";
+import { revalidateInboxCache } from "@/lib/revalidate-tags";
 import { requireRoles } from "@/lib/server-action-guard";
 import { createSecretSupabaseClient } from "@/lib/supabase-admin";
 import { getSupabaseUrl } from "@/lib/supabase-env";
@@ -190,6 +191,7 @@ export async function createUser(
   }
 
   revalidatePath("/admin/users");
+  revalidateInboxCache();
   return { ok: true, userId };
 }
 
@@ -251,6 +253,7 @@ export async function updateUser(input: UpdateUserInput): Promise<MutationResult
   });
 
   revalidatePath("/admin/users");
+  revalidateInboxCache();
   return { ok: true };
 }
 

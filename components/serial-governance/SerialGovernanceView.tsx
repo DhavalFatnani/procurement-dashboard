@@ -10,6 +10,7 @@ import type {
   SeriesUsageSummary,
   WarehouseSeriesSnapshot,
 } from "@/lib/serial-governance-types";
+import type { WarehouseOption } from "@/lib/format-warehouse";
 import { SerialActivityTable } from "@/components/serial-governance/SerialActivityTable";
 import { SerialAdvancedConfig } from "@/components/serial-governance/SerialAdvancedConfig";
 import {
@@ -82,7 +83,7 @@ export function SerialGovernanceView({
   warehouseSnapshots: WarehouseSeriesSnapshot[];
   seriesConfigs: SeriesConfigSummary[];
   filters: SerialGovernanceFiltersValue & { page: number; batch: string };
-  filterOptions: { warehouses: { id: string; name: string }[] };
+  filterOptions: { warehouses: WarehouseOption[] };
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();

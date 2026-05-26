@@ -680,3 +680,30 @@ Form submission feedback:            < 500ms  (was likely 1–2s)
 ```
 
 When you deploy to Vercel + Supabase in the same region, these numbers will roughly halve again. Match your Supabase project region to your Vercel deployment region — this single decision is the biggest performance lever after the code fixes above.
+
+---
+
+## Local dev: parallel reads and mutation profiling
+
+### `dbParallel` is serial on direct Postgres
+
+[`lib/db-parallel.ts`](../lib/db-parallel.ts) runs `Promise.all` only when `DATABASE_URL` starts with `prisma://` (Prisma Accelerate). A typical local Supabase URL (`postgresql://…`) uses [`lib/db-serial.ts`](../lib/db-serial.ts) instead, so list/detail pages that fan out several queries pay **one round-trip after another**.
+
+**Options for faster local reads:**
+
+1. Point `DATABASE_URL` at a Prisma Accelerate `prisma://` URL for dev (same code path as production Accelerate).
+2. Opt in to capped local parallelism: set `ALLOW_LOCAL_DB_PARALLEL=true` in `.env.local`. At most **3** queries run concurrently; any additional tasks in the same `dbParallel()` call still run serially. Use only if your pool tolerates it (avoid with `connection_limit=1` transaction pooler URLs).
+
+### Dev timing labels
+
+[`lib/server-timing.ts`](../lib/server-timing.ts) logs `⏱ label: Nms` in the terminal during `NODE_ENV=development`. Notable labels after the performance pass:
+
+- `query.fetchPOById` — PO detail load
+- `query.fetchPRById` — PR detail load
+- `action.approvePR` — full approve server action
+- `PO.getPurchaseOrders` / `PO.filterOptions` — PO list Suspense loader
+- `PO.awaitingPRs` — deferred awaiting-PO panel (Ops only)
+
+### Post-click UX
+
+Client mutations use [`lib/use-server-mutation.ts`](../lib/use-server-mutation.ts) (`isPending` + `router.refresh()` in a transition). PR approve/reject/submit set **optimistic status** before refresh. Server actions call narrow helpers in [`lib/revalidate-tags.ts`](../lib/revalidate-tags.ts) (`revalidatePRStatusChange`, `revalidateCreatePOFromPR`) instead of invalidating every PO tag on every PR approve.

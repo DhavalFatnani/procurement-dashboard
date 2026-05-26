@@ -1,13 +1,19 @@
 "use client";
 
-import { PRStatus, Role } from "@prisma/client";
+import { ExecutionType, PRStatus, Role } from "@prisma/client";
 import Link from "next/link";
 
-import type { PRDetail, CategoryOption, SubcategoryOption } from "@/app/actions/purchase-requests";
+import type {
+  CatalogItemOption,
+  PRDetail,
+  CategoryOption,
+  SubcategoryOption,
+} from "@/lib/queries/purchase-requests";
 import { Breadcrumbs } from "@/components/shared/Breadcrumbs";
 import { DetailPageShell } from "@/components/shared/DetailPageShell";
 import { ProgressTracker } from "@/components/shared/ProgressTracker";
 import { PRDetailView } from "@/components/purchase-requests/PRDetailView";
+import type { PRLifecycleStepperProps } from "@/components/purchase-requests/PRLifecycleStepper";
 import { Button } from "@/components/ui/button";
 import {
   formatPrPageTitle,
@@ -21,7 +27,9 @@ export function PRDetailPageShell({
   role,
   categories,
   subcategories,
+  catalogItems = [],
   progressSlot,
+  sidePanel,
   printSlot,
   versionHistorySlot,
 }: {
@@ -29,7 +37,9 @@ export function PRDetailPageShell({
   role: Role;
   categories: CategoryOption[];
   subcategories: SubcategoryOption[];
+  catalogItems?: CatalogItemOption[];
   progressSlot?: React.ReactNode;
+  sidePanel?: React.ReactNode;
   printSlot?: React.ReactNode;
   versionHistorySlot?: React.ReactNode;
 }) {
@@ -42,14 +52,30 @@ export function PRDetailPageShell({
           <Breadcrumbs items={breadcrumbs} />
           <ProgressTracker
             variant="stepper"
-            status={pr.status}
-            hasPO={!!pr.purchaseOrder}
-            hasGRN={pr.progress.grnRecorded}
-            hasInvoice={pr.progress.invoiceUploaded}
-            isPaid={pr.progress.paymentReceived}
-            cancelled={
-              pr.status === PRStatus.CANCELLED || pr.status === PRStatus.FORCE_CANCELLED
-            }
+            {...(pr.executionType === ExecutionType.INTERNAL_PRINT
+              ? ({
+                  executionType: ExecutionType.INTERNAL_PRINT,
+                  status: pr.status,
+                  hasSerialReservation: Boolean(pr.serialReservation),
+                  cancelled:
+                    pr.status === PRStatus.CANCELLED || pr.status === PRStatus.FORCE_CANCELLED,
+                } satisfies Extract<
+                  PRLifecycleStepperProps,
+                  { executionType: typeof ExecutionType.INTERNAL_PRINT }
+                >)
+              : ({
+                  executionType: ExecutionType.VENDOR_PURCHASE,
+                  status: pr.status,
+                  hasPO: !!pr.purchaseOrder,
+                  hasGRN: pr.progress.grnRecorded,
+                  hasInvoice: pr.progress.invoiceUploaded,
+                  isPaid: pr.progress.paymentReceived,
+                  cancelled:
+                    pr.status === PRStatus.CANCELLED || pr.status === PRStatus.FORCE_CANCELLED,
+                } satisfies Extract<
+                  PRLifecycleStepperProps,
+                  { executionType: typeof ExecutionType.VENDOR_PURCHASE }
+                >))}
           />
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="space-y-1">
@@ -71,13 +97,14 @@ export function PRDetailPageShell({
           </div>
         </div>
       }
-      side={progressSlot}
+      side={sidePanel ?? progressSlot}
       body={
         <PRDetailView
           pr={pr}
           role={role}
           categories={categories}
           subcategories={subcategories}
+          catalogItems={catalogItems}
           embeddedInShell
           printSlot={printSlot}
           versionHistorySlot={versionHistorySlot}

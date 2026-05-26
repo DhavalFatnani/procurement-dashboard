@@ -7,8 +7,8 @@ import { toast } from "sonner";
 import {
   reviewVendorRequest,
   type ActivateVendorFromRequestInput,
-  type PendingVendorRequestRow,
 } from "@/app/actions/vendors";
+import type { PendingVendorRequestRow } from "@/lib/queries/vendors";
 import { FormDrawer } from "@/components/shared/Drawer";
 import { Field } from "@/components/shared/Field";
 import { SheetSection } from "@/components/shared/SheetSection";

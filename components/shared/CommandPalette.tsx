@@ -13,7 +13,8 @@ import {
 } from "lucide-react";
 import * as React from "react";
 
-import { searchEntities, type FinderResult } from "@/app/actions/finder";
+import { searchEntities } from "@/app/actions/finder";
+import type { FinderResult } from "@/lib/queries/finder";
 import { getCommandGroups } from "@/lib/command-palette";
 import { useKeyboardShortcut } from "@/lib/keyboard";
 import { useFinderRecents } from "@/lib/use-finder-recents";

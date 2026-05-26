@@ -2,9 +2,10 @@
 
 import { InvoiceMatchStatus, Role } from "@prisma/client";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import * as React from "react";
 import { toast } from "sonner";
+
+import { useServerMutation } from "@/lib/use-server-mutation";
 
 import { overrideInvoiceMatch } from "@/app/actions/invoices";
 import { ReconciliationPanel } from "@/components/shared/ReconciliationPanel";
@@ -26,22 +27,22 @@ export function PODetailFinancialsTab({
   po: PODetail;
   role: Role;
 }) {
-  const router = useRouter();
+  const { isPending, run } = useServerMutation();
   const isOps = role === Role.OPS_HEAD;
   const [overrideInvoiceId, setOverrideInvoiceId] = React.useState<
     string | null
   >(null);
 
-  async function handleOverrideMatch(reason: string) {
+  function handleOverrideMatch(reason: string) {
     if (!overrideInvoiceId) return;
-    const res = await overrideInvoiceMatch(overrideInvoiceId, reason);
-    if (!res.ok) {
-      toast.error(res.message ?? "Override failed.");
-      return;
-    }
-    toast.success("Invoice match overridden.");
-    setOverrideInvoiceId(null);
-    router.refresh();
+    const invoiceId = overrideInvoiceId;
+    void run(() => overrideInvoiceMatch(invoiceId, reason), {
+      onSuccess: () => {
+        toast.success("Invoice match overridden.");
+        setOverrideInvoiceId(null);
+      },
+      onError: (m) => toast.error(m),
+    });
   }
 
   return (

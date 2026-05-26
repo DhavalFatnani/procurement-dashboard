@@ -5,6 +5,7 @@ import {
   SerialSeries,
   PRStatus,
   VendorStatus,
+  CatalogItemStatus,
 } from "@prisma/client";
 import { randomUUID } from "crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
@@ -103,7 +104,8 @@ async function seedWarehouses() {
   for (const w of WAREHOUSES) {
     await prisma.warehouse.upsert({
       where: { id: w.id },
-      update: { name: w.name, location: w.location },
+      // Do not overwrite name/location on re-seed — Ops may rename warehouses in Admin.
+      update: {},
       create: { ...w },
     });
   }
@@ -328,6 +330,63 @@ async function seedUsersAndSeriesConfig(warehouseIds: string[]) {
   console.log(`  Default password: ${PASSWORD}\n`);
 }
 
+async function seedCatalogItems(opsId: string) {
+  const samples: { subcategoryId: string; name: string; sku?: string; unit: string }[] = [
+    {
+      subcategoryId: "seed-sub-packaging-0",
+      name: "Zip lock bag — medium",
+      sku: "PKG-ZIP-M",
+      unit: "pcs",
+    },
+    {
+      subcategoryId: "seed-sub-packaging-1",
+      name: "Courier bag — standard",
+      sku: "PKG-CRR-STD",
+      unit: "pcs",
+    },
+    {
+      subcategoryId: "seed-sub-maint-0",
+      name: "LED tube 18W",
+      sku: "ELEC-LED-18",
+      unit: "pcs",
+    },
+    {
+      subcategoryId: "seed-sub-lock-0",
+      name: "Apparel lock tag — standard",
+      sku: "LT-APP-STD",
+      unit: "pcs",
+    },
+  ];
+
+  for (const row of samples) {
+    await prisma.catalogItem.upsert({
+      where: {
+        subcategoryId_name: {
+          subcategoryId: row.subcategoryId,
+          name: row.name,
+        },
+      },
+      update: {
+        status: CatalogItemStatus.ACTIVE,
+        sku: row.sku ?? null,
+        unit: row.unit,
+      },
+      create: {
+        subcategoryId: row.subcategoryId,
+        name: row.name,
+        sku: row.sku ?? null,
+        unit: row.unit,
+        status: CatalogItemStatus.ACTIVE,
+        createdById: opsId,
+        approvedById: opsId,
+        approvedAt: new Date(),
+      },
+    });
+  }
+
+  console.log("[seed] Sample catalog items ready.");
+}
+
 async function seedSampleVendorsAndPRs() {
   const sm = await prisma.user.findFirst({
     where: { email: "sm@knot-procurement.local" },
@@ -353,6 +412,15 @@ async function seedSampleVendorsAndPRs() {
     return;
   }
   const printSeries = printSub.series;
+
+  await seedCatalogItems(ops.id);
+
+  const zipBag = await prisma.catalogItem.findFirst({
+    where: { subcategoryId: packagingSub.id, status: CatalogItemStatus.ACTIVE },
+  });
+  const lockTagItem = await prisma.catalogItem.findFirst({
+    where: { subcategoryId: lockVendorSub.id, status: CatalogItemStatus.ACTIVE },
+  });
 
   await prisma.vendor.upsert({
     where: { id: "seed-vendor-alpha" },
@@ -404,14 +472,30 @@ async function seedSampleVendorsAndPRs() {
       executionType: ExecutionType.VENDOR_PURCHASE,
       status: PRStatus.DRAFT,
       createdById: sm.id,
-      lines: {
-        create: {
-          lineNumber: 1,
-          categoryId: packagingSub.categoryId,
-          subcategoryId: packagingSub.id,
-          quantity: 500,
-        },
-      },
+      lines: zipBag
+        ? {
+            create: {
+              lineNumber: 1,
+              categoryId: packagingSub.categoryId,
+              subcategoryId: packagingSub.id,
+              quantity: 500,
+              items: {
+                create: {
+                  lineItemNumber: 1,
+                  catalogItemId: zipBag.id,
+                  quantity: 500,
+                },
+              },
+            },
+          }
+        : {
+            create: {
+              lineNumber: 1,
+              categoryId: packagingSub.categoryId,
+              subcategoryId: packagingSub.id,
+              quantity: 500,
+            },
+          },
     },
   });
 
@@ -526,6 +610,13 @@ async function seedSampleVendorsAndPRs() {
 async function main() {
   await seedWarehouses();
   await seedCategoriesAndSubcategories();
+
+  const opsForCatalog = await prisma.user.findFirst({
+    where: { email: "ops@knot-procurement.local" },
+  });
+  if (opsForCatalog) {
+    await seedCatalogItems(opsForCatalog.id);
+  }
 
   const warehouseIds = (
     await prisma.warehouse.findMany({

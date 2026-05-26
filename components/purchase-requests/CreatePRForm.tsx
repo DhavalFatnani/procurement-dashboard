@@ -7,21 +7,35 @@ import * as React from "react";
 import { toast } from "sonner";
 
 import { getSerialSeriesHint, reserveSerialRangeForPR } from "@/app/actions/serial";
-import { MAX_INTERNAL_PRINT_QUANTITY } from "@/lib/serial-series";
+import {
+  DEFAULT_BARCODE_LABEL_CONFIG,
+  loadBarcodeLabelDefaults,
+  lockBarcodeLabelDefaults,
+  saveBarcodeLabelDefaultsDraft,
+  saveBarcodeLabelConfigToSession,
+  unlockBarcodeLabelDefaults,
+  type BarcodeLabelConfig,
+} from "@/lib/barcode-label-config";
+import { MAX_INTERNAL_PRINT_QUANTITY, formatSerialNumberForSeries } from "@/lib/serial-series";
 import {
   createPR,
   createVendorRequest,
   submitPR,
   updatePR,
-  type CategoryOption,
-  type SubcategoryOption,
 } from "@/app/actions/purchase-requests";
+import type {
+  CatalogItemOption,
+  CategoryOption,
+  SubcategoryOption,
+} from "@/lib/queries/purchase-requests";
 import {
   emptyLineDraft,
   PRLineEditor,
   toLineInputs,
   type PRLineDraft,
 } from "@/components/purchase-requests/PRLineEditor";
+import { CreatePRTypePicker } from "@/components/purchase-requests/CreatePRTypePicker";
+import { ReserveSerialRangeDialog } from "@/components/purchase-requests/ReserveSerialRangeDialog";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { PageAlert } from "@/components/shared/PageAlert";
 import { ExecutionTypeBadge } from "@/components/shared/ExecutionTypeBadge";
@@ -48,6 +62,7 @@ import {
   internalPrintSubcategories,
   resolveCreatePRSelection,
 } from "@/lib/create-pr-selection";
+import type { WarehouseOption } from "@/lib/format-warehouse";
 import { cn } from "@/lib/utils";
 
 type SerialHint = NonNullable<Awaited<ReturnType<typeof getSerialSeriesHint>>>;
@@ -57,16 +72,18 @@ type SerialHintState = {
   hint: SerialHint;
 };
 
-type WarehouseOption = { id: string; name: string };
+type RequestMode = "unset" | "vendor" | "print";
 
 export function CreatePRForm({
   categories,
   subcategories,
+  catalogItems,
   warehouses,
   defaultWarehouseId,
 }: {
   categories: CategoryOption[];
   subcategories: SubcategoryOption[];
+  catalogItems: CatalogItemOption[];
   warehouses: WarehouseOption[];
   defaultWarehouseId: string;
 }) {
@@ -77,7 +94,8 @@ export function CreatePRForm({
     [warehouses, warehouseId],
   );
   const [prId, setPrId] = React.useState<string | null>(null);
-  const [mode, setMode] = React.useState<"unset" | "vendor" | "print">("unset");
+  const [mode, setMode] = React.useState<RequestMode>("unset");
+  const [changeTypeConfirmOpen, setChangeTypeConfirmOpen] = React.useState(false);
   const [categoryId, setCategoryId] = React.useState("");
   const [subcategoryId, setSubcategoryId] = React.useState("");
   const [quantity, setQuantity] = React.useState(1);
@@ -88,6 +106,12 @@ export function CreatePRForm({
   const [printOpen, setPrintOpen] = React.useState(false);
   const [printReserving, setPrintReserving] = React.useState(false);
   const [printWaitMessage, setPrintWaitMessage] = React.useState<string | null>(null);
+  const printIdempotencyKeyRef = React.useRef<string | null>(null);
+  const confirmPrintInFlightRef = React.useRef(false);
+  const [barcodeLabelConfig, setBarcodeLabelConfig] = React.useState<BarcodeLabelConfig>(
+    DEFAULT_BARCODE_LABEL_CONFIG,
+  );
+  const [labelLayoutLocked, setLabelLayoutLocked] = React.useState(false);
   const [vendorSheetOpen, setVendorSheetOpen] = React.useState(false);
   const [pending, startTransition] = React.useTransition();
 
@@ -109,7 +133,7 @@ export function CreatePRForm({
     if (selection?.executionType === ExecutionType.INTERNAL_PRINT) {
       setMode("print");
     } else if (mode === "print" && selection?.executionType === ExecutionType.VENDOR_PURCHASE) {
-      setMode("unset");
+      setMode("vendor");
     }
   }, [selection, mode]);
 
@@ -156,6 +180,48 @@ export function CreatePRForm({
     setVendorSheetOpen(DOWNSTREAM_FIELD_RESET.vendorSheetOpen);
   }
 
+  function resetFormState() {
+    setPrId(null);
+    setCategoryId("");
+    setSubcategoryId("");
+    setQuantity(1);
+    setVendorLines([emptyLineDraft()]);
+    applyDownstreamReset();
+  }
+
+  function hasUnsavedProgress(): boolean {
+    if (prId) {
+      return true;
+    }
+    if (vendorRequestId || pendingVendorLabel) {
+      return true;
+    }
+    if (mode === "vendor") {
+      return vendorLines.some(
+        (line) => line.categoryId || line.subcategoryId || line.quantity !== 1,
+      );
+    }
+    if (mode === "print") {
+      return Boolean(subcategoryId) || quantity !== 1;
+    }
+    return false;
+  }
+
+  function requestTypeChange() {
+    if (hasUnsavedProgress()) {
+      setChangeTypeConfirmOpen(true);
+      return;
+    }
+    resetFormState();
+    setMode("unset");
+  }
+
+  function confirmTypeChange() {
+    resetFormState();
+    setMode("unset");
+    setChangeTypeConfirmOpen(false);
+  }
+
   function enterPrintMode() {
     if (!lockTagsCategory) {
       toast.error("Lock Tags category is not configured. Contact Ops Head.");
@@ -166,6 +232,17 @@ export function CreatePRForm({
     applyDownstreamReset();
     setMode("print");
   }
+
+  function enterVendorMode() {
+    setCategoryId("");
+    setSubcategoryId("");
+    applyDownstreamReset();
+    setMode("vendor");
+  }
+
+  const typeChosen = mode !== "unset";
+  const modeLabel =
+    mode === "vendor" ? "Vendor purchase" : mode === "print" ? "Internal print" : "";
 
   function handleSubcategoryChange(nextSubcategoryId: string) {
     setSubcategoryId(nextSubcategoryId);
@@ -216,10 +293,26 @@ export function CreatePRForm({
   }, [hintSubcategoryId]);
 
   React.useEffect(() => {
+    const saved = loadBarcodeLabelDefaults();
+    setBarcodeLabelConfig(saved.config);
+    setLabelLayoutLocked(saved.locked);
+  }, []);
+
+  React.useEffect(() => {
     if (executionType !== ExecutionType.INTERNAL_PRINT) {
       setPrintOpen(false);
     }
   }, [executionType]);
+
+  React.useEffect(() => {
+    if (printOpen) {
+      printIdempotencyKeyRef.current = crypto.randomUUID();
+      confirmPrintInFlightRef.current = false;
+      const saved = loadBarcodeLabelDefaults();
+      setBarcodeLabelConfig(saved.config);
+      setLabelLayoutLocked(saved.locked);
+    }
+  }, [printOpen]);
 
   const printSubcategories = React.useMemo(() => {
     if (!lockTagsCategory) {
@@ -231,7 +324,7 @@ export function CreatePRForm({
   function formPayload() {
     if (mode === "vendor") {
       return {
-        lines: toLineInputs(vendorLines),
+        lines: toLineInputs(vendorLines, categories),
         vendorId: null,
         vendorRequestId,
         warehouseId,
@@ -258,7 +351,7 @@ export function CreatePRForm({
     if (warehouses.length <= 1) {
       return (
         <p className="rounded-md border border-border-subtle bg-muted/30 px-3 py-2 text-ds-sm">
-          {selectedWarehouse?.name ?? "—"}
+          {selectedWarehouse?.label ?? "—"}
         </p>
       );
     }
@@ -271,7 +364,7 @@ export function CreatePRForm({
         <SelectContent>
           {warehouses.map((warehouse) => (
             <SelectItem key={warehouse.id} value={warehouse.id}>
-              {warehouse.name}
+              {warehouse.label}
             </SelectItem>
           ))}
         </SelectContent>
@@ -347,68 +440,113 @@ export function CreatePRForm({
     if (!selection || executionType !== ExecutionType.INTERNAL_PRINT) {
       return;
     }
-    const idempotencyKey = crypto.randomUUID();
-    startTransition(async () => {
-      setPrintReserving(true);
-      setPrintWaitMessage(null);
+    if (confirmPrintInFlightRef.current) {
+      return;
+    }
+    const idempotencyKey = printIdempotencyKeyRef.current;
+    if (!idempotencyKey) {
+      return;
+    }
 
+    confirmPrintInFlightRef.current = true;
+    setPrintReserving(true);
+    setPrintWaitMessage(null);
+
+    startTransition(async () => {
       const maxAttempts = 4;
       let lastError: string | undefined;
+      let resolvedPrId: string | undefined = prId ?? undefined;
 
-      for (let attempt = 0; attempt < maxAttempts; attempt++) {
-        if (attempt > 0) {
-          setPrintWaitMessage("Waiting for another print to finish…");
-          await new Promise((r) => setTimeout(r, 300 * attempt));
+      try {
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+          if (attempt > 0) {
+            setPrintWaitMessage("Waiting for another print to finish…");
+            await new Promise((r) => setTimeout(r, 300 * attempt));
+          }
+
+          const result = await reserveSerialRangeForPR({
+            prId: resolvedPrId,
+            categoryId: selection.categoryId,
+            subcategoryId: selection.subcategoryId,
+            quantity,
+            warehouseId,
+            idempotencyKey,
+          });
+
+          if (result.ok && result.prId) {
+            resolvedPrId = result.prId;
+            setPrId(result.prId);
+            if (result.reservationId) {
+              saveBarcodeLabelConfigToSession(result.reservationId, barcodeLabelConfig);
+            }
+            setPrintOpen(false);
+            toast.success("Serial range reserved.");
+            window.location.assign(`/purchase-requests/${result.prId}/print?fresh=1`);
+            return;
+          }
+
+          lastError = result.error;
+          const isConflict =
+            result.error?.includes("Another print request") ?? false;
+          if (!isConflict || attempt === maxAttempts - 1) {
+            break;
+          }
         }
 
-        const result = await reserveSerialRangeForPR({
-          prId: prId ?? undefined,
-          categoryId: selection.categoryId,
-          subcategoryId: selection.subcategoryId,
-          quantity,
-          warehouseId,
-          idempotencyKey,
+        toast.error(lastError ?? "Serial reservation failed.", {
+          action:
+            lastError?.includes("Another print request") ?? false
+              ? {
+                  label: "Retry",
+                  onClick: () => confirmPrint(),
+                }
+              : undefined,
         });
-
-        if (result.ok) {
-          setPrintReserving(false);
-          setPrintWaitMessage(null);
-          toast.success("Serial range reserved.");
-          setPrintOpen(false);
-          router.push(`/purchase-requests/${result.prId}/print`);
-          return;
-        }
-
-        lastError = result.error;
-        const isConflict =
-          result.error?.includes("Another print request") ?? false;
-        if (!isConflict || attempt === maxAttempts - 1) {
-          break;
-        }
+      } finally {
+        confirmPrintInFlightRef.current = false;
+        setPrintReserving(false);
+        setPrintWaitMessage(null);
       }
-
-      setPrintReserving(false);
-      setPrintWaitMessage(null);
-      toast.error(lastError ?? "Serial reservation failed.", {
-        action:
-          lastError?.includes("Another print request") ?? false
-            ? {
-                label: "Retry",
-                onClick: () => confirmPrint(),
-              }
-            : undefined,
-      });
     });
   }
 
-  const printRangeStart = serialHint?.nextStart ? Number(serialHint.nextStart) : 1;
-  const printRangeEnd = printRangeStart + quantity - 1;
+  function handleLabelConfigChange(next: BarcodeLabelConfig) {
+    setBarcodeLabelConfig(next);
+    if (!labelLayoutLocked) {
+      saveBarcodeLabelDefaultsDraft(next);
+    }
+  }
+
+  function handleLockLabelLayout() {
+    const state = lockBarcodeLabelDefaults(barcodeLabelConfig);
+    setLabelLayoutLocked(state.locked);
+    toast.success("Label layout locked as your default for future prints.");
+  }
+
+  function handleUnlockLabelLayout() {
+    const state = unlockBarcodeLabelDefaults(barcodeLabelConfig);
+    setLabelLayoutLocked(state.locked);
+    toast.message("Layout unlocked — adjust settings, then lock again to save as default.");
+  }
+
+  const printRangeStart = serialHint?.nextStart ?? "";
+  const printRangeEnd =
+    serialHint?.nextStart && serialHint.series
+      ? formatSerialNumberForSeries(
+          serialHint.series,
+          BigInt(serialHint.nextStart) + BigInt(Math.max(quantity - 1, 0)),
+        )
+      : "";
 
   return (
     <div className="space-y-8">
       <PageHeader
         title="Create purchase request"
-        subtitle="Add vendor line items or use internal print for serial batches. Warehouse is assigned from your profile."
+        subtitle={
+          typeChosen
+            ? "Complete the details below, then save or submit."
+            : "Pick vendor purchase or internal print first — each follows a different workflow."
+        }
         action={
           <Link href="/purchase-requests" className={cn(buttonVariants({ variant: "outline" }))}>
             Back to list
@@ -416,46 +554,78 @@ export function CreatePRForm({
         }
       />
 
-      {mode === "unset" ? (
-        <section className="flex flex-wrap gap-2">
-          <Button type="button" onClick={() => setMode("vendor")}>
-            Vendor purchase (multi-line)
-          </Button>
-          <Button type="button" variant="outline" onClick={() => enterPrintMode()}>
-            Internal print
-          </Button>
-        </section>
-      ) : null}
+      {!typeChosen ? (
+        <CreatePRTypePicker
+          warehouses={warehouses}
+          selectedWarehouseName={selectedWarehouse?.label ?? "—"}
+          onSelectVendor={enterVendorMode}
+          onSelectPrint={enterPrintMode}
+        />
+      ) : (
+        <>
+          <div className="flex flex-col gap-3 rounded-xl border border-border-subtle bg-card px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-wrap items-center gap-2">
+              <ExecutionTypeBadge
+                type={
+                  mode === "vendor"
+                    ? ExecutionType.VENDOR_PURCHASE
+                    : ExecutionType.INTERNAL_PRINT
+                }
+              />
+              <span className="text-ds-sm font-medium text-foreground">{modeLabel}</span>
+              <span className="hidden text-muted-foreground sm:inline" aria-hidden>
+                ·
+              </span>
+              <span className="text-ds-sm text-muted-foreground">
+                {selectedWarehouse?.label ?? "No warehouse"}
+              </span>
+            </div>
+            <Button type="button" variant="outline" size="sm" onClick={requestTypeChange}>
+              Change request type
+            </Button>
+          </div>
 
       {mode === "vendor" ? (
         <section className="space-y-4 rounded-xl border border-border-subtle bg-card p-4">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="text-ds-sm font-semibold">1. Line items</h2>
-            <Button type="button" variant="ghost" size="sm" onClick={() => setMode("unset")}>
-              Change type
-            </Button>
+          <div className="space-y-3">
+            <h2 className="text-ds-sm font-semibold">2. Line items</h2>
+            <ul className="grid gap-2 sm:grid-cols-2">
+              <li className="rounded-lg border border-border-subtle bg-muted/20 px-3 py-2.5 text-ds-xs">
+                <p className="font-medium text-foreground">Packaging & Lock Tags</p>
+                <p className="mt-0.5 text-muted-foreground">
+                  Choose subcategory and quantity — billed as one line per subcategory.
+                </p>
+              </li>
+              <li className="rounded-lg border border-border-subtle bg-muted/20 px-3 py-2.5 text-ds-xs">
+                <p className="font-medium text-foreground">Warehouse Maintenance</p>
+                <p className="mt-0.5 text-muted-foreground">
+                  Search the item catalog or add a missing name for Ops approval.
+                </p>
+              </li>
+            </ul>
           </div>
-          <p className="text-ds-xs text-muted-foreground">
-            Add one or more vendor-purchase requirements. Ops will create a single PO with per-line
-            pricing after approval.
-          </p>
           <PRLineEditor
             categories={categories}
             subcategories={subcategories}
+            catalogItems={catalogItems}
             lines={vendorLines}
             onChange={setVendorLines}
             vendorPurchaseOnly
           />
+          <div className="space-y-1.5 border-t border-border-subtle pt-4">
+            <span className="text-ds-sm font-medium">Warehouse</span>
+            {renderWarehouseField()}
+          </div>
         </section>
       ) : null}
 
       {mode === "print" ? (
         <section className="space-y-4 rounded-xl border border-border-subtle bg-card p-4">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="text-ds-sm font-semibold">1. Subcategory selection</h2>
-            <Button type="button" variant="ghost" size="sm" onClick={() => setMode("unset")}>
-              Change type
-            </Button>
+          <div className="space-y-1">
+            <h2 className="text-ds-sm font-semibold">2. Subcategory selection</h2>
+            <p className="text-ds-xs text-muted-foreground">
+              Pick the lock-tag subcategory to print. Category is fixed to Lock Tags.
+            </p>
           </div>
           {!lockTagsCategory ? (
             <PageAlert variant="warning">
@@ -524,7 +694,7 @@ export function CreatePRForm({
                 className="h-8"
               />
               <p className="text-ds-xs text-muted-foreground">
-                Up to {MAX_INTERNAL_PRINT_QUANTITY.toLocaleString()} per print job.
+                Up to {MAX_INTERNAL_PRINT_QUANTITY} per print job.
               </p>
             </div>
             <div className="space-y-1.5">
@@ -532,13 +702,6 @@ export function CreatePRForm({
               {renderWarehouseField()}
             </div>
           </div>
-        </section>
-      ) : null}
-
-      {section1Done && mode === "vendor" ? (
-        <section className="space-y-4 rounded-xl border border-border-subtle bg-card p-4">
-          <h2 className="text-ds-sm font-semibold">2. Warehouse</h2>
-          {renderWarehouseField()}
         </section>
       ) : null}
 
@@ -660,53 +823,45 @@ export function CreatePRForm({
         </div>
       ) : null}
 
-      {showInternalPrintActions ? (
-        <ConfirmDialog
+      {showInternalPrintActions && serialHint ? (
+        <ReserveSerialRangeDialog
           key={`print-dialog-${flowKey}`}
           open={printOpen}
           onOpenChange={setPrintOpen}
-          title="Reserve serial range"
-          confirmLabel={printReserving ? "Reserving…" : "Confirm print"}
-          cancelLabel="Cancel"
-          confirmDisabled={printReserving}
-          closeOnConfirm={false}
-          body={
-            serialHint ? (
-              <div className="space-y-3 text-ds-sm">
-                <p>You are about to reserve a serial range assigned to your warehouse.</p>
-                {printWaitMessage ? (
-                  <p className="text-muted-foreground">{printWaitMessage}</p>
-                ) : null}
-                <ul className="space-y-1.5">
-                  <li>
-                    <span className="text-muted-foreground">Series: </span>
-                    <span className="font-mono font-medium">{serialHint.series}</span>
-                  </li>
-                  <li>
-                    <span className="text-muted-foreground">Quantity: </span>
-                    <span className="font-medium">{quantity}</span>
-                  </li>
-                  <li>
-                    <span className="text-muted-foreground">Estimated range: </span>
-                    <span className="font-mono font-medium">
-                      {printRangeStart} to {printRangeEnd}
-                    </span>
-                  </li>
-                  <li>
-                    <span className="text-muted-foreground">Warehouse: </span>
-                    <span className="font-medium">{selectedWarehouse?.name ?? "—"}</span>
-                  </li>
-                </ul>
-                <p className="text-ds-xs text-muted-foreground">
-                  Allocation is atomic across all warehouses — concurrent prints receive
-                  distinct, non-overlapping ranges.
-                </p>
-              </div>
-            ) : null
-          }
+          series={serialHint.series}
+          seriesName={serialHint.seriesName}
+          categoryName={serialHint.categoryName}
+          quantity={quantity}
+          rangeStart={printRangeStart}
+          rangeEnd={printRangeEnd}
+          warehouseLabel={selectedWarehouse?.label ?? "—"}
+          waitMessage={printWaitMessage}
+          reserving={printReserving}
+          labelConfig={barcodeLabelConfig}
+          onLabelConfigChange={handleLabelConfigChange}
+          layoutLocked={labelLayoutLocked}
+          onLockLayout={handleLockLabelLayout}
+          onUnlockLayout={handleUnlockLabelLayout}
           onConfirm={() => confirmPrint()}
         />
       ) : null}
+
+      <ConfirmDialog
+        open={changeTypeConfirmOpen}
+        onOpenChange={setChangeTypeConfirmOpen}
+        title="Change request type?"
+        confirmLabel="Change type"
+        cancelLabel="Keep editing"
+        body={
+          <p className="text-ds-sm text-muted-foreground">
+            Switching between vendor purchase and internal print clears line items, quantities,
+            and any draft saved on this page. This cannot be undone.
+          </p>
+        }
+        onConfirm={() => confirmTypeChange()}
+      />
+        </>
+      )}
     </div>
   );
 }

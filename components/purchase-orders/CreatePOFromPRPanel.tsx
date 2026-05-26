@@ -4,7 +4,13 @@ import { useRouter } from "next/navigation";
 import * as React from "react";
 import { toast } from "sonner";
 
-import { createPOFromPR } from "@/app/actions/purchase-requests";
+import { useServerMutation } from "@/lib/use-server-mutation";
+
+import {
+  createPOFromPR,
+  exportPORateCsvForPR,
+  validatePORateCsvForPR,
+} from "@/app/actions/purchase-requests";
 import { formatPrPageTitle, formatProcurementRef } from "@/lib/display-ref";
 import type { ApprovedPRAwaitingPO } from "@/lib/queries/purchase-orders";
 import { Button } from "@/components/ui/button";
@@ -26,40 +32,86 @@ export function CreatePOFromPRPanel({
   onSuccess?: () => void;
 }) {
   const router = useRouter();
+  const { isPending, run } = useServerMutation();
   const [open, setOpen] = React.useState(defaultOpen ?? false);
   const [vendorId, setVendorId] = React.useState("");
-  const [linePrices, setLinePrices] = React.useState<Record<string, string>>(() =>
-    Object.fromEntries(pr.lines.map((line) => [line.id, ""])),
+  const lineItems = pr.lineItems;
+  const [itemPrices, setItemPrices] = React.useState<Record<string, string>>(() =>
+    Object.fromEntries(lineItems.map((item) => [item.prLineItemId, ""])),
   );
   const [expectedDelivery, setExpectedDelivery] = React.useState("");
-  const [pending, startTransition] = React.useTransition();
+  const [csvErrors, setCsvErrors] = React.useState<string | null>(null);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   function submit() {
-    startTransition(async () => {
-      const result = await createPOFromPR(pr.id, {
-        vendorId,
-        expectedDelivery,
-        linePrices: pr.lines.map((line) => ({
-          prLineId: line.id,
-          unitPrice: Number(linePrices[line.id] ?? 0),
-        })),
-      });
-      if (!result.ok || !result.poId) {
-        toast.error(result.message ?? "Could not create purchase order.");
-        return;
-      }
-      toast.success(`Purchase order ${formatProcurementRef(result.poId)} created.`);
-      setOpen(false);
-      onSuccess?.();
-      router.push(`/purchase-orders/${result.poId}`);
-      router.refresh();
-    });
+    void run(
+      () =>
+        createPOFromPR(pr.id, {
+          vendorId,
+          expectedDelivery,
+          itemPrices: lineItems.map((item) => ({
+            prLineItemId: item.prLineItemId,
+            unitPrice: Number(itemPrices[item.prLineItemId] ?? 0),
+          })),
+        }),
+      {
+        refresh: false,
+        onSuccess: (result) => {
+          const poId =
+            result && typeof result === "object" && "poId" in result
+              ? (result as { poId?: string }).poId
+              : undefined;
+          if (!poId) {
+            toast.error("Could not create purchase order.");
+            return;
+          }
+          toast.success(`Purchase order ${formatProcurementRef(poId)} created.`);
+          setOpen(false);
+          onSuccess?.();
+          router.push(`/purchase-orders/${poId}`);
+        },
+        onError: (m) => toast.error(m),
+      },
+    );
   }
 
-  const allPricesFilled = pr.lines.every((line) => {
-    const price = Number(linePrices[line.id]);
+  const allPricesFilled = lineItems.every((item) => {
+    const price = Number(itemPrices[item.prLineItemId]);
     return Number.isFinite(price) && price > 0;
   });
+
+  async function downloadRateCsv() {
+    const result = await exportPORateCsvForPR(pr.id);
+    if (!result.ok) {
+      toast.error(result.message ?? "Could not export CSV.");
+      return;
+    }
+    const blob = new Blob([result.csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = result.filename;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function handleCsvUpload(file: File) {
+    const text = await file.text();
+    const result = await validatePORateCsvForPR(pr.id, text);
+    if (!result.ok) {
+      setCsvErrors(result.message ?? "CSV validation failed.");
+      return;
+    }
+    setCsvErrors(null);
+    setItemPrices((prev) => {
+      const next = { ...prev };
+      for (const row of result.itemPrices) {
+        next[row.prLineItemId] = String(row.unitPrice);
+      }
+      return next;
+    });
+    toast.success("Rates applied from CSV.");
+  }
 
   if (!open) {
     return (
@@ -88,6 +140,37 @@ export function CreatePOFromPRPanel({
         </p>
       ) : null}
 
+      <div className="flex flex-wrap gap-2">
+        <Button type="button" variant="outline" size="sm" disabled={isPending} onClick={() => void downloadRateCsv()}>
+          Download rate CSV
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={isPending}
+          onClick={() => fileInputRef.current?.click()}
+        >
+          Upload rate CSV
+        </Button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".csv,text/csv"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = "";
+            if (file) {
+              void handleCsvUpload(file);
+            }
+          }}
+        />
+      </div>
+      {csvErrors ? (
+        <p className="text-ds-xs text-[var(--status-error)]">{csvErrors}</p>
+      ) : null}
+
       <div className="overflow-x-auto rounded-md border border-border-subtle">
         <table className="w-full text-ds-sm">
           <thead>
@@ -99,23 +182,32 @@ export function CreatePOFromPRPanel({
             </tr>
           </thead>
           <tbody>
-            {pr.lines.map((line) => (
-              <tr key={line.id} className="border-b border-border-subtle last:border-0">
-                <td className="px-3 py-2">{line.lineNumber}</td>
-                <td className="px-3 py-2">
-                  {line.categoryName} / {line.subcategoryName}
+            {lineItems.map((item) => (
+              <tr key={item.prLineItemId} className="border-b border-border-subtle last:border-0">
+                <td className="px-3 py-2 tabular-nums">
+                  {item.lineNumber}.{item.lineItemNumber}
                 </td>
-                <td className="px-3 py-2 text-right tabular-nums">{line.quantity}</td>
+                <td className="px-3 py-2">
+                  <span className="font-medium">{item.itemName}</span>
+                  <span className="block text-ds-xs text-muted-foreground">
+                    {item.categoryName} / {item.subcategoryName}
+                    {item.sku ? ` · ${item.sku}` : ""} · {item.unit}
+                  </span>
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums">{item.quantity}</td>
                 <td className="px-3 py-2">
                   <Input
-                    id={`fulfill-price-${line.id}`}
+                    id={`fulfill-price-${item.prLineItemId}`}
                     type="number"
                     min={0}
                     step="0.01"
                     required
-                    value={linePrices[line.id] ?? ""}
+                    value={itemPrices[item.prLineItemId] ?? ""}
                     onChange={(e) =>
-                      setLinePrices((prev) => ({ ...prev, [line.id]: e.target.value }))
+                      setItemPrices((prev) => ({
+                        ...prev,
+                        [item.prLineItemId]: e.target.value,
+                      }))
                     }
                     className="ml-auto h-8 max-w-[140px] text-right"
                   />
@@ -162,12 +254,12 @@ export function CreatePOFromPRPanel({
       <div className="flex flex-wrap gap-2">
         <Button
           type="button"
-          disabled={pending || !vendorId || !expectedDelivery || !allPricesFilled}
+          disabled={isPending || !vendorId || !expectedDelivery || !allPricesFilled}
           onClick={() => submit()}
         >
           Create purchase order
         </Button>
-        <Button type="button" variant="ghost" disabled={pending} onClick={() => setOpen(false)}>
+        <Button type="button" variant="ghost" disabled={isPending} onClick={() => setOpen(false)}>
           Cancel
         </Button>
       </div>

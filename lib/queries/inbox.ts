@@ -7,6 +7,7 @@ import {
 } from "@prisma/client";
 
 import { dbSerial } from "@/lib/db-serial";
+import { cachedQuery, LIST_CACHE_TAGS, stableFilterKey } from "@/lib/list-cache";
 import { prisma } from "@/lib/prisma";
 import type { SessionUser } from "@/lib/session";
 import {
@@ -164,8 +165,10 @@ async function fetchSmInbox(user: SessionUser): Promise<InboxData> {
       }),
     );
 
-  const prTitle = (line?: { quantity: number; subcategory: { name: string } }) =>
-    line ? `${line.subcategory.name} × ${line.quantity}` : "Purchase request";
+  const prTitle = (line?: { quantity: number | null; subcategory: { name: string } }) =>
+    line
+      ? `${line.subcategory.name} × ${line.quantity ?? 0}`
+      : "Purchase request";
 
   const draftItems: InboxItem[] = drafts.map((pr) => ({
     id: pr.id,
@@ -352,8 +355,10 @@ async function fetchOpsHeadInbox(user: SessionUser): Promise<InboxData> {
       }),
     );
 
-  const prTitle = (line?: { quantity: number; subcategory: { name: string } }) =>
-    line ? `${line.subcategory.name} × ${line.quantity}` : "Purchase request";
+  const prTitle = (line?: { quantity: number | null; subcategory: { name: string } }) =>
+    line
+      ? `${line.subcategory.name} × ${line.quantity ?? 0}`
+      : "Purchase request";
 
   const approvalItems: InboxItem[] = pendingApprovals.map((pr) => ({
     id: pr.id,
@@ -650,6 +655,22 @@ async function fetchFinanceInbox(user: SessionUser): Promise<InboxData> {
 }
 
 export async function getInboxForSession(user: SessionUser): Promise<InboxData> {
+  const cacheKey = stableFilterKey({
+    userId: user.id,
+    role: user.role,
+    warehouseId: user.warehouseId,
+    warehouseIds: user.warehouseIds.join(","),
+  });
+
+  return cachedQuery(
+    LIST_CACHE_TAGS.inbox,
+    [cacheKey],
+    () => fetchInboxForRole(user),
+    { tags: [LIST_CACHE_TAGS.inbox] },
+  );
+}
+
+async function fetchInboxForRole(user: SessionUser): Promise<InboxData> {
   switch (user.role) {
     case Role.SM:
       return fetchSmInbox(user);

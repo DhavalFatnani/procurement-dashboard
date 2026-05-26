@@ -6,7 +6,7 @@ import { useSearchParams } from "next/navigation";
 import * as React from "react";
 import { toast } from "sonner";
 
-import type { InvoiceDetail, InvoiceListRow } from "@/app/actions/invoices";
+import type { InvoiceDetail, InvoiceListRow } from "@/lib/queries/invoices";
 import { getInvoiceById, overrideInvoiceMatch } from "@/app/actions/invoices";
 import { DataTable, getRowId, type DataTableColumn } from "@/components/shared/DataTable";
 import { DateRangeFilter } from "@/components/shared/DateRangeFilter";

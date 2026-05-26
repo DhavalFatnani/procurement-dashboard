@@ -2,7 +2,7 @@
 
 import * as React from "react";
 
-import type { FinderResult } from "@/app/actions/finder";
+import type { FinderResult } from "@/lib/queries/finder";
 
 const STORAGE_KEY = "knot:finder:recents";
 const MAX_RECENTS = 5;

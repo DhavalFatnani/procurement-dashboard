@@ -2,11 +2,12 @@
 
 import { ExecutionType, PRStatus, Role } from "@prisma/client";
 import { useRouter } from "next/navigation";
+import { useOptimistic } from "react";
 import * as React from "react";
 import dynamic from "next/dynamic";
 import { toast } from "sonner";
 
-import type { PurchaseRequestListRow } from "@/app/actions/purchase-requests";
+import type { PurchaseRequestListRow } from "@/lib/queries/purchase-requests";
 import {
   approvePR,
   rejectPR,
@@ -23,6 +24,7 @@ import { formatDateTimeMedium } from "@/lib/format-datetime";
 import type { Paginated } from "@/lib/pagination";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useServerMutation } from "@/lib/use-server-mutation";
 import Link from "next/link";
 
 const ConfirmDialog = dynamic(
@@ -37,10 +39,17 @@ const TextareaActionDialog = dynamic(
   { ssr: false },
 );
 
+function rowStatus(
+  row: PurchaseRequestListRow,
+  overrides: Record<string, PRStatus>,
+): PRStatus {
+  return overrides[row.id] ?? row.status;
+}
+
 export function PRListTable({
   role,
   rows,
-  isPending,
+  isPending: listNavPending,
   paginationSearchParams,
   onPageChange,
   onRowsChange,
@@ -54,10 +63,19 @@ export function PRListTable({
 }) {
   const router = useRouter();
   const isOps = role === Role.OPS_HEAD;
+  const { isPending: actionPending, run } = useServerMutation({ onRefresh: onRowsChange });
+  const [optimisticStatuses, setOptimisticStatuses] = useOptimistic(
+    {} as Record<string, PRStatus>,
+    (current, update: { id: string; status: PRStatus }) => ({
+      ...current,
+      [update.id]: update.status,
+    }),
+  );
+  const isPending = listNavPending || actionPending;
+
   const [approveId, setApproveId] = React.useState<string | null>(null);
   const [rejectId, setRejectId] = React.useState<string | null>(null);
   const [revisionId, setRevisionId] = React.useState<string | null>(null);
-  const [, startTransition] = React.useTransition();
 
   const handleRowClick = React.useCallback(
     (r: PurchaseRequestListRow) => router.push(`/purchase-requests/${r.id}`),
@@ -89,16 +107,19 @@ export function PRListTable({
       {
         id: "status",
         header: "Status",
-        cell: (r) => (
-          <StatusBadge
-            kind="PRStatus"
-            status={r.status}
-            awaitingPurchaseOrder={
-              r.executionType === ExecutionType.VENDOR_PURCHASE &&
-              r.status === PRStatus.APPROVED
-            }
-          />
-        ),
+        cell: (r) => {
+          const status = rowStatus(r, optimisticStatuses);
+          return (
+            <StatusBadge
+              kind="PRStatus"
+              status={status}
+              awaitingPurchaseOrder={
+                r.executionType === ExecutionType.VENDOR_PURCHASE &&
+                status === PRStatus.APPROVED
+              }
+            />
+          );
+        },
       },
       { id: "ver", header: "Version", cell: (r) => r.versionLabel },
       { id: "by", header: "Created by", cell: (r) => r.createdByName },
@@ -111,9 +132,10 @@ export function PRListTable({
         header: "",
         revealOnHover: true,
         cell: (r) => {
+          const status = rowStatus(r, optimisticStatuses);
           if (
             r.executionType !== ExecutionType.VENDOR_PURCHASE ||
-            r.status !== PRStatus.PENDING_APPROVAL
+            status !== PRStatus.PENDING_APPROVAL
           ) {
             return null;
           }
@@ -124,6 +146,7 @@ export function PRListTable({
                 variant="ghost"
                 size="sm"
                 className="h-7 px-2 text-ds-xs font-medium text-primary hover:text-primary"
+                disabled={actionPending}
                 onClick={() => setApproveId(r.id)}
               >
                 Approve
@@ -133,6 +156,7 @@ export function PRListTable({
                 variant="ghost"
                 size="sm"
                 className="h-7 px-2 text-ds-xs font-medium text-destructive hover:text-destructive"
+                disabled={actionPending}
                 onClick={() => setRejectId(r.id)}
               >
                 Reject
@@ -142,6 +166,7 @@ export function PRListTable({
                 variant="ghost"
                 size="sm"
                 className="h-7 px-2 text-ds-xs font-medium text-status-warning hover:text-status-warning"
+                disabled={actionPending}
                 onClick={() => setRevisionId(r.id)}
               >
                 Revise
@@ -153,16 +178,16 @@ export function PRListTable({
     }
 
     return base;
-  }, [isOps]);
+  }, [isOps, optimisticStatuses, actionPending]);
 
   const firstPendingApproval = React.useMemo(
     () =>
       rows.items.find(
         (r) =>
           r.executionType === ExecutionType.VENDOR_PURCHASE &&
-          r.status === PRStatus.PENDING_APPROVAL,
+          rowStatus(r, optimisticStatuses) === PRStatus.PENDING_APPROVAL,
       ),
-    [rows.items],
+    [rows.items, optimisticStatuses],
   );
 
   usePageKeyboardHandlers({
@@ -236,15 +261,20 @@ export function PRListTable({
           }
           const id = approveId;
           setApproveId(null);
-          startTransition(async () => {
-            const r = await approvePR(id);
-            if (r.ok) {
-              toast.success("PR approved. Create the purchase order when ready.");
-              onRowsChange();
-            } else {
-              toast.error(r.message ?? "Approval failed.");
-            }
-          });
+          void run(
+            () =>
+              approvePR(id, {
+                approvedCatalogItemIds: [],
+                rejected: [],
+              }),
+            {
+              onSuccess: () => {
+                setOptimisticStatuses({ id, status: PRStatus.APPROVED });
+                toast.success("PR approved. Create the purchase order when ready.");
+              },
+              onError: (m) => toast.error(m),
+            },
+          );
         }}
       />
 
@@ -261,14 +291,12 @@ export function PRListTable({
           }
           const id = rejectId;
           setRejectId(null);
-          startTransition(async () => {
-            const r = await rejectPR(id, text);
-            if (r.ok) {
+          void run(() => rejectPR(id, text), {
+            onSuccess: () => {
+              setOptimisticStatuses({ id, status: PRStatus.REJECTED });
               toast.success("PR rejected.");
-              onRowsChange();
-            } else {
-              toast.error(r.message ?? "Reject failed.");
-            }
+            },
+            onError: (m) => toast.error(m),
           });
         }}
       />
@@ -286,14 +314,12 @@ export function PRListTable({
           }
           const id = revisionId;
           setRevisionId(null);
-          startTransition(async () => {
-            const r = await sendForRevision(id, text);
-            if (r.ok) {
+          void run(() => sendForRevision(id, text), {
+            onSuccess: () => {
+              setOptimisticStatuses({ id, status: PRStatus.REVISION_REQUIRED });
               toast.success("Sent for revision.");
-              onRowsChange();
-            } else {
-              toast.error(r.message ?? "Failed to send for revision.");
-            }
+            },
+            onError: (m) => toast.error(m),
           });
         }}
       />

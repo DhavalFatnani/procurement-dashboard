@@ -25,15 +25,6 @@ import { STORAGE_BUCKETS } from "@/lib/storage";
 import { uploadStorageObject } from "@/lib/upload-storage";
 import { prisma } from "@/lib/prisma";
 
-// Re-export types directly from the source module — Turbopack mishandles the
-// `import type … → export type …` indirection inside `"use server"` files.
-export type {
-  InvoicePaymentDetail,
-  PaymentEntry,
-  PaymentFilters,
-  PaymentListRow,
-} from "@/lib/queries/payments";
-
 export async function getPayments(
   filters: PaymentFilters,
 ): Promise<Paginated<PaymentListRow>> {

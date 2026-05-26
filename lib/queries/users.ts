@@ -2,6 +2,7 @@ import { Prisma, Role } from "@prisma/client";
 
 import { paginatedListQuery, type Paginated } from "@/lib/pagination";
 import { prisma } from "@/lib/prisma";
+import { formatWarehouseLabel } from "@/lib/format-warehouse";
 
 export type UserListRow = {
   id: string;
@@ -35,16 +36,18 @@ function mapUserRow(
     role: Role;
     warehouseId: string;
     createdAt: Date;
-    warehouse: { name: string };
-    warehouseAssignments: { warehouse: { id: string; name: string } }[];
+    warehouse: { name: string; location: string };
+    warehouseAssignments: { warehouse: { id: string; name: string; location: string } }[];
   },
 ): UserListRow {
   const assignments =
     u.warehouseAssignments.length > 0
       ? u.warehouseAssignments.map((a) => a.warehouse)
-      : [{ id: u.warehouseId, name: u.warehouse.name }];
+      : [{ id: u.warehouseId, name: u.warehouse.name, location: u.warehouse.location }];
   const warehouseIds = assignments.map((w) => w.id);
-  const warehouseNames = assignments.map((w) => w.name);
+  const warehouseNames = assignments.map((w) =>
+    formatWarehouseLabel(w.name, w.location),
+  );
   return {
     id: u.id,
     email: u.email,
@@ -59,10 +62,10 @@ function mapUserRow(
 }
 
 const userInclude = {
-  warehouse: { select: { name: true } },
+  warehouse: { select: { name: true, location: true } },
   warehouseAssignments: {
     orderBy: { warehouse: { name: "asc" as const } },
-    select: { warehouse: { select: { id: true, name: true } } },
+    select: { warehouse: { select: { id: true, name: true, location: true } } },
   },
 } satisfies Prisma.UserInclude;
 

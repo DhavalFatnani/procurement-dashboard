@@ -19,16 +19,11 @@ import type {
   PurchaseOrderFilters,
   PurchaseOrderListRow,
 } from "@/lib/queries/purchase-orders";
-import { revalidateProcurementLists } from "@/lib/revalidate-tags";
+import {
+  revalidateProcurementLists,
+  revalidatePurchaseOrdersCache,
+} from "@/lib/revalidate-tags";
 import { requireRoles } from "@/lib/server-action-guard";
-
-// Re-export types from source — see note in app/actions/finder.ts.
-export type {
-  ApprovedPRAwaitingPO,
-  PODetail,
-  PurchaseOrderFilters,
-  PurchaseOrderListRow,
-} from "@/lib/queries/purchase-orders";
 
 export async function getApprovedPRsAwaitingPO(): Promise<ApprovedPRAwaitingPO[]> {
   await requireRoles([Role.OPS_HEAD]);
@@ -116,6 +111,7 @@ export async function updatePOExpectedDelivery(
     data: { expectedDelivery: date },
   });
 
+  revalidatePurchaseOrdersCache(poId);
   revalidatePath(`/purchase-orders/${poId}`);
   return { ok: true };
 }

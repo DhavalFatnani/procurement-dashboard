@@ -12,6 +12,8 @@ import {
 
 import { getCachedActiveVendorOptions, getCachedWarehouses } from "@/lib/cache";
 import { dbParallel } from "@/lib/db-parallel";
+import { formatWarehouseLabel, warehouseOptionsFromRows } from "@/lib/format-warehouse";
+import { mapPrLinesFromDb, prLinesInclude } from "@/lib/map-pr-lines";
 import { cachedQuery, LIST_CACHE_TAGS, stableFilterKey } from "@/lib/list-cache";
 import {
   aggregateInvoiceMatchStatus,
@@ -21,10 +23,13 @@ import {
 } from "@/lib/poAutoClose";
 import { paginatedListQuery, type Paginated } from "@/lib/pagination";
 import { prisma } from "@/lib/prisma";
+import { timed } from "@/lib/server-timing";
 import {
   formatLineSummary,
   hasLockTagsLines,
+  sumLineQuantities,
   sumOrderedQty,
+  type POLineItemRow,
   type POLineRow,
   type PRLineRow,
 } from "@/lib/purchase-lines";
@@ -97,6 +102,7 @@ export type PODetail = {
   orderedQty: number;
   unitPrice: string | null;
   lines: POLineRow[];
+  lineItems: POLineItemRow[];
   expectedDelivery: string | null;
   deliveryComplete: boolean;
   status: POStatus;
@@ -198,10 +204,9 @@ async function fetchPurchaseOrders(
           deliveryComplete: true,
           expectedDelivery: true,
           createdAt: true,
-          lines: { select: { orderedQty: true } },
           vendor: { select: { businessName: true } },
           purchaseRequest: {
-            select: { warehouse: { select: { name: true } } },
+            select: { warehouse: { select: { name: true, location: true } } },
           },
         },
       }),
@@ -241,13 +246,15 @@ async function fetchPurchaseOrders(
     items: paginated.items.map((po) => {
       const receivedQty = receivedByPo.get(po.id) ?? 0;
       const invoices = invoicesByPo.get(po.id) ?? [];
-      const orderedQty =
-        po.lines.length > 0 ? sumOrderedQty(po.lines) : (po.orderedQty ?? 0);
+      const orderedQty = po.orderedQty ?? 0;
       return {
         id: po.id,
         prId: po.prId,
         vendorName: po.vendor.businessName,
-        warehouseName: po.purchaseRequest.warehouse.name,
+        warehouseName: formatWarehouseLabel(
+          po.purchaseRequest.warehouse.name,
+          po.purchaseRequest.warehouse.location,
+        ),
         deliveryStatus: deliveryStatusLabel(
           orderedQty,
           receivedQty,
@@ -275,6 +282,7 @@ export const getPOById = cache(async (id: string): Promise<PODetail | null> => {
 });
 
 async function fetchPOById(id: string): Promise<PODetail | null> {
+  return timed("query.fetchPOById", async () => {
   const po = await prisma.purchaseOrder.findUnique({
     where: { id },
     include: {
@@ -287,26 +295,28 @@ async function fetchPOById(id: string): Promise<PODetail | null> {
           email: true,
         },
       },
-      lines: {
-        orderBy: { prLine: { lineNumber: "asc" } },
+      lineItems: {
+        orderBy: [
+          { prLineItem: { prLine: { lineNumber: "asc" } } },
+          { prLineItem: { lineItemNumber: "asc" } },
+        ],
         include: {
           category: { select: { name: true } },
           subcategory: { select: { name: true } },
-          prLine: { select: { lineNumber: true } },
-          goodsReceiptLines: { select: { acceptedQty: true } },
+          catalogItem: { select: { name: true, sku: true, unit: true } },
+          prLineItem: {
+            select: {
+              lineItemNumber: true,
+              prLine: { select: { lineNumber: true, categoryId: true, subcategoryId: true } },
+            },
+          },
+          goodsReceiptLineItems: { select: { acceptedQty: true } },
         },
       },
       purchaseRequest: {
         select: {
           category: { select: { name: true } },
           subcategory: { select: { name: true } },
-          lines: {
-            orderBy: { lineNumber: "asc" },
-            select: {
-              subcategory: { select: { name: true } },
-              category: { select: { name: true } },
-            },
-          },
         },
       },
       serialReservation: {
@@ -339,7 +349,26 @@ async function fetchPOById(id: string): Promise<PODetail | null> {
     return null;
   }
 
-  const snapshot = buildClosureSnapshot(po);
+  const legacyLines =
+    po.lineItems.length === 0
+      ? await prisma.purchaseOrderLine.findMany({
+          where: { poId: id },
+          orderBy: { prLine: { lineNumber: "asc" } },
+          include: {
+            category: { select: { name: true } },
+            subcategory: { select: { name: true } },
+            prLine: { select: { lineNumber: true } },
+            goodsReceiptLines: { select: { acceptedQty: true } },
+          },
+        })
+      : [];
+
+  const poForClosure = {
+    ...po,
+    lines: legacyLines,
+  };
+
+  const snapshot = buildClosureSnapshot(poForClosure);
 
   const closureLabels: { id: string; label: string; done: boolean }[] = [
     {
@@ -364,7 +393,24 @@ async function fetchPOById(id: string): Promise<PODetail | null> {
     },
   ];
 
-  const lineRows: POLineRow[] = po.lines.map((line) => ({
+  const lineItemRows: POLineItemRow[] = po.lineItems.map((line) => ({
+    id: line.id,
+    prLineItemId: line.prLineItemId,
+    lineNumber: line.prLineItem.prLine.lineNumber,
+    lineItemNumber: line.prLineItem.lineItemNumber,
+    categoryId: line.categoryId,
+    categoryName: line.category.name,
+    subcategoryId: line.subcategoryId,
+    subcategoryName: line.subcategory.name,
+    itemName: line.catalogItem.name,
+    sku: line.catalogItem.sku,
+    unit: line.catalogItem.unit,
+    orderedQty: line.orderedQty,
+    unitPrice: line.unitPrice.toString(),
+    receivedQty: line.goodsReceiptLineItems.reduce((s, grl) => s + grl.acceptedQty, 0),
+  }));
+
+  const lineRows: POLineRow[] = legacyLines.map((line) => ({
     id: line.id,
     prLineId: line.prLineId,
     lineNumber: line.prLine.lineNumber,
@@ -378,21 +424,23 @@ async function fetchPOById(id: string): Promise<PODetail | null> {
   }));
 
   const prLineSummary = formatLineSummary(
-    po.purchaseRequest.lines.length > 0
-      ? po.purchaseRequest.lines.map((l) => ({
-          subcategoryName: l.subcategory.name,
-          categoryName: l.category.name,
-        }))
-      : lineRows.map((l) => ({
-          subcategoryName: l.subcategoryName,
-          categoryName: l.categoryName,
-        })),
+    displayLinesForSummary(lineItemRows, lineRows),
   );
 
-  const orderedQty = lineRows.length > 0 ? sumOrderedQty(lineRows) : (po.orderedQty ?? 0);
+  const displayLines = lineItemRows.length > 0 ? lineItemRows : lineRows;
+  const orderedQty =
+    lineItemRows.length > 0
+      ? lineItemRows.reduce((s, l) => s + l.orderedQty, 0)
+      : lineRows.length > 0
+        ? sumOrderedQty(lineRows)
+        : (po.orderedQty ?? 0);
   const isLockTags =
-    lineRows.length > 0
-      ? hasLockTagsLines(lineRows)
+    displayLines.length > 0
+      ? hasLockTagsLines(
+          (lineItemRows.length > 0 ? lineItemRows : lineRows).map((l) => ({
+            categoryName: l.categoryName,
+          })),
+        )
       : po.purchaseRequest.category?.name === "Lock Tags";
 
   return {
@@ -404,10 +452,13 @@ async function fetchPOById(id: string): Promise<PODetail | null> {
     isLockTags,
     orderedQty,
     unitPrice:
-      lineRows.length === 1
-        ? lineRows[0]!.unitPrice
-        : (po.unitPrice?.toString() ?? null),
+      lineItemRows.length === 1
+        ? lineItemRows[0]!.unitPrice
+        : lineRows.length === 1
+          ? lineRows[0]!.unitPrice
+          : (po.unitPrice?.toString() ?? null),
     lines: lineRows,
+    lineItems: lineItemRows,
     expectedDelivery: po.expectedDelivery?.toISOString() ?? null,
     deliveryComplete: po.deliveryComplete,
     status: po.status,
@@ -458,6 +509,23 @@ async function fetchPOById(id: string): Promise<PODetail | null> {
       createdAt: inv.createdAt.toISOString(),
     })),
   };
+  });
+}
+
+function displayLinesForSummary(
+  lineItemRows: POLineItemRow[],
+  lineRows: POLineRow[],
+): { subcategoryName: string; categoryName: string }[] {
+  if (lineItemRows.length > 0) {
+    return lineItemRows.map((l) => ({
+      subcategoryName: l.subcategoryName,
+      categoryName: l.categoryName,
+    }));
+  }
+  return lineRows.map((l) => ({
+    subcategoryName: l.subcategoryName,
+    categoryName: l.categoryName,
+  }));
 }
 
 export const getPOFilterOptions = cache(async () => {
@@ -465,8 +533,21 @@ export const getPOFilterOptions = cache(async () => {
     () => getCachedActiveVendorOptions(),
     () => getCachedWarehouses(),
   );
-  return { vendors, warehouses };
+  return { vendors, warehouses: warehouseOptionsFromRows(warehouses) };
 });
+
+export type ApprovedPRLineItemRow = {
+  id: string;
+  prLineItemId: string;
+  lineNumber: number;
+  lineItemNumber: number;
+  categoryName: string;
+  subcategoryName: string;
+  itemName: string;
+  sku: string | null;
+  unit: string;
+  quantity: number;
+};
 
 export type ApprovedPRAwaitingPO = {
   id: string;
@@ -476,6 +557,7 @@ export type ApprovedPRAwaitingPO = {
   warehouseName: string;
   quantity: number;
   lines: PRLineRow[];
+  lineItems: ApprovedPRLineItemRow[];
   createdByName: string;
   createdAt: string;
   vendorRequestLabel: string | null;
@@ -505,38 +587,31 @@ async function fetchApprovedPRsAwaitingPO(limit: number): Promise<ApprovedPRAwai
       createdAt: true,
       category: { select: { name: true } },
       subcategory: { select: { name: true } },
-      lines: {
-        orderBy: { lineNumber: "asc" },
-        select: {
-          id: true,
-          lineNumber: true,
-          categoryId: true,
-          subcategoryId: true,
-          quantity: true,
-          notes: true,
-          category: { select: { name: true } },
-          subcategory: { select: { name: true } },
-        },
-      },
-      warehouse: { select: { name: true } },
+      lines: prLinesInclude,
+      warehouse: { select: { name: true, location: true } },
       createdBy: { select: { name: true } },
       vendorRequest: { select: { businessName: true, status: true } },
     },
   });
 
   return rows.map((pr) => {
-    const lines: PRLineRow[] = pr.lines.map((line) => ({
-      id: line.id,
-      lineNumber: line.lineNumber,
-      categoryId: line.categoryId,
-      categoryName: line.category.name,
-      subcategoryId: line.subcategoryId,
-      subcategoryName: line.subcategory.name,
-      quantity: line.quantity,
-      notes: line.notes,
-    }));
+    const lines = mapPrLinesFromDb(pr.lines);
+    const lineItems: ApprovedPRLineItemRow[] = lines.flatMap((line) =>
+      line.items.map((item) => ({
+        id: item.id,
+        prLineItemId: item.id,
+        lineNumber: line.lineNumber,
+        lineItemNumber: item.lineItemNumber,
+        categoryName: line.categoryName,
+        subcategoryName: line.subcategoryName,
+        itemName: item.itemName,
+        sku: item.sku,
+        unit: item.unit,
+        quantity: item.quantity,
+      })),
+    );
     const summary = formatLineSummary(lines);
-    const totalQty = lines.reduce((s, l) => s + l.quantity, 0) || (pr.quantity ?? 0);
+    const totalQty = sumLineQuantities(lines) || (pr.quantity ?? 0);
     const primary = lines[0];
 
     return {
@@ -544,9 +619,10 @@ async function fetchApprovedPRsAwaitingPO(limit: number): Promise<ApprovedPRAwai
       categoryName: primary?.categoryName ?? pr.category?.name ?? "—",
       subcategoryName: primary?.subcategoryName ?? pr.subcategory?.name ?? "—",
       lineSummary: summary.summary,
-      warehouseName: pr.warehouse.name,
+      warehouseName: formatWarehouseLabel(pr.warehouse.name, pr.warehouse.location),
       quantity: totalQty,
       lines,
+      lineItems,
       createdByName: pr.createdBy.name,
       createdAt: pr.createdAt.toISOString(),
       vendorRequestLabel:

@@ -1,7 +1,9 @@
+import { ExecutionType, Role } from "@prisma/client";
 import { notFound } from "next/navigation";
 
 import {
-  PRDetailPrintSection,
+  PRDetailInternalPrintBody,
+  PRDetailInternalPrintSide,
   PRDetailProgress,
   PRDetailVersionHistory,
 } from "@/components/purchase-requests/PRDetailSections";
@@ -26,14 +28,23 @@ export default async function PurchaseRequestDetailPage({ params }: { params: Pa
     notFound();
   }
 
+  const isInternalPrint = pr.executionType === ExecutionType.INTERNAL_PRINT;
+
   return (
     <PRDetailPageShell
       pr={pr}
       role={user.role}
       categories={filterOptions.categories}
       subcategories={filterOptions.subcategories}
-      progressSlot={<PRDetailProgress pr={pr} />}
-      printSlot={<PRDetailPrintSection pr={pr} />}
+      catalogItems={filterOptions.catalogItems}
+      sidePanel={
+        isInternalPrint ? (
+          <PRDetailInternalPrintSide pr={pr} role={user.role} />
+        ) : (
+          <PRDetailProgress pr={pr} />
+        )
+      }
+      printSlot={isInternalPrint ? <PRDetailInternalPrintBody pr={pr} /> : null}
       versionHistorySlot={<PRDetailVersionHistory pr={pr} />}
     />
   );

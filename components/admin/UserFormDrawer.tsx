@@ -19,8 +19,9 @@ import {
 } from "@/components/ui/select";
 import { ROLE_LABELS } from "@/lib/navigation";
 import type { UserDetail } from "@/lib/queries/users";
-import { roleUsesMultiWarehouseAssignment } from "@/lib/warehouse-scope";
+import type { WarehouseOption } from "@/lib/format-warehouse";
 import { cn } from "@/lib/utils";
+import { roleUsesMultiWarehouseAssignment } from "@/lib/warehouse-scope";
 
 type Mode =
   | { kind: "create" }
@@ -32,7 +33,7 @@ function WarehouseCheckboxList({
   onChange,
   idPrefix,
 }: {
-  warehouses: { id: string; name: string }[];
+  warehouses: WarehouseOption[];
   selectedIds: string[];
   onChange: (ids: string[]) => void;
   idPrefix: string;
@@ -66,7 +67,7 @@ function WarehouseCheckboxList({
               checked={checked}
               onChange={() => toggle(w.id)}
             />
-            <span>{w.name}</span>
+            <span>{w.label}</span>
           </label>
         );
       })}
@@ -83,7 +84,7 @@ export function UserFormDrawer({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  warehouses: { id: string; name: string }[];
+  warehouses: WarehouseOption[];
   mode: Mode;
   onSaved: () => void;
 }) {
@@ -290,7 +291,7 @@ export function UserFormDrawer({
                   <SelectContent>
                     {warehouses.map((w) => (
                       <SelectItem key={w.id} value={w.id}>
-                        {w.name}
+                        {w.label}
                       </SelectItem>
                     ))}
                   </SelectContent>

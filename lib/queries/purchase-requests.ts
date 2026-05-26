@@ -1,12 +1,24 @@
 import { cache } from "react";
 import { ExecutionType, POStatus, PRStatus, Role } from "@prisma/client";
 
-import { getCachedCategories, getCachedCreators, getCachedWarehouses } from "@/lib/cache";
+import {
+  getCachedActiveCatalogItems,
+  getCachedCategories,
+  getCachedCreators,
+  getCachedWarehouses,
+} from "@/lib/cache";
+import { mapPrLinesFromDb, prLinesInclude } from "@/lib/map-pr-lines";
 import { dbParallel } from "@/lib/db-parallel";
+import {
+  formatWarehouseLabel,
+  type WarehouseOption,
+  warehouseOptionsFromRows,
+} from "@/lib/format-warehouse";
 import { cachedQuery, LIST_CACHE_TAGS, stableFilterKey } from "@/lib/list-cache";
 import { paginatedListQuery, type Paginated } from "@/lib/pagination";
 import { prVersionActionLabel } from "@/lib/pr-version-label";
 import { prisma } from "@/lib/prisma";
+import { timed } from "@/lib/server-timing";
 import {
   formatLineSummary,
   sumLineQuantities,
@@ -40,7 +52,24 @@ export type SubcategoryOption = {
   categoryId: string;
   executionType: ExecutionType;
 };
-export type WarehouseOption = { id: string; name: string };
+
+export type CatalogItemOption = {
+  id: string;
+  subcategoryId: string;
+  name: string;
+  sku: string | null;
+  unit: string;
+};
+
+export type PendingCatalogItemRow = {
+  id: string;
+  name: string;
+  sku: string | null;
+  unit: string;
+  subcategoryName: string;
+  categoryName: string;
+};
+export type { WarehouseOption } from "@/lib/format-warehouse";
 export type UserOption = { id: string; name: string };
 
 export type PurchaseRequestFilters = {
@@ -105,6 +134,7 @@ export type PRDetail = {
     byName: string;
     at: string;
   } | null;
+  pendingCatalogItems: PendingCatalogItemRow[];
   progress: {
     prApproved: boolean;
     prApprovedAt: string | null;
@@ -119,40 +149,18 @@ export type PRDetail = {
   };
 };
 
-function mapLines(
-  lines: {
-    id: string;
-    lineNumber: number;
-    categoryId: string;
-    subcategoryId: string;
-    quantity: number;
-    notes: string | null;
-    category: { name: string };
-    subcategory: { name: string };
-  }[],
-): PRLineRow[] {
-  return lines.map((line) => ({
-    id: line.id,
-    lineNumber: line.lineNumber,
-    categoryId: line.categoryId,
-    categoryName: line.category.name,
-    subcategoryId: line.subcategoryId,
-    subcategoryName: line.subcategory.name,
-    quantity: line.quantity,
-    notes: line.notes,
-  }));
-}
-
 export const getFilterOptions = cache(async (): Promise<{
   categories: CategoryOption[];
   subcategories: SubcategoryOption[];
+  catalogItems: CatalogItemOption[];
   warehouses: WarehouseOption[];
   creators: UserOption[];
 }> => {
-  const [categoriesWithSubs, warehouses, creators] = await dbParallel(
+  const [categoriesWithSubs, warehouses, creators, catalogItems] = await dbParallel(
     () => getCachedCategories(),
     () => getCachedWarehouses(),
     () => getCachedCreators(),
+    () => getCachedActiveCatalogItems(),
   );
 
   const categories = categoriesWithSubs.map((c) => ({ id: c.id, name: c.name }));
@@ -169,7 +177,8 @@ export const getFilterOptions = cache(async (): Promise<{
   return {
     categories,
     subcategories,
-    warehouses: warehouses.map((w) => ({ id: w.id, name: w.name })),
+    catalogItems,
+    warehouses: warehouseOptionsFromRows(warehouses),
     creators,
   };
 });
@@ -264,9 +273,10 @@ async function fetchPurchaseRequests(
               quantity: true,
               category: { select: { name: true } },
               subcategory: { select: { name: true } },
+              items: { select: { quantity: true } },
             },
           },
-          warehouse: { select: { name: true } },
+          warehouse: { select: { name: true, location: true } },
           vendor: { select: { businessName: true } },
           vendorRequest: { select: { businessName: true, status: true } },
           createdBy: { select: { name: true } },
@@ -280,7 +290,8 @@ async function fetchPurchaseRequests(
       const lineRows = pr.lines.map((l) => ({
         subcategoryName: l.subcategory.name,
         categoryName: l.category.name,
-        quantity: l.quantity,
+        quantity: l.quantity ?? 0,
+        items: l.items,
       }));
       const summary = formatLineSummary(lineRows);
       const totalQty =
@@ -293,7 +304,10 @@ async function fetchPurchaseRequests(
         subcategoryName: primaryLine?.subcategory.name ?? pr.subcategory?.name ?? "—",
         lineSummary: summary.summary,
         lineCount: summary.lineCount || pr.lines.length,
-        warehouseName: pr.warehouse.name,
+        warehouseName: formatWarehouseLabel(
+          pr.warehouse.name,
+          pr.warehouse.location,
+        ),
         quantity: totalQty,
         vendorName:
           pr.executionType === ExecutionType.INTERNAL_PRINT
@@ -326,19 +340,14 @@ export async function getPRById(
 }
 
 async function fetchPRById(user: SessionUser, id: string): Promise<PRDetail | null> {
+  return timed("query.fetchPRById", async () => {
   const pr = await prisma.purchaseRequest.findUnique({
     where: { id },
     include: {
       category: { select: { name: true } },
       subcategory: { select: { name: true } },
-      lines: {
-        orderBy: { lineNumber: "asc" },
-        include: {
-          category: { select: { name: true } },
-          subcategory: { select: { name: true } },
-        },
-      },
-      warehouse: { select: { name: true } },
+      lines: prLinesInclude,
+      warehouse: { select: { name: true, location: true } },
       vendor: { select: { businessName: true } },
       vendorRequest: { select: { status: true, businessName: true } },
       createdBy: { select: { name: true } },
@@ -395,9 +404,10 @@ async function fetchPRById(user: SessionUser, id: string): Promise<PRDetail | nu
     return null;
   }
 
-  const lines = mapLines(pr.lines);
+  const lines = mapPrLinesFromDb(pr.lines);
   const summary = formatLineSummary(lines);
   const totalQty = lines.length > 0 ? sumLineQuantities(lines) : (pr.quantity ?? 0);
+
   const primaryLine = lines[0];
 
   const revisionVersion = pr.versions.find((v) => {
@@ -440,7 +450,7 @@ async function fetchPRById(user: SessionUser, id: string): Promise<PRDetail | nu
     quantity: totalQty,
     lines,
     warehouseId: pr.warehouseId,
-    warehouseName: pr.warehouse.name,
+    warehouseName: formatWarehouseLabel(pr.warehouse.name, pr.warehouse.location),
     vendorId: pr.vendorId,
     vendorName:
       pr.vendor?.businessName ??
@@ -486,6 +496,7 @@ async function fetchPRById(user: SessionUser, id: string): Promise<PRDetail | nu
           at: revisionVersion.changedAt.toISOString(),
         }
       : null,
+    pendingCatalogItems: [],
     progress: {
       prApproved:
         pr.status === PRStatus.APPROVED ||
@@ -502,4 +513,5 @@ async function fetchPRById(user: SessionUser, id: string): Promise<PRDetail | nu
       paymentReceivedAt: allPaid?.toISOString() ?? null,
     },
   };
+  });
 }

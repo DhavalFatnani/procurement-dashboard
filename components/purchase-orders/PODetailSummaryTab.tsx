@@ -31,7 +31,9 @@ export function PODetailSummaryTab({
   po: PODetail;
   role: Role;
 }) {
-  const totalValue = po.lines.reduce(
+  const billingLines =
+    po.lineItems.length > 0 ? po.lineItems : po.lines;
+  const totalValue = billingLines.reduce(
     (sum, line) => sum + line.orderedQty * Number(line.unitPrice),
     0,
   );
@@ -62,14 +64,14 @@ export function PODetailSummaryTab({
         </div>
       </SurfaceCard>
 
-      {po.lines.length > 0 ? (
+      {billingLines.length > 0 ? (
         <SurfaceCard
           header={
             <>
               <SurfaceCardTitle>Line items</SurfaceCardTitle>
               <SurfaceCardDescription>
-                {po.lines.length}{" "}
-                {po.lines.length === 1 ? "line" : "lines"}
+                {billingLines.length}{" "}
+                {billingLines.length === 1 ? "item" : "items"}
               </SurfaceCardDescription>
             </>
           }
@@ -89,7 +91,60 @@ export function PODetailSummaryTab({
                 </tr>
               </thead>
               <tbody>
-                {po.lines.map((line) => {
+                {po.lineItems.length > 0
+                  ? po.lineItems.map((line) => {
+                      const lineValue =
+                        line.orderedQty * Number(line.unitPrice);
+                      const ratio =
+                        line.orderedQty > 0
+                          ? line.receivedQty / line.orderedQty
+                          : 0;
+                      return (
+                        <tr
+                          key={line.id}
+                          className="border-b border-border-subtle last:border-0"
+                        >
+                          <td className="py-2 pr-3 tabular-nums">
+                            {line.lineNumber}.{line.lineItemNumber}
+                          </td>
+                          <td className="py-2 pr-3">
+                            <span className="font-medium">{line.itemName}</span>
+                            <span className="block text-ds-xs text-muted-foreground">
+                              {line.categoryName} / {line.subcategoryName}
+                            </span>
+                          </td>
+                          <td className="py-2 pr-3 text-right tabular-nums">
+                            {line.orderedQty}
+                          </td>
+                          <td className="py-2 pr-3 text-right">
+                            <span className="inline-flex items-baseline gap-1.5">
+                              <span className="font-tabular">
+                                {line.receivedQty}
+                              </span>
+                              <span
+                                className={cn(
+                                  "text-ds-2xs",
+                                  ratio >= 1
+                                    ? "text-status-success"
+                                    : ratio > 0
+                                      ? "text-status-warning"
+                                      : "text-muted-foreground",
+                                )}
+                              >
+                                {Math.round(ratio * 100)}%
+                              </span>
+                            </span>
+                          </td>
+                          <td className="py-2 pr-3 text-right tabular-nums">
+                            {formatInr(line.unitPrice)}
+                          </td>
+                          <td className="py-2 text-right tabular-nums">
+                            {formatInr(String(lineValue))}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  : po.lines.map((line) => {
                   const lineValue =
                     line.orderedQty * Number(line.unitPrice);
                   const ratio =

@@ -26,7 +26,7 @@ export function Sidebar({
   return (
     <aside
       className={cn(
-        "flex w-sidebar shrink-0 flex-col border-r border-border-subtle",
+        "flex h-full min-h-0 w-sidebar shrink-0 flex-col overflow-hidden border-r border-border-subtle",
         className,
       )}
       style={{

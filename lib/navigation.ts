@@ -12,7 +12,8 @@ export type NavIconId =
   | "serialGovernance"
   | "reports"
   | "users"
-  | "warehouses";
+  | "warehouses"
+  | "catalog";
 
 export type NavItem = {
   href: string;
@@ -20,6 +21,8 @@ export type NavItem = {
   icon: NavIconId;
   /** Optional "(read-only)" / "(limited)" subtitle shown beneath the label. */
   hint?: string;
+  /** Downstream steps from PO (GRN → invoices → payments). */
+  children?: NavItem[];
 };
 
 export type NavGroup = {
@@ -27,6 +30,70 @@ export type NavGroup = {
   label: string;
   items: NavItem[];
 };
+
+const PURCHASE_REQUESTS_ITEM: NavItem = {
+  href: "/purchase-requests",
+  label: "Purchase Requests",
+  icon: "purchaseRequests",
+};
+
+/** Flatten top-level and nested nav items (for command palette, tests). */
+export function flattenNavItems(items: NavItem[]): NavItem[] {
+  return items.flatMap((item) =>
+    item.children ? [item, ...item.children] : [item],
+  );
+}
+
+function poFulfillmentChildren(role: Role): NavItem[] {
+  switch (role) {
+    case Role.SM:
+      return [
+        {
+          href: "/goods-receipt",
+          label: "Goods Receipt",
+          icon: "goodsReceipt",
+        },
+        {
+          href: "/invoices",
+          label: "Invoices",
+          icon: "invoices",
+          hint: "upload only",
+        },
+      ];
+    case Role.OPS_HEAD:
+      return [
+        { href: "/goods-receipt", label: "Goods Receipt", icon: "goodsReceipt" },
+        { href: "/invoices", label: "Invoices", icon: "invoices" },
+        {
+          href: "/payments",
+          label: "Payments",
+          icon: "payments",
+          hint: "view only",
+        },
+      ];
+    case Role.FINANCE:
+      return [
+        {
+          href: "/payments",
+          label: "Invoices & payments",
+          icon: "payments",
+        },
+      ];
+  }
+}
+
+function purchaseOrdersHubFor(role: Role): NavItem {
+  const children = poFulfillmentChildren(role);
+  return {
+    href: "/purchase-orders",
+    label: "Purchase Orders",
+    icon: "purchaseOrders",
+    ...(role === Role.SM || role === Role.FINANCE
+      ? { hint: "read-only" }
+      : {}),
+    children,
+  };
+}
 
 export const ROLE_LABELS: Record<Role, string> = {
   [Role.SM]: "Store Manager",
@@ -41,40 +108,14 @@ const INBOX_ITEM: NavItem = {
 };
 
 function workItemsFor(role: Role): NavItem[] {
+  const poHub = purchaseOrdersHubFor(role);
   switch (role) {
     case Role.SM:
-      return [
-        INBOX_ITEM,
-        { href: "/purchase-requests", label: "Purchase Requests", icon: "purchaseRequests" },
-        {
-          href: "/purchase-orders",
-          label: "Purchase Orders",
-          icon: "purchaseOrders",
-          hint: "read-only",
-        },
-        { href: "/goods-receipt", label: "Goods Receipt", icon: "goodsReceipt" },
-        { href: "/invoices", label: "Invoices", icon: "invoices", hint: "upload only" },
-      ];
+      return [INBOX_ITEM, PURCHASE_REQUESTS_ITEM, poHub];
     case Role.OPS_HEAD:
-      return [
-        INBOX_ITEM,
-        { href: "/purchase-requests", label: "Purchase Requests", icon: "purchaseRequests" },
-        { href: "/purchase-orders", label: "Purchase Orders", icon: "purchaseOrders" },
-        { href: "/goods-receipt", label: "Goods Receipt", icon: "goodsReceipt" },
-        { href: "/invoices", label: "Invoices", icon: "invoices" },
-        { href: "/payments", label: "Payments", icon: "payments", hint: "view only" },
-      ];
+      return [INBOX_ITEM, PURCHASE_REQUESTS_ITEM, poHub];
     case Role.FINANCE:
-      return [
-        INBOX_ITEM,
-        {
-          href: "/purchase-orders",
-          label: "Purchase Orders",
-          icon: "purchaseOrders",
-          hint: "read-only",
-        },
-        { href: "/payments", label: "Invoices & payments", icon: "payments" },
-      ];
+      return [INBOX_ITEM, poHub];
   }
 }
 
@@ -120,13 +161,14 @@ function adminItemsFor(role: Role): NavItem[] {
   return [
     { href: "/admin/users", label: "Users", icon: "users" },
     { href: "/admin/warehouses", label: "Warehouses", icon: "warehouses" },
+    { href: "/admin/catalog", label: "Item catalog", icon: "catalog" },
   ];
 }
 
 export function getNavGroupsForRole(role: Role): NavGroup[] {
   const groups: NavGroup[] = [
     { id: "insights", label: "Insights", items: insightItemsFor(role) },
-    { id: "work", label: "Work", items: workItemsFor(role) },
+    { id: "work", label: "Procurement", items: workItemsFor(role) },
     { id: "governance", label: "Governance", items: governanceItemsFor(role) },
     { id: "admin", label: "Admin", items: adminItemsFor(role) },
   ];
@@ -135,7 +177,9 @@ export function getNavGroupsForRole(role: Role): NavGroup[] {
 
 /** Flat list (preserved for callers that don't need grouping). */
 export function getNavItemsForRole(role: Role): NavItem[] {
-  return getNavGroupsForRole(role).flatMap((group) => group.items);
+  return getNavGroupsForRole(role).flatMap((group) =>
+    flattenNavItems(group.items),
+  );
 }
 
 /**

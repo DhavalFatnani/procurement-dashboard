@@ -8,7 +8,7 @@ import type {
   SubcategoryOption,
   UserOption,
   WarehouseOption,
-} from "@/app/actions/purchase-requests";
+} from "@/lib/queries/purchase-requests";
 import { DateRangeFilter } from "@/components/shared/DateRangeFilter";
 import { FilterBar } from "@/components/shared/FilterBar";
 import { FilterChipsRow } from "@/components/shared/FilterChipsRow";
@@ -127,7 +127,7 @@ export function PurchaseRequestsFilters({
     warehouse && {
       key: "warehouse",
       tone: "neutral",
-      label: `Warehouse: ${warehouse.name}`,
+      label: `Warehouse: ${warehouse.label}`,
       onClear: () => clearFilter("warehouseId"),
     },
     creator && {
@@ -212,7 +212,7 @@ export function PurchaseRequestsFilters({
             onValueChange={(v) => setFilter("warehouseId", v)}
             options={filterOptions.warehouses.map((w) => ({
               value: w.id,
-              label: w.name,
+              label: w.label,
             }))}
           />
         ) : null}

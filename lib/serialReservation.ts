@@ -1,4 +1,10 @@
-import { Prisma, SerialSeries, type SerialReservation } from "@prisma/client";
+import {
+  ExecutionType,
+  PRStatus,
+  Prisma,
+  SerialSeries,
+  type SerialReservation,
+} from "@prisma/client";
 
 import { logger } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
@@ -9,6 +15,17 @@ import {
   isValidReservationRange,
   resolveSeriesCeiling,
 } from "@/lib/serial-series";
+import { assertPRStatusTransition } from "@/lib/prStatus";
+
+/** PR row to create in the same transaction as the serial reservation (internal print). */
+export type InternalPrintPRPayload = {
+  categoryId: string;
+  subcategoryId: string;
+  quantity: number;
+  warehouseId: string;
+  executionType: ExecutionType;
+  createdById: string;
+};
 
 export type ReserveSerialInput = {
   series: SerialSeries;
@@ -17,6 +34,8 @@ export type ReserveSerialInput = {
   createdById: string;
   prId: string;
   idempotencyKey: string;
+  /** When set, creates the PR inside the reservation transaction if it does not exist yet. */
+  internalPrintPR?: InternalPrintPRPayload;
 };
 
 export type ReserveSerialResult =
@@ -66,7 +85,42 @@ async function reserveInTransaction(
         throw new Error("Reservation range outside series bounds");
       }
 
-      return tx.serialReservation.create({
+      if (input.internalPrintPR) {
+        const existingPr = await tx.purchaseRequest.findUnique({
+          where: { id: input.prId },
+        });
+        if (!existingPr) {
+          const prData = input.internalPrintPR;
+          await tx.purchaseRequest.create({
+            data: {
+              id: input.prId,
+              categoryId: prData.categoryId,
+              subcategoryId: prData.subcategoryId,
+              quantity: prData.quantity,
+              warehouseId: prData.warehouseId,
+              executionType: prData.executionType,
+              status: PRStatus.DRAFT,
+              createdById: prData.createdById,
+              lines: {
+                create: {
+                  lineNumber: 1,
+                  categoryId: prData.categoryId,
+                  subcategoryId: prData.subcategoryId,
+                  quantity: prData.quantity,
+                },
+              },
+            },
+          });
+        }
+      }
+
+      const pr = await tx.purchaseRequest.findUnique({ where: { id: input.prId } });
+      if (!pr) {
+        throw new Error("Purchase request not found");
+      }
+      assertPRStatusTransition(pr.status, PRStatus.EXECUTED_PRINT);
+
+      const reservation = await tx.serialReservation.create({
         data: {
           series: input.series,
           rangeStart,
@@ -79,15 +133,29 @@ async function reserveInTransaction(
           createdById: input.createdById,
         },
       });
+
+      await tx.purchaseRequest.update({
+        where: { id: input.prId },
+        data: { status: PRStatus.EXECUTED_PRINT },
+      });
+
+      return reservation;
     },
-    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    SERIAL_RESERVE_TX_OPTS,
   );
 }
 
 const CEILING_ERROR =
   "Serial range ceiling reached for this series. Contact Ops Head to update the ceiling.";
-const CONFLICT_ERROR =
-  "Another print request was being processed. Please try again.";
+const TIMEOUT_ERROR =
+  "Reservation took too long. Please try again.";
+
+/** Remote Supabase + Serializable isolation can exceed Prisma's 5s default. */
+const SERIAL_RESERVE_TX_OPTS = {
+  isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+  maxWait: 10_000,
+  timeout: 20_000,
+} as const;
 
 /** Backoff before each retry of a serialization conflict (ms). */
 const RETRY_DELAYS_MS = [100, 200, 400];
@@ -97,13 +165,12 @@ function isCeilingError(err: unknown): boolean {
 }
 
 /**
- * A Postgres serialization failure under SERIALIZABLE isolation. Prisma surfaces
- * this as the typed error code P2034; we keep the message-string checks as a
- * fallback for environments that don't produce the typed error.
+ * Transient failures worth retrying: serialization conflicts (P2034) and
+ * interactive transaction timeouts (P2028) on remote poolers.
  */
-function isSerializationConflict(err: unknown): boolean {
+function isTransactionRetryableError(err: unknown): boolean {
   if (err instanceof Prisma.PrismaClientKnownRequestError) {
-    return err.code === "P2034";
+    return err.code === "P2034" || err.code === "P2028";
   }
   if (!(err instanceof Error)) {
     return false;
@@ -111,7 +178,9 @@ function isSerializationConflict(err: unknown): boolean {
   return (
     err.message.includes("could not serialize") ||
     err.message.includes("Serialization failure") ||
-    err.message.includes("P2034")
+    err.message.includes("P2034") ||
+    err.message.includes("P2028") ||
+    err.message.includes("Transaction not found")
   );
 }
 
@@ -137,7 +206,7 @@ export async function atomicReserveSerialRange(
       if (isCeilingError(err)) {
         return { success: false, error: CEILING_ERROR };
       }
-      if (!isSerializationConflict(err)) {
+      if (!isTransactionRetryableError(err)) {
         logger.error(
           { err, series: input.series, prId: input.prId },
           "serial reservation failed",
@@ -147,13 +216,13 @@ export async function atomicReserveSerialRange(
           error: err instanceof Error ? err.message : "Reservation failed",
         };
       }
-      // Serialization conflict: fall through to the next attempt.
+      // Transient conflict/timeout: fall through to the next attempt.
     }
   }
 
   logger.warn(
     { series: input.series, prId: input.prId, attempts: RETRY_DELAYS_MS.length + 1 },
-    "serial reservation exhausted retries on serialization conflict",
+    "serial reservation exhausted retries on transient transaction error",
   );
-  return { success: false, error: CONFLICT_ERROR };
+  return { success: false, error: TIMEOUT_ERROR };
 }

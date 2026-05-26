@@ -5,7 +5,6 @@ import { POStatus, Role } from "@prisma/client";
 import { useRouter, useSearchParams } from "next/navigation";
 import * as React from "react";
 
-import { ApprovedPRsAwaitingPO } from "@/components/purchase-orders/ApprovedPRsAwaitingPO";
 import { Avatar } from "@/components/shared/Avatar";
 import {
   DataTable,
@@ -25,13 +24,11 @@ import { StatusBadge } from "@/components/shared/StatusBadge";
 import { FilterSelect } from "@/components/shared/FilterSelect";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { compactChipSpecs, type FilterChipSpec } from "@/lib/filter-chips";
+import type { WarehouseOption } from "@/lib/format-warehouse";
 import { formatDateMedium } from "@/lib/format-datetime";
 import { listBreadcrumbs } from "@/lib/lineage";
 import type { Paginated } from "@/lib/pagination";
-import type {
-  ApprovedPRAwaitingPO,
-  PurchaseOrderListRow,
-} from "@/lib/queries/purchase-orders";
+import type { PurchaseOrderListRow } from "@/lib/queries/purchase-orders";
 import { useListNavigation } from "@/lib/use-list-navigation";
 import { cn } from "@/lib/utils";
 
@@ -58,14 +55,14 @@ function useDensity(): [DataTableDensity, (d: DataTableDensity) => void] {
 export function PurchaseOrdersView({
   role,
   initialRows,
-  awaitingPRs,
+  awaitingPanel,
   fulfillPrId,
   filters,
   filterOptions,
 }: {
   role: Role;
   initialRows: Paginated<PurchaseOrderListRow>;
-  awaitingPRs: ApprovedPRAwaitingPO[];
+  awaitingPanel?: React.ReactNode;
   fulfillPrId?: string;
   filters: {
     status: string;
@@ -76,7 +73,7 @@ export function PurchaseOrdersView({
   };
   filterOptions: {
     vendors: { id: string; businessName: string }[];
-    warehouses: { id: string; name: string }[];
+    warehouses: WarehouseOption[];
   };
 }) {
   const searchParams = useSearchParams();
@@ -207,7 +204,7 @@ export function PurchaseOrdersView({
     warehouse && {
       key: "warehouse",
       tone: "neutral",
-      label: `Warehouse: ${warehouse.name}`,
+      label: `Warehouse: ${warehouse.label}`,
       onClear: () => clearFilter("warehouseId"),
     },
     filters.dateFrom && {
@@ -267,13 +264,7 @@ export function PurchaseOrdersView({
         }
       />
 
-      {isOps ? (
-        <ApprovedPRsAwaitingPO
-          rows={awaitingPRs}
-          activeVendors={filterOptions.vendors}
-          fulfillPrId={fulfillPrId}
-        />
-      ) : null}
+      {isOps ? awaitingPanel : null}
 
       <form onSubmit={handleFilterSubmit}>
         <FilterBar
@@ -315,7 +306,7 @@ export function PurchaseOrdersView({
               triggerClassName="w-[160px]"
               options={filterOptions.warehouses.map((w) => ({
                 value: w.id,
-                label: w.name,
+                label: w.label,
               }))}
             />
           ) : null}

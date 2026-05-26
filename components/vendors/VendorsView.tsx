@@ -9,7 +9,7 @@ import { vendorParamsFromForm } from "@/lib/build-list-url";
 import type { Paginated } from "@/lib/pagination";
 import * as React from "react";
 
-import type { PendingVendorRequestRow, VendorListRow } from "@/app/actions/vendors";
+import type { PendingVendorRequestRow, VendorListRow } from "@/lib/queries/vendors";
 import dynamic from "next/dynamic";
 
 const AddVendorSheet = dynamic(

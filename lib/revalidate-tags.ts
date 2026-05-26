@@ -3,8 +3,20 @@ import { revalidatePath, revalidateTag } from "next/cache";
 import { LIST_CACHE_TAGS } from "@/lib/list-cache";
 
 /** Invalidate cached dashboard metric counts after procurement mutations. */
+export function revalidateCatalogCache() {
+  revalidateTag("catalog-items");
+  revalidateTag(LIST_CACHE_TAGS.catalog);
+  revalidatePath("/admin/catalog");
+}
+
 export function revalidateDashboardMetrics() {
   revalidateTag("dashboard-metrics");
+  revalidateTag(LIST_CACHE_TAGS.inbox);
+}
+
+export function revalidateInboxCache() {
+  revalidateTag(LIST_CACHE_TAGS.inbox);
+  revalidatePath("/inbox");
 }
 
 export function revalidatePurchaseOrdersCache(poId?: string) {
@@ -51,6 +63,48 @@ export function revalidatePurchaseRequestMutation(
     revalidatePurchaseOrdersCache();
     revalidatePath("/purchase-orders");
   }
+}
+
+/** Narrow invalidation after PR status transitions (approve / reject / submit / revision). */
+export function revalidatePRStatusChange(
+  prId: string,
+  options?: { affectsAwaitingPo?: boolean; affectsCatalog?: boolean },
+) {
+  revalidateTag(`${LIST_CACHE_TAGS.prDetail}:${prId}`);
+  revalidateTag(LIST_CACHE_TAGS.purchaseRequests);
+  revalidateInboxCache();
+  revalidatePath(`/purchase-requests/${prId}`);
+  revalidatePath("/purchase-requests");
+  revalidateDashboardMetrics();
+  if (options?.affectsAwaitingPo) {
+    revalidateTag(LIST_CACHE_TAGS.awaitingPo);
+    revalidatePath("/purchase-orders");
+  }
+  if (options?.affectsCatalog) {
+    revalidateCatalogCache();
+  }
+}
+
+/** After createPOFromPR — PO list, awaiting panel, linked PR detail. */
+export function revalidateCreatePOFromPR(prId: string, poId: string) {
+  revalidateTag(`${LIST_CACHE_TAGS.prDetail}:${prId}`);
+  revalidateTag(`${LIST_CACHE_TAGS.poDetail}:${poId}`);
+  revalidateTag(LIST_CACHE_TAGS.purchaseRequests);
+  revalidateTag(LIST_CACHE_TAGS.purchaseOrders);
+  revalidateTag(LIST_CACHE_TAGS.awaitingPo);
+  revalidatePath(`/purchase-requests/${prId}`);
+  revalidatePath(`/purchase-orders/${poId}`);
+  revalidatePath("/purchase-orders");
+  revalidatePath("/purchase-requests");
+  revalidateInboxCache();
+  revalidateDashboardMetrics();
+}
+
+/** Minimal invalidation after internal print reservation — keeps confirm-and-reserve snappy. */
+export function revalidateInternalPrintMutation(prId: string) {
+  revalidatePurchaseRequestsCache(prId);
+  revalidatePath(`/purchase-requests/${prId}`);
+  revalidatePath(`/purchase-requests/${prId}/print`);
 }
 
 export function revalidateGRNMutation(poId: string) {

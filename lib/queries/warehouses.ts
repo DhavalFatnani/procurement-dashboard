@@ -1,4 +1,10 @@
 import { prisma } from "@/lib/prisma";
+import {
+  type WarehouseOption,
+  warehouseOptionsFromRows,
+} from "@/lib/format-warehouse";
+
+export type { WarehouseOption } from "@/lib/format-warehouse";
 
 export type WarehouseRow = {
   id: string;
@@ -22,32 +28,32 @@ export async function getWarehouses(): Promise<WarehouseRow[]> {
   }));
 }
 
-export async function getWarehouseOptions(): Promise<{ id: string; name: string }[]> {
+export async function getWarehouseOptions(): Promise<WarehouseOption[]> {
   const rows = await prisma.warehouse.findMany({
     orderBy: { name: "asc" },
-    select: { id: true, name: true },
+    select: { id: true, name: true, location: true },
   });
-  return rows;
+  return warehouseOptionsFromRows(rows);
 }
 
 /** Warehouses the user may act on — from UserWarehouse, falling back to User.warehouseId. */
 export async function getWarehousesAssignedToUser(
   userId: string,
-): Promise<{ id: string; name: string }[]> {
+): Promise<WarehouseOption[]> {
   const assignments = await prisma.userWarehouse.findMany({
     where: { userId },
     orderBy: { warehouse: { name: "asc" } },
-    select: { warehouse: { select: { id: true, name: true } } },
+    select: { warehouse: { select: { id: true, name: true, location: true } } },
   });
   if (assignments.length > 0) {
-    return assignments.map((a) => a.warehouse);
+    return warehouseOptionsFromRows(assignments.map((a) => a.warehouse));
   }
 
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { warehouse: { select: { id: true, name: true } } },
+    select: { warehouse: { select: { id: true, name: true, location: true } } },
   });
-  return user?.warehouse ? [user.warehouse] : [];
+  return user?.warehouse ? warehouseOptionsFromRows([user.warehouse]) : [];
 }
 
 export async function getWarehouseById(id: string): Promise<WarehouseRow | null> {

@@ -10,7 +10,7 @@ Team reference for how the dashboard works today: routes, roles, status machines
 1. **Ledger only** — Records PR/PO/GRN/invoice/payment and serial ranges. Not WMS stock or consumption.
 2. **Execution type is system-driven** — Set on subcategory (`VENDOR_PURCHASE` vs `INTERNAL_PRINT`). The user does not choose it.
 3. **PO status is mostly derived** — Recomputed on GRN, invoice, and payment events via `evaluatePOClosure`.
-4. **Approve then fulfill** — `approvePR` sets `APPROVED`; Ops configures vendor, **per-line unit prices**, and expected delivery via `createPOFromPR` on **Purchase Orders** (or PR detail link). One PO is created per PR with `PurchaseOrderLine` rows.
+4. **Approve then fulfill** — `approvePR` sets `APPROVED` (and activates proposed catalog items); Ops configures vendor, **per catalog-item unit prices** (manual grid or CSV), and expected delivery via `createPOFromPR`. One PO is created per PR with `PurchaseOrderLineItem` rows.
 
 ---
 
@@ -42,6 +42,7 @@ After sign-in → `/dashboard` → nav from `getNavItemsForRole(role)`.
 | Payments | — | view only | record |
 | Serial governance | ✓ | ✓ | — |
 | Reports | limited | full | payment-focused |
+| Admin → Item catalog | — | master list | — |
 
 ---
 
@@ -74,12 +75,12 @@ Subcategory `executionType` (from seed / catalog) splits the product into two pa
 
 | # | Who | Route / action | Result |
 |---|-----|----------------|--------|
-| 1 | SM | `/purchase-requests/new` → `createPR` with one or more vendor lines | `DRAFT` with `PurchaseRequestLine` rows |
+| 1 | SM | `/purchase-requests/new` → `createPR` — **Packaging / Lock Tags:** subcategory + qty; **Warehouse Maintenance:** catalog items (or propose new names) | `DRAFT` with lines (+ line items where applicable) |
 | 2 | SM | `submitPR` | `PENDING_APPROVAL` + PRVersion |
-| 3 | OPS | `approvePR` | `APPROVED` (awaiting PO) |
-| 4 | OPS | `/purchase-orders` → `createPOFromPR` | PO `OPEN` with vendor, per-line prices, delivery; PR `CONVERTED_TO_PO` |
-| 5 | SM | `/goods-receipt/new` → `createGRN` (qty per PO line) | Receipt + `GoodsReceiptLine` rows; PO status via `evaluatePOClosure` |
-| 6 | SM | `/invoices/new` → `createInvoice` | 3-way match vs Σ(accepted × line unit price) |
+| 3 | OPS | `approvePR` (review pending catalog proposals) | `APPROVED`; proposed items → `ACTIVE` catalog |
+| 4 | OPS | `/purchase-orders` → `createPOFromPR` (rates grid or CSV) | PO `OPEN` with `PurchaseOrderLineItem` prices; PR `CONVERTED_TO_PO` |
+| 5 | SM | `/goods-receipt/new` → `createGRN` (qty per PO line item) | `GoodsReceiptLineItem` rows; PO status via `evaluatePOClosure` |
+| 6 | SM | `/invoices/new` → `createInvoice` | 3-way match vs Σ(accepted qty × item unit price) |
 | 7 | FIN | `/payments` → `updatePayment` | Invoice paid (if match allows) |
 | 8 | System | `evaluatePOClosure` | PO may reach `CLOSED` when all checks pass |
 

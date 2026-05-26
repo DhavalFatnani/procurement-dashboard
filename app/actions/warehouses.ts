@@ -1,7 +1,7 @@
 "use server";
 
 import { Role } from "@prisma/client";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 
 import type { MutationResult } from "@/lib/action-result";
 import { prisma } from "@/lib/prisma";
@@ -10,7 +10,23 @@ import {
   getWarehouseOptions as getWarehouseOptionsQuery,
   getWarehouses as getWarehousesQuery,
 } from "@/lib/queries/warehouses";
+import { revalidateInboxCache } from "@/lib/revalidate-tags";
 import { requireRoles } from "@/lib/server-action-guard";
+
+function revalidateWarehouseSurfaces() {
+  revalidateTag("warehouses");
+  revalidateInboxCache();
+  revalidatePath("/admin/warehouses");
+  revalidatePath("/profile");
+  revalidatePath("/purchase-requests/new");
+  revalidatePath("/serial-governance");
+  revalidatePath("/purchase-requests");
+  revalidatePath("/purchase-orders");
+  revalidatePath("/goods-receipt");
+  revalidatePath("/invoices");
+  revalidatePath("/payments");
+  revalidatePath("/admin/users");
+}
 
 export async function getWarehouses() {
   await requireRoles([Role.OPS_HEAD]);
@@ -48,7 +64,7 @@ export async function createWarehouse(input: WarehouseInput): Promise<MutationRe
   await prisma.warehouse.create({
     data: { name: input.name.trim(), location: input.location.trim() },
   });
-  revalidatePath("/admin/warehouses");
+  revalidateWarehouseSurfaces();
   return { ok: true };
 }
 
@@ -67,6 +83,6 @@ export async function updateWarehouse(
     where: { id },
     data: { name: input.name.trim(), location: input.location.trim() },
   });
-  revalidatePath("/admin/warehouses");
+  revalidateWarehouseSurfaces();
   return { ok: true };
 }

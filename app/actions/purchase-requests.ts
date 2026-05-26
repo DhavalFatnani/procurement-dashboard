@@ -12,84 +12,44 @@ import {
 
 import type { MutationResult } from "@/lib/action-result";
 import { newPurchaseOrderId, newPurchaseRequestId } from "@/lib/ids";
-import type { Paginated } from "@/lib/pagination";
 import { prisma } from "@/lib/prisma";
-import {
-  getFilterOptions as getFilterOptionsQuery,
-  getPRById as getPRByIdQuery,
-  getPurchaseRequests as getPurchaseRequestsQuery,
-} from "@/lib/queries/purchase-requests";
-import type {
-  CategoryOption,
-  PRDetail,
-  PRLineRow,
-  PurchaseRequestFilters,
-  PurchaseRequestListRow,
-  SubcategoryOption,
-  UserOption,
-  WarehouseOption,
-} from "@/lib/queries/purchase-requests";
 import { assertPRStatusTransition, evaluatePRStatus } from "@/lib/prStatus";
-import { hasLockTagsLines, LOCK_TAGS_SERIES, MAX_PR_LINES } from "@/lib/purchase-lines";
-import { revalidatePurchaseRequestMutation } from "@/lib/revalidate-tags";
+import { mapPrLinesFromDb, prLinesInclude } from "@/lib/map-pr-lines";
+import {
+  buildPORateCsv,
+  parsePORateCsv,
+  validatePORateCsvAgainstPR,
+  type PORateCsvExportRow,
+} from "@/lib/po-rate-csv";
+import { hasLockTagsLines, LOCK_TAGS_SERIES, sumItemQuantities } from "@/lib/purchase-lines";
+import {
+  approvePendingCatalogItems,
+  headerFromFirstLine,
+  lineTotalQuantity,
+  PR_LINE_MUTATION_TX_OPTIONS,
+  replacePRLines,
+  validatePRLines,
+} from "@/lib/pr-line-persistence";
+import type {
+  ApprovePRInput,
+  CreatePOFromPRInput,
+  CreatePOItemPriceInput,
+  PRFormData,
+} from "@/lib/purchase-request-types";
+import {
+  listPendingCatalogItemsForPR,
+} from "@/lib/pr-line-persistence";
+import type { PendingCatalogItemRow } from "@/lib/queries/purchase-requests";
+import {
+  revalidateCreatePOFromPR,
+  revalidatePRStatusChange,
+  revalidatePurchaseRequestMutation,
+} from "@/lib/revalidate-tags";
+import { timed } from "@/lib/server-timing";
 import { atomicReserveSerialRange } from "@/lib/serialReservation";
 import { requireRoles } from "@/lib/server-action-guard";
 import { assertUserWarehouseAccess } from "@/lib/warehouse-access";
 import { getWarehousesAssignedToUser } from "@/lib/queries/warehouses";
-
-// Re-export types from source — see note in app/actions/finder.ts.
-export type {
-  CategoryOption,
-  PRDetail,
-  PRLineRow,
-  PurchaseRequestFilters,
-  PurchaseRequestListRow,
-  SubcategoryOption,
-  UserOption,
-  WarehouseOption,
-} from "@/lib/queries/purchase-requests";
-
-export async function getFilterOptions() {
-  await requireRoles([Role.SM, Role.OPS_HEAD]);
-  return getFilterOptionsQuery();
-}
-
-export async function getPurchaseRequests(
-  filters: PurchaseRequestFilters & { page?: number; pageSize?: number },
-): Promise<Paginated<PurchaseRequestListRow>> {
-  const user = await requireRoles([Role.SM, Role.OPS_HEAD]);
-  return getPurchaseRequestsQuery(user, filters);
-}
-
-export async function getPRById(id: string): Promise<PRDetail | null> {
-  const user = await requireRoles([Role.SM, Role.OPS_HEAD]);
-  return getPRByIdQuery(user, id);
-}
-
-export type PRLineInput = {
-  categoryId: string;
-  subcategoryId: string;
-  quantity: number;
-  notes?: string;
-};
-
-export type PRFormData = {
-  lines: PRLineInput[];
-  vendorId?: string | null;
-  vendorRequestId?: string | null;
-  warehouseId?: string;
-};
-
-export type CreatePOLinePriceInput = {
-  prLineId: string;
-  unitPrice: number;
-};
-
-export type CreatePOFromPRInput = {
-  vendorId: string;
-  linePrices: CreatePOLinePriceInput[];
-  expectedDelivery: string;
-};
 
 function vendorFieldsForUser(
   role: Role,
@@ -124,80 +84,6 @@ function parseExpectedDeliveryDate(isoDate: string): Date | null {
   return date;
 }
 
-async function validatePRLines(
-  lines: PRLineInput[],
-): Promise<
-  | { ok: true; subs: { id: string; executionType: ExecutionType; categoryId: string }[] }
-  | { ok: false; message: string }
-> {
-  if (lines.length < 1) {
-    return { ok: false, message: "Add at least one line item." };
-  }
-  if (lines.length > MAX_PR_LINES) {
-    return { ok: false, message: `Maximum ${MAX_PR_LINES} line items allowed.` };
-  }
-
-  const subs = [];
-  for (const line of lines) {
-    if (line.quantity < 1) {
-      return { ok: false, message: "Each line quantity must be at least 1." };
-    }
-    const sub = await prisma.subcategory.findUnique({ where: { id: line.subcategoryId } });
-    if (!sub || sub.categoryId !== line.categoryId) {
-      return { ok: false, message: "Invalid category or subcategory on a line." };
-    }
-    subs.push(sub);
-  }
-
-  const executionTypes = new Set(subs.map((s) => s.executionType));
-  if (executionTypes.size > 1) {
-    return { ok: false, message: "All lines must share the same execution type." };
-  }
-  if (subs[0]!.executionType === ExecutionType.INTERNAL_PRINT && lines.length > 1) {
-    return { ok: false, message: "Internal print requests support a single line only." };
-  }
-  if (subs[0]!.executionType === ExecutionType.VENDOR_PURCHASE) {
-    for (const sub of subs) {
-      if (sub.executionType !== ExecutionType.VENDOR_PURCHASE) {
-        return { ok: false, message: "Multi-line requests must use vendor-purchase subcategories." };
-      }
-    }
-  }
-
-  return { ok: true, subs };
-}
-
-function headerFromFirstLine(
-  lines: PRLineInput[],
-  subs: { executionType: ExecutionType }[],
-) {
-  const first = lines[0]!;
-  return {
-    categoryId: first.categoryId,
-    subcategoryId: first.subcategoryId,
-    quantity: first.quantity,
-    executionType: subs[0]!.executionType,
-  };
-}
-
-async function replacePRLines(
-  tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0],
-  prId: string,
-  lines: PRLineInput[],
-) {
-  await tx.purchaseRequestLine.deleteMany({ where: { prId } });
-  await tx.purchaseRequestLine.createMany({
-    data: lines.map((line, index) => ({
-      prId,
-      lineNumber: index + 1,
-      categoryId: line.categoryId,
-      subcategoryId: line.subcategoryId,
-      quantity: line.quantity,
-      notes: line.notes?.trim() || null,
-    })),
-  });
-}
-
 export async function createPR(data: PRFormData): Promise<{ ok: boolean; prId?: string; message?: string }> {
   const user = await requireRoles([Role.SM, Role.OPS_HEAD]);
   const validated = await validatePRLines(data.lines);
@@ -228,26 +114,29 @@ export async function createPR(data: PRFormData): Promise<{ ok: boolean; prId?: 
   const prId = newPurchaseRequestId();
   const vendors = vendorFieldsForUser(user.role, data);
 
-  await prisma.$transaction(async (tx) => {
-    await tx.purchaseRequest.create({
-      data: {
-        id: prId,
-        ...header,
-        warehouseId,
-        vendorId: vendors.vendorId,
-        vendorRequestId: vendors.vendorRequestId,
-        status: PRStatus.DRAFT,
-        createdById: user.id,
-      },
-    });
-    await replacePRLines(tx, prId, data.lines);
-    if (data.vendorRequestId) {
-      await tx.vendorRequest.update({
-        where: { id: data.vendorRequestId },
-        data: { linkedPRId: prId },
+  await prisma.$transaction(
+    async (tx) => {
+      await tx.purchaseRequest.create({
+        data: {
+          id: prId,
+          ...header,
+          warehouseId,
+          vendorId: vendors.vendorId,
+          vendorRequestId: vendors.vendorRequestId,
+          status: PRStatus.DRAFT,
+          createdById: user.id,
+        },
       });
-    }
-  });
+      await replacePRLines(tx, prId, data.lines, user.id, header.executionType);
+      if (data.vendorRequestId) {
+        await tx.vendorRequest.update({
+          where: { id: data.vendorRequestId },
+          data: { linkedPRId: prId },
+        });
+      }
+    },
+    PR_LINE_MUTATION_TX_OPTIONS,
+  );
 
   revalidatePurchaseRequestMutation();
   return { ok: true, prId };
@@ -277,17 +166,20 @@ export async function updatePR(
   const header = headerFromFirstLine(data.lines, validated.subs);
   const vendors = vendorFieldsForUser(user.role, data);
 
-  await prisma.$transaction(async (tx) => {
-    await tx.purchaseRequest.update({
-      where: { id: prId },
-      data: {
-        ...header,
-        vendorId: vendors.vendorId,
-        vendorRequestId: vendors.vendorRequestId,
-      },
-    });
-    await replacePRLines(tx, prId, data.lines);
-  });
+  await prisma.$transaction(
+    async (tx) => {
+      await tx.purchaseRequest.update({
+        where: { id: prId },
+        data: {
+          ...header,
+          vendorId: vendors.vendorId,
+          vendorRequestId: vendors.vendorRequestId,
+        },
+      });
+      await replacePRLines(tx, prId, data.lines, user.id, header.executionType);
+    },
+    PR_LINE_MUTATION_TX_OPTIONS,
+  );
 
   revalidatePurchaseRequestMutation(prId);
   return { ok: true };
@@ -306,23 +198,26 @@ export async function submitPR(prId: string): Promise<MutationResult> {
     return { ok: false, message: e instanceof Error ? e.message : "Cannot submit." };
   }
 
-  await prisma.$transaction(async (tx) => {
-    await tx.purchaseRequest.update({
-      where: { id: prId },
-      data: { status: PRStatus.PENDING_APPROVAL },
-    });
-    await tx.pRVersion.create({
-      data: {
-        prId,
-        versionNumber: 1,
-        changedById: user.id,
-        revisionComment: "Submitted for approval",
-        diffSnapshot: { action: "SUBMIT" },
-      },
-    });
-  });
+  await prisma.$transaction(
+    async (tx) => {
+      await tx.purchaseRequest.update({
+        where: { id: prId },
+        data: { status: PRStatus.PENDING_APPROVAL },
+      });
+      await tx.pRVersion.create({
+        data: {
+          prId,
+          versionNumber: 1,
+          changedById: user.id,
+          revisionComment: "Submitted for approval",
+          diffSnapshot: { action: "SUBMIT" },
+        },
+      });
+    },
+    PR_LINE_MUTATION_TX_OPTIONS,
+  );
 
-  revalidatePurchaseRequestMutation(prId);
+  revalidatePRStatusChange(prId);
   return { ok: true };
 }
 
@@ -471,29 +366,32 @@ export async function resubmitPR(
     return { ok: false, message: e instanceof Error ? e.message : "Cannot resubmit." };
   }
 
-  await prisma.$transaction(async (tx) => {
-    await tx.purchaseRequest.update({
-      where: { id: prId },
-      data: {
-        ...header,
-        vendorId: vendors.vendorId,
-        vendorRequestId: vendors.vendorRequestId,
-        status: PRStatus.PENDING_APPROVAL,
-        currentVersion: { increment: 1 },
-        revisionCount: { increment: 1 },
-      },
-    });
-    await replacePRLines(tx, prId, data.lines);
-    await tx.pRVersion.create({
-      data: {
-        prId,
-        versionNumber: pr.currentVersion + 1,
-        changedById: user.id,
-        revisionComment: "Resubmitted after revision",
-        diffSnapshot: { ...diff, action: "RESUBMITTED" },
-      },
-    });
-  });
+  await prisma.$transaction(
+    async (tx) => {
+      await tx.purchaseRequest.update({
+        where: { id: prId },
+        data: {
+          ...header,
+          vendorId: vendors.vendorId,
+          vendorRequestId: vendors.vendorRequestId,
+          status: PRStatus.PENDING_APPROVAL,
+          currentVersion: { increment: 1 },
+          revisionCount: { increment: 1 },
+        },
+      });
+      await replacePRLines(tx, prId, data.lines, user.id, header.executionType);
+      await tx.pRVersion.create({
+        data: {
+          prId,
+          versionNumber: pr.currentVersion + 1,
+          changedById: user.id,
+          revisionComment: "Resubmitted after revision",
+          diffSnapshot: { ...diff, action: "RESUBMITTED" },
+        },
+      });
+    },
+    PR_LINE_MUTATION_TX_OPTIONS,
+  );
 
   revalidatePurchaseRequestMutation(prId);
   return { ok: true };
@@ -544,6 +442,12 @@ export async function createPOFromPR(
         include: {
           category: { select: { name: true } },
           subcategory: { select: { name: true } },
+          items: {
+            orderBy: { lineItemNumber: "asc" },
+            include: {
+              catalogItem: { select: { status: true } },
+            },
+          },
         },
       },
     },
@@ -578,22 +482,33 @@ export async function createPOFromPR(
     return { ok: false, message: "Select an active vendor." };
   }
 
-  if (input.linePrices.length !== pr.lines.length) {
-    return { ok: false, message: "Enter a unit price for each line item." };
+  const prLineItems = pr.lines.flatMap((line) => line.items);
+  if (prLineItems.length === 0) {
+    return { ok: false, message: "Purchase request has no catalog items." };
+  }
+  for (const item of prLineItems) {
+    if (item.catalogItem.status !== "ACTIVE") {
+      return { ok: false, message: "All catalog items must be approved before creating a PO." };
+    }
   }
 
-  const priceByLineId = new Map<string, number>();
-  for (const row of input.linePrices) {
+  const itemPrices = input.itemPrices ?? [];
+  if (itemPrices.length !== prLineItems.length) {
+    return { ok: false, message: "Enter a unit price for each catalog item." };
+  }
+
+  const priceByItemId = new Map<string, number>();
+  for (const row of itemPrices) {
     const unitPrice = Number(row.unitPrice);
     if (!Number.isFinite(unitPrice) || unitPrice <= 0) {
       return { ok: false, message: "Each unit price must be greater than zero." };
     }
-    priceByLineId.set(row.prLineId, unitPrice);
+    priceByItemId.set(row.prLineItemId, unitPrice);
   }
 
-  for (const line of pr.lines) {
-    if (!priceByLineId.has(line.id)) {
-      return { ok: false, message: "Missing unit price for a line item." };
+  for (const item of prLineItems) {
+    if (!priceByItemId.has(item.id)) {
+      return { ok: false, message: "Missing unit price for a catalog item." };
     }
   }
 
@@ -608,54 +523,63 @@ export async function createPOFromPR(
     return { ok: false, message: e instanceof Error ? e.message : "Invalid status." };
   }
 
-  const totalOrderedQty = pr.lines.reduce((s, l) => s + l.quantity, 0);
-  const firstLinePrice = priceByLineId.get(pr.lines[0]!.id)!;
+  const totalOrderedQty = sumItemQuantities(prLineItems);
+  const firstItemPrice = priceByItemId.get(prLineItems[0]!.id)!;
   const poId = newPurchaseOrderId();
   const lockTagsQty = pr.lines
     .filter((l) => l.category.name === "Lock Tags")
-    .reduce((s, l) => s + l.quantity, 0);
+    .reduce((s, l) => s + sumItemQuantities(l.items), 0);
 
-  await prisma.$transaction(async (tx) => {
-    await tx.purchaseOrder.create({
-      data: {
-        id: poId,
-        prId: pr.id,
-        vendorId,
-        orderedQty: totalOrderedQty,
-        unitPrice: new Prisma.Decimal(firstLinePrice),
-        expectedDelivery,
-        status: POStatus.OPEN,
-        lines: {
-          create: pr.lines.map((line) => ({
-            prLineId: line.id,
-            categoryId: line.categoryId,
-            subcategoryId: line.subcategoryId,
-            orderedQty: line.quantity,
-            unitPrice: new Prisma.Decimal(priceByLineId.get(line.id)!),
-          })),
-        },
-      },
-    });
-    await tx.purchaseRequest.update({
-      where: { id: prId },
-      data: { status: PRStatus.CONVERTED_TO_PO, vendorId },
-    });
-    await tx.pRVersion.create({
-      data: {
-        prId,
-        versionNumber: pr.currentVersion,
-        changedById: user.id,
-        revisionComment: "Converted to purchase order",
-        diffSnapshot: {
-          action: "CONVERTED_TO_PO",
-          poId,
+  await prisma.$transaction(
+    async (tx) => {
+      await tx.purchaseOrder.create({
+        data: {
+          id: poId,
+          prId: pr.id,
           vendorId,
-          linePrices: input.linePrices,
-          expectedDelivery: expectedDelivery.toISOString(),
+          orderedQty: totalOrderedQty,
+          unitPrice: new Prisma.Decimal(firstItemPrice),
+          expectedDelivery,
+          status: POStatus.OPEN,
+          lineItems: {
+            create: prLineItems.map((item) => {
+              const parentLine = pr.lines.find((l) =>
+                l.items.some((i) => i.id === item.id),
+              )!;
+              return {
+                prLineItemId: item.id,
+                catalogItemId: item.catalogItemId,
+                categoryId: parentLine.categoryId,
+                subcategoryId: parentLine.subcategoryId,
+                orderedQty: item.quantity,
+                unitPrice: new Prisma.Decimal(priceByItemId.get(item.id)!),
+              };
+            }),
+          },
         },
-      },
-    });
-  });
+      });
+      await tx.purchaseRequest.update({
+        where: { id: prId },
+        data: { status: PRStatus.CONVERTED_TO_PO, vendorId },
+      });
+      await tx.pRVersion.create({
+        data: {
+          prId,
+          versionNumber: pr.currentVersion,
+          changedById: user.id,
+          revisionComment: "Converted to purchase order",
+          diffSnapshot: {
+            action: "CONVERTED_TO_PO",
+            poId,
+            vendorId,
+            itemPrices: input.itemPrices,
+            expectedDelivery: expectedDelivery.toISOString(),
+          },
+        },
+      });
+    },
+    PR_LINE_MUTATION_TX_OPTIONS,
+  );
 
   if (lockTagsQty > 0 && hasLockTagsLines(pr.lines.map((l) => ({ categoryName: l.category.name })))) {
     const reservation = await atomicReserveSerialRange({
@@ -674,42 +598,210 @@ export async function createPOFromPR(
     }
   }
 
-  revalidatePurchaseRequestMutation(prId, { purchaseOrders: true });
+  revalidateCreatePOFromPR(prId, poId);
   return { ok: true, poId };
 }
 
-export async function approvePR(prId: string): Promise<MutationResult> {
-  const user = await requireRoles([Role.OPS_HEAD]);
+export async function fetchPendingCatalogItemsForPR(
+  prId: string,
+): Promise<
+  | { ok: true; items: PendingCatalogItemRow[] }
+  | { ok: false; message: string }
+> {
+  await requireRoles([Role.OPS_HEAD]);
+  const items = await listPendingCatalogItemsForPR(prId);
+  return {
+    ok: true,
+    items: items.map((item) => ({
+      id: item.id,
+      name: item.name,
+      sku: item.sku,
+      unit: item.unit,
+      subcategoryName: item.subcategory.name,
+      categoryName: item.subcategory.category.name,
+    })),
+  };
+}
 
-  const pr = await prisma.purchaseRequest.findUnique({ where: { id: prId } });
+export async function exportPORateCsvForPR(
+  prId: string,
+): Promise<
+  | { ok: true; csv: string; filename: string }
+  | { ok: false; message: string }
+> {
+  await requireRoles([Role.OPS_HEAD]);
+
+  const pr = await prisma.purchaseRequest.findUnique({
+    where: { id: prId },
+    select: {
+      id: true,
+      status: true,
+      executionType: true,
+      lines: prLinesInclude,
+    },
+  });
+
   if (!pr) {
     return { ok: false, message: "Purchase request not found." };
   }
-
-  try {
-    assertPRStatusTransition(pr.status, PRStatus.APPROVED);
-  } catch (e) {
-    return { ok: false, message: e instanceof Error ? e.message : "Invalid status." };
+  if (pr.executionType !== ExecutionType.VENDOR_PURCHASE) {
+    return { ok: false, message: "Rate CSV is only for vendor purchase requests." };
+  }
+  if (pr.status !== PRStatus.APPROVED) {
+    return { ok: false, message: "PR must be approved before exporting rates." };
   }
 
-  await prisma.$transaction(async (tx) => {
-    await tx.purchaseRequest.update({
-      where: { id: prId },
-      data: { status: PRStatus.APPROVED },
-    });
-    await tx.pRVersion.create({
-      data: {
-        prId,
-        versionNumber: pr.currentVersion,
-        changedById: user.id,
-        revisionComment: "Approved",
-        diffSnapshot: { action: "APPROVED" },
-      },
-    });
+  const lines = mapPrLinesFromDb(pr.lines);
+  const rows: PORateCsvExportRow[] = lines.flatMap((line) =>
+    line.items.map((item) => ({
+      prLineItemId: item.id,
+      prId: pr.id,
+      lineNumber: line.lineNumber,
+      lineItemNumber: item.lineItemNumber,
+      category: line.categoryName,
+      subcategory: line.subcategoryName,
+      itemName: item.itemName,
+      sku: item.sku ?? "",
+      unit: item.unit,
+      quantity: item.quantity,
+      unitPriceInr: "",
+    })),
+  );
+
+  if (rows.length === 0) {
+    return { ok: false, message: "No catalog items on this PR." };
+  }
+
+  return {
+    ok: true,
+    csv: buildPORateCsv(rows),
+    filename: `${pr.id}-po-rates.csv`,
+  };
+}
+
+export async function validatePORateCsvForPR(
+  prId: string,
+  csvText: string,
+): Promise<
+  | { ok: true; itemPrices: CreatePOItemPriceInput[] }
+  | { ok: false; message: string }
+> {
+  await requireRoles([Role.OPS_HEAD]);
+
+  const pr = await prisma.purchaseRequest.findUnique({
+    where: { id: prId },
+    select: {
+      id: true,
+      status: true,
+      executionType: true,
+      lines: prLinesInclude,
+    },
   });
 
-  revalidatePurchaseRequestMutation(prId, { purchaseOrders: true });
-  return { ok: true };
+  if (!pr) {
+    return { ok: false, message: "Purchase request not found." };
+  }
+  if (pr.executionType !== ExecutionType.VENDOR_PURCHASE) {
+    return { ok: false, message: "Rate CSV is only for vendor purchase requests." };
+  }
+  if (pr.status !== PRStatus.APPROVED) {
+    return { ok: false, message: "PR must be approved before importing rates." };
+  }
+
+  const parsed = parsePORateCsv(csvText.trim());
+  if (!parsed.ok) {
+    return { ok: false, message: parsed.message };
+  }
+
+  const lines = mapPrLinesFromDb(pr.lines);
+  const expectedItems = lines.flatMap((line) =>
+    line.items.map((item) => ({ id: item.id, quantity: item.quantity })),
+  );
+
+  const validated = validatePORateCsvAgainstPR(parsed.rows, {
+    prId: pr.id,
+    items: expectedItems,
+  });
+  if (!validated.ok) {
+    return { ok: false, message: validated.message };
+  }
+
+  return {
+    ok: true,
+    itemPrices: validated.itemPrices.map((row) => ({
+      prLineItemId: row.prLineItemId,
+      unitPrice: row.unitPrice,
+    })),
+  };
+}
+
+export async function approvePR(
+  prId: string,
+  catalogReview: ApprovePRInput,
+): Promise<MutationResult> {
+  return timed("action.approvePR", async () => {
+    const user = await requireRoles([Role.OPS_HEAD]);
+
+    const pr = await prisma.purchaseRequest.findUnique({ where: { id: prId } });
+    if (!pr) {
+      return { ok: false, message: "Purchase request not found." };
+    }
+    if (pr.executionType !== ExecutionType.VENDOR_PURCHASE) {
+      return { ok: false, message: "Use standard approval for non-vendor requests." };
+    }
+
+    try {
+      assertPRStatusTransition(pr.status, PRStatus.APPROVED);
+    } catch (e) {
+      return { ok: false, message: e instanceof Error ? e.message : "Invalid status." };
+    }
+
+    const catalogResult = await prisma.$transaction(
+      async (tx) => {
+        const catalogOk = await approvePendingCatalogItems(
+          tx,
+          prId,
+          catalogReview,
+          user.id,
+        );
+        if (!catalogOk.ok) {
+          return catalogOk;
+        }
+
+        await tx.purchaseRequest.update({
+          where: { id: prId },
+          data: { status: PRStatus.APPROVED },
+        });
+        await tx.pRVersion.create({
+          data: {
+            prId,
+            versionNumber: pr.currentVersion,
+            changedById: user.id,
+            revisionComment: "Approved",
+            diffSnapshot: {
+              action: "APPROVED",
+              catalogReview,
+            },
+          },
+        });
+        return { ok: true as const };
+      },
+      PR_LINE_MUTATION_TX_OPTIONS,
+    );
+
+    if (!catalogResult.ok) {
+      return { ok: false, message: catalogResult.message };
+    }
+
+    const hasCatalogDecisions =
+      catalogReview.approvedCatalogItemIds.length > 0 ||
+      catalogReview.rejected.length > 0;
+    revalidatePRStatusChange(prId, {
+      affectsAwaitingPo: true,
+      affectsCatalog: hasCatalogDecisions,
+    });
+    return { ok: true };
+  });
 }
 
 export async function rejectPR(
@@ -733,23 +825,26 @@ export async function rejectPR(
     return { ok: false, message: e instanceof Error ? e.message : "Invalid status." };
   }
 
-  await prisma.$transaction(async (tx) => {
-    await tx.purchaseRequest.update({
-      where: { id: prId },
-      data: { status: PRStatus.REJECTED },
-    });
-    await tx.pRVersion.create({
-      data: {
-        prId,
-        versionNumber: pr.currentVersion,
-        changedById: user.id,
-        revisionComment: trimmed,
-        diffSnapshot: { action: "REJECTED", reason: trimmed },
-      },
-    });
-  });
+  await prisma.$transaction(
+    async (tx) => {
+      await tx.purchaseRequest.update({
+        where: { id: prId },
+        data: { status: PRStatus.REJECTED },
+      });
+      await tx.pRVersion.create({
+        data: {
+          prId,
+          versionNumber: pr.currentVersion,
+          changedById: user.id,
+          revisionComment: trimmed,
+          diffSnapshot: { action: "REJECTED", reason: trimmed },
+        },
+      });
+    },
+    PR_LINE_MUTATION_TX_OPTIONS,
+  );
 
-  revalidatePurchaseRequestMutation(prId, { purchaseOrders: true });
+  revalidatePRStatusChange(prId);
   return { ok: true };
 }
 
@@ -774,25 +869,28 @@ export async function sendForRevision(
     return { ok: false, message: e instanceof Error ? e.message : "Invalid status." };
   }
 
-  await prisma.$transaction(async (tx) => {
-    await tx.purchaseRequest.update({
-      where: { id: prId },
-      data: {
-        status: PRStatus.REVISION_REQUIRED,
-        revisionCount: { increment: 1 },
-      },
-    });
-    await tx.pRVersion.create({
-      data: {
-        prId,
-        versionNumber: pr.currentVersion,
-        changedById: user.id,
-        revisionComment: comment,
-        diffSnapshot: { action: "REVISION_REQUIRED", revisionComment: comment },
-      },
-    });
-  });
+  await prisma.$transaction(
+    async (tx) => {
+      await tx.purchaseRequest.update({
+        where: { id: prId },
+        data: {
+          status: PRStatus.REVISION_REQUIRED,
+          revisionCount: { increment: 1 },
+        },
+      });
+      await tx.pRVersion.create({
+        data: {
+          prId,
+          versionNumber: pr.currentVersion,
+          changedById: user.id,
+          revisionComment: comment,
+          diffSnapshot: { action: "REVISION_REQUIRED", revisionComment: comment },
+        },
+      });
+    },
+    PR_LINE_MUTATION_TX_OPTIONS,
+  );
 
-  revalidatePurchaseRequestMutation(prId);
+  revalidatePRStatusChange(prId);
   return { ok: true };
 }

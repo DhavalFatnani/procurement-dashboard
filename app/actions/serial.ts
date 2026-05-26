@@ -2,9 +2,11 @@
 
 import { PRStatus, Role, SerialSeries } from "@prisma/client";
 import { revalidatePath, revalidateTag } from "next/cache";
+import { after } from "next/server";
 
 import type { MutationResult } from "@/lib/action-result";
-import { revalidateDashboardMetrics } from "@/lib/revalidate-tags";
+import { formatWarehouseLabel } from "@/lib/format-warehouse";
+import { revalidateInternalPrintMutation } from "@/lib/revalidate-tags";
 
 import { newPurchaseRequestId } from "@/lib/ids";
 import { prisma } from "@/lib/prisma";
@@ -16,6 +18,7 @@ import {
   searchSerialNumber as searchSerialNumberQuery,
   type SerialActivityFilters,
 } from "@/lib/queries/serial";
+import { LIST_CACHE_TAGS } from "@/lib/list-cache";
 import { assertPRStatusTransition } from "@/lib/prStatus";
 import {
   computeNextRangeStart,
@@ -25,17 +28,12 @@ import {
   validateInternalPrintQuantity,
   validReservationsForSeriesWhere,
 } from "@/lib/serial-series";
-import { atomicReserveSerialRange } from "@/lib/serialReservation";
+import {
+  atomicReserveSerialRange,
+  type InternalPrintPRPayload,
+} from "@/lib/serialReservation";
 import { requireRoles } from "@/lib/server-action-guard";
 import { assertUserWarehouseAccess } from "@/lib/warehouse-access";
-
-export type {
-  SerialActivityFilters,
-  SerialActivityRow,
-  SerialSearchResult,
-  SeriesConfigSummary,
-  WarehouseSeriesSnapshot,
-} from "@/lib/queries/serial";
 
 const WAREHOUSE_SCOPE_ERROR = "You cannot reserve serials for this warehouse.";
 
@@ -107,34 +105,58 @@ export async function reserveSerialRangeForPR(input: {
     return { ok: false, error: quantityError };
   }
 
-  let prId = input.prId;
-  if (!prId) {
-    prId = newPurchaseRequestId();
-    await prisma.purchaseRequest.create({
-      data: {
-        id: prId,
-        categoryId: input.categoryId,
-        subcategoryId: input.subcategoryId,
-        quantity: input.quantity,
-        warehouseId: input.warehouseId,
-        executionType: sub.executionType,
-        status: PRStatus.DRAFT,
-        createdById: user.id,
-        lines: {
-          create: {
-            lineNumber: 1,
-            categoryId: input.categoryId,
-            subcategoryId: input.subcategoryId,
-            quantity: input.quantity,
-          },
-        },
-      },
+  const existingReservation = await prisma.serialReservation.findUnique({
+    where: { idempotencyKey: input.idempotencyKey },
+  });
+  if (existingReservation?.prId) {
+    revalidateInternalPrintMutation(existingReservation.prId);
+    after(() => {
+      revalidatePath("/purchase-requests");
+      revalidatePath("/serial-governance");
+      revalidatePath("/dashboard");
+      revalidateTag("dashboard-metrics");
+      revalidateTag(LIST_CACHE_TAGS.inbox);
     });
+    return {
+      ok: true,
+      prId: existingReservation.prId,
+      reservationId: existingReservation.id,
+    };
   }
 
-  const pr = await prisma.purchaseRequest.findUnique({ where: { id: prId } });
-  if (!pr) {
-    return { ok: false, error: "Purchase request not found." };
+  let prId = input.prId;
+  let internalPrintPR: InternalPrintPRPayload | undefined;
+
+  if (!prId) {
+    prId = newPurchaseRequestId();
+    internalPrintPR = {
+      categoryId: input.categoryId,
+      subcategoryId: input.subcategoryId,
+      quantity: input.quantity,
+      warehouseId: input.warehouseId,
+      executionType: sub.executionType,
+      createdById: user.id,
+    };
+  } else {
+    const pr = await prisma.purchaseRequest.findUnique({
+      where: { id: prId },
+      include: { serialReservation: { select: { id: true } } },
+    });
+    if (!pr) {
+      return { ok: false, error: "Purchase request not found." };
+    }
+    if (pr.serialReservation) {
+      return {
+        ok: true,
+        prId,
+        reservationId: pr.serialReservation.id,
+      };
+    }
+    try {
+      assertPRStatusTransition(pr.status, PRStatus.EXECUTED_PRINT);
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "Invalid status." };
+    }
   }
 
   const result = await atomicReserveSerialRange({
@@ -144,28 +166,22 @@ export async function reserveSerialRangeForPR(input: {
     createdById: user.id,
     prId,
     idempotencyKey: input.idempotencyKey,
+    internalPrintPR,
   });
 
   if (!result.success) {
     return { ok: false, error: result.error };
   }
 
-  try {
-    assertPRStatusTransition(pr.status, PRStatus.EXECUTED_PRINT);
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "Invalid status." };
-  }
+  revalidateInternalPrintMutation(prId);
 
-  await prisma.purchaseRequest.update({
-    where: { id: prId },
-    data: { status: PRStatus.EXECUTED_PRINT },
+  after(() => {
+    revalidatePath("/purchase-requests");
+    revalidatePath("/serial-governance");
+    revalidatePath("/dashboard");
+    revalidateTag("dashboard-metrics");
+    revalidateTag(LIST_CACHE_TAGS.inbox);
   });
-
-  revalidatePath("/purchase-requests");
-  revalidatePath(`/purchase-requests/${prId}`);
-  revalidatePath("/serial-governance");
-  revalidatePath("/dashboard");
-  revalidateDashboardMetrics();
 
   return { ok: true, prId, reservationId: result.reservation.id };
 }
@@ -176,7 +192,7 @@ export async function getSerialReservationByPRId(prId: string) {
     where: { prId },
     include: {
       createdBy: { select: { name: true } },
-      warehouse: { select: { name: true } },
+      warehouse: { select: { name: true, location: true } },
     },
   });
   if (!reservation) {
@@ -188,7 +204,10 @@ export async function getSerialReservationByPRId(prId: string) {
     rangeStart: reservation.rangeStart.toString(),
     rangeEnd: reservation.rangeEnd.toString(),
     quantity: reservation.quantity,
-    warehouseName: reservation.warehouse.name,
+    warehouseName: formatWarehouseLabel(
+      reservation.warehouse.name,
+      reservation.warehouse.location,
+    ),
     createdByName: reservation.createdBy.name,
     createdAt: reservation.createdAt.toISOString(),
     prId: reservation.prId,
@@ -196,7 +215,7 @@ export async function getSerialReservationByPRId(prId: string) {
 }
 
 export async function generateSerialCSV(reservationId: string): Promise<string | null> {
-  await requireRoles([Role.SM, Role.OPS_HEAD]);
+  await requireRoles([Role.OPS_HEAD]);
   const r = await prisma.serialReservation.findUnique({ where: { id: reservationId } });
   if (!r) {
     return null;
@@ -209,7 +228,7 @@ export async function generateSerialCSV(reservationId: string): Promise<string |
 }
 
 export async function generateSerialLabelTxt(reservationId: string): Promise<string | null> {
-  await requireRoles([Role.SM, Role.OPS_HEAD]);
+  await requireRoles([Role.OPS_HEAD]);
   const r = await prisma.serialReservation.findUnique({ where: { id: reservationId } });
   if (!r) {
     return null;

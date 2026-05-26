@@ -8,7 +8,11 @@ export type SubcategoryOption = {
   executionType: ExecutionType;
 };
 
-export const LOCK_TAGS_CATEGORY_NAME = "Lock Tags";
+import {
+  LOCK_TAGS_CATEGORY_NAME,
+} from "@/lib/catalog-atomicity";
+
+export { LOCK_TAGS_CATEGORY_NAME } from "@/lib/catalog-atomicity";
 
 export function findLockTagsCategory(
   categories: CategoryOption[],

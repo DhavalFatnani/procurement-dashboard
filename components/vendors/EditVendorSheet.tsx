@@ -6,8 +6,8 @@ import { toast } from "sonner";
 import {
   updateVendor,
   type UpdateVendorResult,
-  type VendorDetail,
 } from "@/app/actions/vendors";
+import type { VendorDetail } from "@/lib/queries/vendors";
 import { FormDrawer } from "@/components/shared/Drawer";
 import { Field } from "@/components/shared/Field";
 import { SheetSection } from "@/components/shared/SheetSection";

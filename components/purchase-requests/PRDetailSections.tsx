@@ -1,14 +1,19 @@
-import { ExecutionType } from "@prisma/client";
+import { ExecutionType, PRStatus, Role, type SerialSeries } from "@prisma/client";
 import Link from "next/link";
 
-import type { PRDetail } from "@/app/actions/purchase-requests";
+import type { PRDetail } from "@/lib/queries/purchase-requests";
 import { ProgressTracker } from "@/components/shared/ProgressTracker";
+import { StatusBadge } from "@/components/shared/StatusBadge";
+import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
+  formatProcurementRef,
   formatSerialBatchLabel,
 } from "@/lib/display-ref";
 import { formatDateTimeMedium } from "@/lib/format-datetime";
+import { getSeriesDisplayName } from "@/lib/serial-series";
 import { cn } from "@/lib/utils";
+import { ArrowRight, CheckCircle2 } from "lucide-react";
 
 const PROGRESS_STEPS = [
   { key: "prApproved", label: "PR approved", atKey: "prApprovedAt" },
@@ -17,6 +22,13 @@ const PROGRESS_STEPS = [
   { key: "invoiceUploaded", label: "Invoice uploaded", atKey: "invoiceUploadedAt" },
   { key: "paymentReceived", label: "Payment received", atKey: "paymentReceivedAt" },
 ] as const;
+
+function internalPrintSeriesName(pr: PRDetail): string {
+  if (!pr.serialReservation) {
+    return pr.subcategoryName;
+  }
+  return getSeriesDisplayName(pr.serialReservation.series as SerialSeries);
+}
 
 export function PRDetailProgress({ pr }: { pr: PRDetail }) {
   if (pr.executionType !== ExecutionType.VENDOR_PURCHASE) {
@@ -43,64 +55,200 @@ export function PRDetailProgress({ pr }: { pr: PRDetail }) {
   );
 }
 
-export function PRDetailPrintSection({ pr }: { pr: PRDetail }) {
+export function PRDetailInternalPrintSide({
+  pr,
+  role,
+}: {
+  pr: PRDetail;
+  role: Role;
+}) {
   if (pr.executionType !== ExecutionType.INTERNAL_PRINT || !pr.serialReservation) {
     return null;
+  }
+
+  const seriesName = internalPrintSeriesName(pr);
+  const isOps = role === Role.OPS_HEAD;
+
+  return (
+    <Card size="sm">
+      <CardHeader>
+        <CardTitle>Print job</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4 text-ds-sm">
+        <div>
+          <p className="text-ds-xs text-muted-foreground">Status</p>
+          <div className="mt-1">
+            <StatusBadge kind="PRStatus" status={pr.status} />
+          </div>
+        </div>
+        <div>
+          <p className="text-ds-xs text-muted-foreground">Batch</p>
+          <p className="mt-1 font-medium leading-snug">
+            {formatSerialBatchLabel({
+              seriesName,
+              rangeStart: pr.serialReservation.rangeStart,
+              rangeEnd: pr.serialReservation.rangeEnd,
+              quantity: pr.serialReservation.quantity,
+            })}
+          </p>
+        </div>
+        <div>
+          <p className="text-ds-xs text-muted-foreground">Range</p>
+          <p className="mt-1 font-mono font-medium">
+            {pr.serialReservation.rangeStart} → {pr.serialReservation.rangeEnd}
+          </p>
+        </div>
+        <div className="flex flex-col gap-2 pt-1">
+          <Link
+            href={`/purchase-requests/${pr.id}/print`}
+            className={cn(buttonVariants({ variant: "outline", size: "sm" }), "w-full")}
+          >
+            View reservation summary
+          </Link>
+          {isOps ? (
+            <Link
+              href={`/serial-governance?tab=activity&batch=${pr.serialReservation.id}`}
+              className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "w-full")}
+            >
+              Open in Serial Governance
+            </Link>
+          ) : null}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+export function PRDetailInternalPrintBody({ pr }: { pr: PRDetail }) {
+  if (pr.executionType !== ExecutionType.INTERNAL_PRINT) {
+    return null;
+  }
+
+  const seriesName = internalPrintSeriesName(pr);
+  const executed =
+    pr.status === PRStatus.EXECUTED_PRINT && pr.serialReservation != null;
+
+  if (executed && pr.serialReservation) {
+    const reservation = pr.serialReservation;
+    return (
+      <Card size="sm">
+        <CardContent className="space-y-5 pt-5">
+          <div className="flex items-start gap-3 rounded-xl border border-status-success/30 bg-[var(--status-success-bg)] px-4 py-3">
+            <CheckCircle2
+              className="size-5 shrink-0 text-status-success"
+              strokeWidth={1.5}
+            />
+            <div className="min-w-0 space-y-1">
+              <p className="text-ds-sm font-semibold text-foreground">
+                Print job complete
+              </p>
+              <p className="text-ds-sm text-muted-foreground">
+                Serial range reserved and labels were sent to the printer. This request does
+                not create a PO, GRN, or invoice.
+              </p>
+            </div>
+          </div>
+
+          <div className="overflow-hidden rounded-xl border border-border-subtle bg-muted/20">
+            <div className="border-b border-border-subtle bg-card px-4 py-3">
+              <p className="text-ds-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Reserved batch
+              </p>
+              <p className="mt-1 text-ds-sm font-medium">
+                {formatSerialBatchLabel({
+                  seriesName,
+                  rangeStart: reservation.rangeStart,
+                  rangeEnd: reservation.rangeEnd,
+                  quantity: reservation.quantity,
+                })}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center justify-center gap-3 px-4 py-4">
+              <div className="min-w-0 flex-1 rounded-lg border border-border-subtle bg-background px-4 py-3 text-center">
+                <p className="text-ds-xs text-muted-foreground">Start</p>
+                <p className="mt-1 break-all font-mono text-ds-sm font-semibold tabular-nums">
+                  {reservation.rangeStart}
+                </p>
+              </div>
+              <ArrowRight className="size-4 shrink-0 text-muted-foreground" strokeWidth={1.5} />
+              <div className="min-w-0 flex-1 rounded-lg border border-border-subtle bg-background px-4 py-3 text-center">
+                <p className="text-ds-xs text-muted-foreground">End</p>
+                <p className="mt-1 break-all font-mono text-ds-sm font-semibold tabular-nums">
+                  {reservation.rangeEnd}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <dl className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <dt className="text-ds-xs text-muted-foreground">Series</dt>
+              <dd className="mt-1 font-medium">{seriesName}</dd>
+            </div>
+            <div>
+              <dt className="text-ds-xs text-muted-foreground">Subcategory</dt>
+              <dd className="mt-1 font-medium">{pr.subcategoryName}</dd>
+            </div>
+            <div>
+              <dt className="text-ds-xs text-muted-foreground">Quantity</dt>
+              <dd className="mt-1 font-medium">{reservation.quantity}</dd>
+            </div>
+            <div>
+              <dt className="text-ds-xs text-muted-foreground">Warehouse</dt>
+              <dd className="mt-1 font-medium">{pr.warehouseName}</dd>
+            </div>
+            <div>
+              <dt className="text-ds-xs text-muted-foreground">Reserved by</dt>
+              <dd className="mt-1">{reservation.createdByName}</dd>
+            </div>
+            <div>
+              <dt className="text-ds-xs text-muted-foreground">Reserved at</dt>
+              <dd className="mt-1">{formatDateTimeMedium(reservation.createdAt)}</dd>
+            </div>
+          </dl>
+        </CardContent>
+      </Card>
+    );
   }
 
   return (
     <Card size="sm">
       <CardHeader>
-        <CardTitle>Print execution</CardTitle>
+        <CardTitle>Internal print request</CardTitle>
       </CardHeader>
-      <CardContent className="space-y-2 text-ds-sm">
-        <p>
-          <span className="text-muted-foreground">Series: </span>
-          <span className="font-mono">{pr.serialReservation.series}</span>
+      <CardContent className="space-y-4 text-ds-sm">
+        <p className="text-muted-foreground">
+          This request is for in-house barcode printing only — no purchase order or payment
+          workflow applies.
         </p>
-        <p>
-          <span className="text-muted-foreground">Reserved range: </span>
-          <span className="font-mono">
-            {pr.serialReservation.rangeStart} → {pr.serialReservation.rangeEnd}
-          </span>
-        </p>
-        <p>
-          <span className="text-muted-foreground">Quantity printed: </span>
-          {pr.serialReservation.quantity}
-        </p>
-        <p>
-          <span className="text-muted-foreground">Printed by: </span>
-          {pr.serialReservation.createdByName}
-        </p>
-        <p>
-          <span className="text-muted-foreground">Printed on: </span>
-          {formatDateTimeMedium(pr.serialReservation.createdAt)}
-        </p>
-        <Link
-          href={`/serial-governance?tab=activity&batch=${pr.serialReservation.id}`}
-          className="inline-block text-ds-sm text-primary underline-offset-4 hover:underline"
-        >
-          View{" "}
-          {formatSerialBatchLabel({
-            seriesName: pr.serialReservation.series,
-            rangeStart: pr.serialReservation.rangeStart,
-            rangeEnd: pr.serialReservation.rangeEnd,
-            quantity: pr.serialReservation.quantity,
-          })}{" "}
-          in Serial Governance →
-        </Link>
-        <Link
-          href={`/purchase-requests/${pr.id}/print`}
-          className="block text-ds-sm text-muted-foreground underline-offset-4 hover:underline"
-        >
-          Open print execution →
-        </Link>
+        <dl className="grid gap-3 sm:grid-cols-2">
+          <div>
+            <dt className="text-ds-xs text-muted-foreground">Subcategory</dt>
+            <dd className="mt-1 font-medium">{pr.subcategoryName}</dd>
+          </div>
+          <div>
+            <dt className="text-ds-xs text-muted-foreground">Quantity</dt>
+            <dd className="mt-1 font-medium">{pr.quantity}</dd>
+          </div>
+          <div>
+            <dt className="text-ds-xs text-muted-foreground">Warehouse</dt>
+            <dd className="mt-1 font-medium">{pr.warehouseName}</dd>
+          </div>
+          <div>
+            <dt className="text-ds-xs text-muted-foreground">Reference</dt>
+            <dd className="mt-1 font-medium">{formatProcurementRef(pr.id)}</dd>
+          </div>
+        </dl>
       </CardContent>
     </Card>
   );
 }
 
 export function PRDetailVersionHistory({ pr }: { pr: PRDetail }) {
+  if (pr.executionType === ExecutionType.INTERNAL_PRINT && pr.versions.length === 0) {
+    return null;
+  }
+
   return (
     <Card size="sm">
       <CardHeader>

@@ -4,8 +4,6 @@ import { InboxView } from "@/components/inbox/InboxView";
 import { getInboxForSession } from "@/lib/queries/inbox";
 import { assertRole, getRequestSession } from "@/lib/session";
 
-export const dynamic = "force-dynamic";
-
 export default async function InboxPage() {
   const user = assertRole(await getRequestSession(), [
     Role.SM,

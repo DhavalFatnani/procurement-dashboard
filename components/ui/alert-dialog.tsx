@@ -38,12 +38,20 @@ function AlertDialogOverlay({
   )
 }
 
+const ALERT_DIALOG_SIZE_CLASS = {
+  default:
+    "data-[size=default]:max-w-xs data-[size=default]:sm:max-w-md",
+  sm: "data-[size=sm]:max-w-xs data-[size=sm]:sm:max-w-sm",
+  wide:
+    "data-[size=wide]:w-[min(56rem,calc(100vw-2rem))] data-[size=wide]:max-w-[min(56rem,calc(100vw-2rem))]",
+} as const;
+
 function AlertDialogContent({
   className,
   size = "default",
   ...props
 }: AlertDialogPrimitive.Popup.Props & {
-  size?: "default" | "sm"
+  size?: keyof typeof ALERT_DIALOG_SIZE_CLASS;
 }) {
   return (
     <AlertDialogPortal>
@@ -52,7 +60,8 @@ function AlertDialogContent({
         data-slot="alert-dialog-content"
         data-size={size}
         className={cn(
-          "group/alert-dialog-content fixed top-1/2 left-1/2 z-50 grid w-full -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-5 text-popover-foreground border border-border-subtle shadow-ds-3 duration-sheet outline-none data-[size=default]:max-w-xs data-[size=sm]:max-w-xs data-[size=default]:sm:max-w-md data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          "group/alert-dialog-content fixed top-1/2 left-1/2 z-50 grid w-full -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-5 text-popover-foreground border border-border-subtle shadow-ds-3 duration-sheet outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          ALERT_DIALOG_SIZE_CLASS[size],
           className
         )}
         {...props}

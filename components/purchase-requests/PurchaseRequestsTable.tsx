@@ -5,7 +5,7 @@ import { Role } from "@prisma/client";
 import { useSearchParams } from "next/navigation";
 import * as React from "react";
 
-import type { PurchaseRequestListRow } from "@/app/actions/purchase-requests";
+import type { PurchaseRequestListRow } from "@/lib/queries/purchase-requests";
 import { PRListTable } from "@/components/purchase-requests/PRListTable";
 import { Button } from "@/components/ui/button";
 import { formatProcurementRef } from "@/lib/display-ref";

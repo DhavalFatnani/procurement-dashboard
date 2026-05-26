@@ -6,7 +6,7 @@ import { AlertTriangle, FileText } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
 
-import type { InvoicePaymentDetail, PaymentListRow } from "@/app/actions/payments";
+import type { InvoicePaymentDetail, PaymentListRow } from "@/lib/queries/payments";
 import { getInvoicePaymentDetail, recordPayment } from "@/app/actions/payments";
 import { Chip } from "@/components/shared/Chip";
 import { DataTable, type DataTableColumn } from "@/components/shared/DataTable";

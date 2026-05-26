@@ -1,5 +1,5 @@
 import { unstable_cache } from "next/cache";
-import { Role, type SerialSeries } from "@prisma/client";
+import { CatalogItemStatus, Role, type SerialSeries } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 
@@ -62,6 +62,23 @@ export const getCachedCreators = unstable_cache(
 
 /** Active vendors for filter dropdowns (PO, invoices, payments, GRN). Invalidated
  * via the "vendor-options" tag on vendor create/update/status changes. */
+export const getCachedActiveCatalogItems = unstable_cache(
+  async () =>
+    prisma.catalogItem.findMany({
+      where: { status: CatalogItemStatus.ACTIVE },
+      orderBy: [{ subcategoryId: "asc" }, { name: "asc" }],
+      select: {
+        id: true,
+        subcategoryId: true,
+        name: true,
+        sku: true,
+        unit: true,
+      },
+    }),
+  ["active-catalog-items"],
+  { revalidate: 300, tags: ["catalog-items"] },
+);
+
 export const getCachedActiveVendorOptions = unstable_cache(
   async () =>
     prisma.vendor.findMany({

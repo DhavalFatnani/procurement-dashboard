@@ -2,6 +2,10 @@ import { Prisma, SerialSeries } from "@prisma/client";
 
 import { getCachedSeriesConfigs, getCachedWarehouses } from "@/lib/cache";
 import { dbParallel } from "@/lib/db-parallel";
+import {
+  formatWarehouseLabel,
+  warehouseOptionsFromRows,
+} from "@/lib/format-warehouse";
 import { paginatedListQuery, type Paginated } from "@/lib/pagination";
 import { prisma } from "@/lib/prisma";
 import type {
@@ -103,7 +107,7 @@ export async function getSerialActivity(
             warehouseId: true,
             createdAt: true,
             createdBy: { select: { name: true } },
-            warehouse: { select: { name: true } },
+            warehouse: { select: { name: true, location: true } },
           },
         })
         .then((rows) =>
@@ -115,7 +119,10 @@ export async function getSerialActivity(
             quantity: r.quantity,
             type: reservationEventType(r.poId, r.prId),
             warehouseId: r.warehouseId,
-            warehouseName: r.warehouse.name,
+            warehouseName: formatWarehouseLabel(
+              r.warehouse.name,
+              r.warehouse.location,
+            ),
             linkedPrId: r.prId,
             linkedPoId: r.poId,
             createdByName: r.createdBy.name,
@@ -132,7 +139,9 @@ export async function getSeriesUsageSummary(): Promise<SeriesUsageSummary[]> {
     () => getCachedWarehouses(),
   );
   const configBySeries = new Map(configs.map((c) => [c.series, c]));
-  const warehouseById = new Map(warehouses.map((w) => [w.id, w.name]));
+  const warehouseById = new Map(
+    warehouses.map((w) => [w.id, formatWarehouseLabel(w.name, w.location)]),
+  );
 
   const summaries: SeriesUsageSummary[] = [];
   for (const series of SERIAL_SERIES_ORDER) {
@@ -212,7 +221,9 @@ export async function getWarehouseSeriesSnapshot(options?: {
   ensureWarehouseIds?: string[];
 }): Promise<WarehouseSeriesSnapshot[]> {
   const warehouses = await getCachedWarehouses();
-  const warehouseById = new Map(warehouses.map((w) => [w.id, w.name]));
+  const warehouseById = new Map(
+    warehouses.map((w) => [w.id, formatWarehouseLabel(w.name, w.location)]),
+  );
 
   const grouped = await prisma.serialReservation.groupBy({
     by: ["series", "warehouseId"],
@@ -360,7 +371,7 @@ export async function searchSerialNumber(
 
 export async function getSerialGovernanceFilterOptions() {
   const warehouses = await getCachedWarehouses();
-  return { warehouses };
+  return { warehouses: warehouseOptionsFromRows(warehouses) };
 }
 
 /** @deprecated Use getSerialActivity */

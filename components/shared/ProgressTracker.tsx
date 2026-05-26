@@ -1,21 +1,18 @@
 "use client";
 
-import { POStatus, PRStatus } from "@prisma/client";
+import { ExecutionType, POStatus, PRStatus } from "@prisma/client";
 
-import { PRLifecycleStepper } from "@/components/purchase-requests/PRLifecycleStepper";
+import {
+  PRLifecycleStepper,
+  type PRLifecycleStepperProps,
+} from "@/components/purchase-requests/PRLifecycleStepper";
 import { POProgressBar, type POProgressStepKey } from "@/components/shared/POProgressBar";
 import { cn } from "@/lib/utils";
 import { formatDateTimeMedium } from "@/lib/format-datetime";
 
 type PRLifecycleProps = {
   variant: "stepper";
-  status: PRStatus;
-  hasPO: boolean;
-  hasGRN: boolean;
-  hasInvoice: boolean;
-  isPaid: boolean;
-  cancelled?: boolean;
-};
+} & PRLifecycleStepperProps;
 
 type POBarProps = {
   variant: "bar";

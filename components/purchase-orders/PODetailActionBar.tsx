@@ -89,69 +89,58 @@ export function PODetailActionBar({
   const destructive = actions.find((a) => a.tone === "destructive");
 
   return (
-    <>
-      <div className="flex flex-1 items-center gap-3">
-        <p className="hidden text-ds-xs font-semibold uppercase tracking-wide text-muted-foreground sm:block">
-          Next steps
-        </p>
-        <div className="flex flex-wrap items-center gap-2">
-          {primary.href ? (
-            <Button render={<Link href={primary.href} />} className="gap-1.5">
-              {primary.label}
-              <ChevronRight
-                className="size-3.5"
-                strokeWidth={1.75}
-                aria-hidden
-              />
+    <div className="flex w-full min-w-0 items-center justify-between gap-3">
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+        {primary.href ? (
+          <Button render={<Link href={primary.href} />} className="gap-1.5">
+            {primary.label}
+            <ChevronRight className="size-3.5" strokeWidth={1.75} aria-hidden />
+          </Button>
+        ) : (
+          <Button
+            type="button"
+            className="gap-1.5"
+            onClick={() => runMutateAction(primary.id)}
+          >
+            {primary.label}
+            <ChevronRight className="size-3.5" strokeWidth={1.75} aria-hidden />
+          </Button>
+        )}
+        {secondary.map((action) =>
+          action.href ? (
+            <Button
+              key={action.id}
+              variant="soft"
+              render={<Link href={action.href} />}
+            >
+              {action.label}
             </Button>
           ) : (
             <Button
+              key={action.id}
               type="button"
-              className="gap-1.5"
-              onClick={() => runMutateAction(primary.id)}
+              variant="soft"
+              onClick={() => runMutateAction(action.id)}
             >
-              {primary.label}
-              <ChevronRight
-                className="size-3.5"
-                strokeWidth={1.75}
-                aria-hidden
-              />
+              {action.label}
             </Button>
-          )}
-          {secondary.map((action) =>
-            action.href ? (
-              <Button
-                key={action.id}
-                variant="soft"
-                render={<Link href={action.href} />}
-              >
-                {action.label}
-              </Button>
-            ) : (
-              <Button
-                key={action.id}
-                type="button"
-                variant="soft"
-                onClick={() => runMutateAction(action.id)}
-              >
-                {action.label}
-              </Button>
-            ),
-          )}
-        </div>
+          ),
+        )}
       </div>
       {destructive ? (
         <Button
           type="button"
-          variant="outline"
-          className="text-destructive hover:text-destructive"
+          variant="ghost"
+          size="sm"
+          className="shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
           onClick={() => runMutateAction(destructive.id)}
         >
           {destructive.label}
         </Button>
       ) : null}
 
-      <ConfirmDialog
+      <div className="sr-only">
+        <ConfirmDialog
         open={markDeliveryOpen}
         onOpenChange={setMarkDeliveryOpen}
         title="Mark delivery complete?"
@@ -168,7 +157,8 @@ export function PODetailActionBar({
         label="Reason"
         confirmLabel="Force close"
         onConfirm={(reason) => void handleForceClose(reason)}
-      />
-    </>
+        />
+      </div>
+    </div>
   );
 }

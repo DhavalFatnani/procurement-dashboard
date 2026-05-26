@@ -1,4 +1,4 @@
-import { Prisma, SerialSeries } from "@prisma/client";
+import { ExecutionType, PRStatus, Prisma, SerialSeries } from "@prisma/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock the prisma singleton before importing the module under test.
@@ -7,6 +7,9 @@ const txFindUnique = vi.fn();
 const txFindFirst = vi.fn();
 const txSeriesConfigFindUnique = vi.fn();
 const txCreate = vi.fn();
+const txPrFindUnique = vi.fn();
+const txPrUpdate = vi.fn();
+const txPrCreate = vi.fn();
 const $transaction = vi.fn();
 
 vi.mock("@/lib/prisma", () => ({
@@ -40,6 +43,11 @@ function makeTx() {
       create: txCreate,
     },
     seriesConfig: { findUnique: txSeriesConfigFindUnique },
+    purchaseRequest: {
+      findUnique: txPrFindUnique,
+      create: txPrCreate,
+      update: txPrUpdate,
+    },
   };
 }
 
@@ -52,6 +60,41 @@ beforeEach(() => {
   txFindUnique.mockResolvedValue(null);
   txFindFirst.mockResolvedValue(null);
   txSeriesConfigFindUnique.mockResolvedValue(null);
+  txPrFindUnique.mockResolvedValue({ id: baseInput.prId, status: PRStatus.DRAFT });
+  txPrUpdate.mockResolvedValue({});
+});
+
+describe("atomicReserveSerialRange — internal print PR", () => {
+  it("creates the PR inside the transaction when internalPrintPR is set", async () => {
+    findUnique.mockResolvedValue(null);
+    txPrFindUnique.mockResolvedValueOnce(null).mockResolvedValue({
+      id: "pr-new",
+      status: PRStatus.DRAFT,
+    });
+    txCreate.mockResolvedValue({ id: "res-1", prId: "pr-new" });
+
+    await atomicReserveSerialRange({
+      ...baseInput,
+      prId: "pr-new",
+      series: SerialSeries.APPAREL_BARCODES,
+      internalPrintPR: {
+        categoryId: "cat-1",
+        subcategoryId: "sub-1",
+        quantity: 15,
+        warehouseId: "wh-1",
+        executionType: ExecutionType.INTERNAL_PRINT,
+        createdById: "user-1",
+      },
+    });
+
+    expect(txPrCreate).toHaveBeenCalledOnce();
+    expect(txPrUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "pr-new" },
+        data: { status: PRStatus.EXECUTED_PRINT },
+      }),
+    );
+  });
 });
 
 describe("atomicReserveSerialRange — idempotency", () => {
@@ -167,7 +210,7 @@ describe("atomicReserveSerialRange — serialization conflict retries", () => {
     expect(calls).toBe(2);
   });
 
-  it("returns the conflict message after exhausting all retries", async () => {
+  it("returns the timeout message after exhausting all retries", async () => {
     vi.useFakeTimers();
     findUnique.mockResolvedValue(null);
     let calls = 0;
@@ -185,10 +228,37 @@ describe("atomicReserveSerialRange — serialization conflict retries", () => {
 
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error).toContain("Another print request");
+      expect(result.error).toContain("took too long");
     }
     // initial attempt + 3 retries
     expect(calls).toBe(4);
+  });
+
+  it("retries P2028 transaction timeout and succeeds on a later attempt", async () => {
+    vi.useFakeTimers();
+    findUnique.mockResolvedValue(null);
+    const reservation = { id: "res-ok" };
+    let calls = 0;
+    $transaction.mockImplementation(async () => {
+      calls += 1;
+      if (calls < 2) {
+        throw new Prisma.PrismaClientKnownRequestError("Transaction not found", {
+          code: "P2028",
+          clientVersion: "test",
+        });
+      }
+      return reservation;
+    });
+
+    const promise = atomicReserveSerialRange({
+      ...baseInput,
+      series: SerialSeries.LOCK_TAGS,
+    });
+    await vi.runAllTimersAsync();
+    const result = await promise;
+
+    expect(result).toEqual({ success: true, reservation });
+    expect(calls).toBe(2);
   });
 
   it("returns a non-retryable error immediately without retrying", async () => {

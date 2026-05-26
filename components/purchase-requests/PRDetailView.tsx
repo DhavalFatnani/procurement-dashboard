@@ -2,7 +2,7 @@
 
 import { ExecutionType, PRStatus, Role } from "@prisma/client";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useOptimistic } from "react";
 import * as React from "react";
 import { toast } from "sonner";
 
@@ -15,10 +15,14 @@ import {
   sendForRevision,
   submitPR,
   updatePR,
-  type CategoryOption,
-  type PRDetail,
-  type SubcategoryOption,
 } from "@/app/actions/purchase-requests";
+import type {
+  CatalogItemOption,
+  CategoryOption,
+  PRDetail,
+  SubcategoryOption,
+} from "@/lib/queries/purchase-requests";
+import { PRCatalogApproveDialog } from "@/components/purchase-requests/PRCatalogApproveDialog";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { ExecutionTypeBadge } from "@/components/shared/ExecutionTypeBadge";
 import { PageHeader } from "@/components/shared/PageHeader";
@@ -34,6 +38,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { usesSubcategoryAtomicity } from "@/lib/catalog-atomicity";
 import { resolveCreatePRSelection } from "@/lib/create-pr-selection";
 import {
   linesFromDetail,
@@ -48,6 +53,7 @@ import {
 } from "@/lib/display-ref";
 import { formatDateTimeMedium } from "@/lib/format-datetime";
 import { cn } from "@/lib/utils";
+import { useServerMutation } from "@/lib/use-server-mutation";
 
 const FORCE_CLOSE_ALLOWED: PRStatus[] = [
   PRStatus.DRAFT,
@@ -62,6 +68,7 @@ export function PRDetailView({
   role,
   categories,
   subcategories,
+  catalogItems = [],
   progressSlot,
   printSlot,
   versionHistorySlot,
@@ -71,19 +78,24 @@ export function PRDetailView({
   role: Role;
   categories: CategoryOption[];
   subcategories: SubcategoryOption[];
+  catalogItems?: CatalogItemOption[];
   progressSlot?: React.ReactNode;
   printSlot?: React.ReactNode;
   versionHistorySlot?: React.ReactNode;
   /** When true, header and progress sidebar are rendered by DetailPageShell. */
   embeddedInShell?: boolean;
 }) {
-  const router = useRouter();
+  const { isPending, run } = useServerMutation();
+  const [displayStatus, setOptimisticStatus] = useOptimistic(
+    pr.status,
+    (_current, next: PRStatus) => next,
+  );
   const isOps = role === Role.OPS_HEAD;
   const isSm = role === Role.SM;
 
   const [draftEditMode, setDraftEditMode] = React.useState(false);
-  const isRevisionEditing = isSm && pr.status === PRStatus.REVISION_REQUIRED;
-  const isDraftEditing = isSm && pr.status === PRStatus.DRAFT && draftEditMode;
+  const isRevisionEditing = isSm && displayStatus === PRStatus.REVISION_REQUIRED;
+  const isDraftEditing = isSm && displayStatus === PRStatus.DRAFT && draftEditMode;
   const showEditableFields = isRevisionEditing || isDraftEditing;
 
   const [categoryId, setCategoryId] = React.useState(pr.categoryId);
@@ -94,14 +106,13 @@ export function PRDetailView({
   );
   const awaitingPurchaseOrder =
     pr.executionType === ExecutionType.VENDOR_PURCHASE &&
-    pr.status === PRStatus.APPROVED &&
+    displayStatus === PRStatus.APPROVED &&
     !pr.purchaseOrder;
   const [approveOpen, setApproveOpen] = React.useState(false);
   const [rejectOpen, setRejectOpen] = React.useState(false);
   const [revisionOpen, setRevisionOpen] = React.useState(false);
   const [cancelOpen, setCancelOpen] = React.useState(false);
   const [forceOpen, setForceOpen] = React.useState(false);
-  const [pending, startTransition] = React.useTransition();
 
   const selection = React.useMemo(
     () => resolveCreatePRSelection(categories, subcategories, categoryId, subcategoryId),
@@ -109,7 +120,7 @@ export function PRDetailView({
   );
 
   const subs = subcategories.filter((s) => s.categoryId === categoryId);
-  const canForceClose = isOps && FORCE_CLOSE_ALLOWED.includes(pr.status);
+  const canForceClose = isOps && FORCE_CLOSE_ALLOWED.includes(displayStatus);
 
   const isVendorMultiLine =
     pr.executionType === ExecutionType.VENDOR_PURCHASE && pr.lineCount > 1;
@@ -120,7 +131,7 @@ export function PRDetailView({
   function payload() {
     if (pr.executionType === ExecutionType.VENDOR_PURCHASE) {
       return {
-        lines: toLineInputs(vendorLines),
+        lines: toLineInputs(vendorLines, categories),
         vendorId: null,
         vendorRequestId: pr.vendorRequestId,
       };
@@ -165,7 +176,24 @@ export function PRDetailView({
       ) : null}
 
       <div className={cn("grid gap-6", !embeddedInShell && "lg:grid-cols-3")}>
-        <div className={cn("space-y-4", !embeddedInShell && "lg:col-span-2")}>
+        <div
+          className={cn(
+            "relative space-y-4",
+            !embeddedInShell && "lg:col-span-2",
+            isPending && "pointer-events-none",
+          )}
+        >
+          {isPending ? (
+            <div
+              className="absolute inset-x-0 top-0 z-10 h-0.5 overflow-hidden rounded-full bg-muted"
+              aria-hidden
+            >
+              <div className="h-full w-1/3 animate-pulse bg-primary" />
+            </div>
+          ) : null}
+          {pr.executionType === ExecutionType.INTERNAL_PRINT ? (
+            printSlot
+          ) : (
           <Card size="sm">
             <CardHeader>
               <CardTitle>Request summary</CardTitle>
@@ -192,6 +220,7 @@ export function PRDetailView({
                     <PRLineEditor
                       categories={categories}
                       subcategories={subcategories}
+                      catalogItems={catalogItems}
                       lines={vendorLines}
                       onChange={setVendorLines}
                       vendorPurchaseOnly
@@ -253,10 +282,10 @@ export function PRDetailView({
                       />
                     </div>
                   </>
-                ) : isVendorMultiLine || pr.lines.length > 1 ? (
+                ) : isVendorMultiLine || pr.lines.length > 1 || pr.lines.some((l) => l.items.length > 0) ? (
                   <div className="sm:col-span-2">
                     <p className="mb-2 text-ds-xs font-medium text-muted-foreground">
-                      Requirements ({pr.lineCount} items · {pr.quantity} total qty)
+                      Requirements ({pr.lineCount} lines · {pr.quantity} total qty)
                     </p>
                     <div className="overflow-x-auto rounded-md border border-border-subtle">
                       <table className="w-full text-ds-sm">
@@ -265,21 +294,76 @@ export function PRDetailView({
                             <th className="px-3 py-2 font-medium">#</th>
                             <th className="px-3 py-2 font-medium">Category</th>
                             <th className="px-3 py-2 font-medium">Subcategory</th>
+                            <th className="px-3 py-2 font-medium">Catalog item</th>
                             <th className="px-3 py-2 font-medium text-right">Qty</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {pr.lines.map((line) => (
-                            <tr key={line.id} className="border-b border-border-subtle last:border-0">
-                              <td className="px-3 py-2">{line.lineNumber}</td>
-                              <td className="px-3 py-2">{line.categoryName}</td>
-                              <td className="px-3 py-2">{line.subcategoryName}</td>
-                              <td className="px-3 py-2 text-right tabular-nums">{line.quantity}</td>
-                            </tr>
-                          ))}
+                          {pr.lines.flatMap((line) => {
+                            if (usesSubcategoryAtomicity(line.categoryName)) {
+                              return [
+                                <tr
+                                  key={line.id}
+                                  className="border-b border-border-subtle last:border-0"
+                                >
+                                  <td className="px-3 py-2">{line.lineNumber}</td>
+                                  <td className="px-3 py-2">{line.categoryName}</td>
+                                  <td className="px-3 py-2">{line.subcategoryName}</td>
+                                  <td className="px-3 py-2 text-muted-foreground">—</td>
+                                  <td className="px-3 py-2 text-right tabular-nums">
+                                    {line.quantity}
+                                  </td>
+                                </tr>,
+                              ];
+                            }
+                            if (line.items.length > 0) {
+                              return line.items.map((item) => (
+                                <tr
+                                  key={item.id}
+                                  className="border-b border-border-subtle last:border-0"
+                                >
+                                  <td className="px-3 py-2 tabular-nums">
+                                    {line.lineNumber}.{item.lineItemNumber}
+                                  </td>
+                                  <td className="px-3 py-2">{line.categoryName}</td>
+                                  <td className="px-3 py-2">{line.subcategoryName}</td>
+                                  <td className="px-3 py-2">{item.itemName}</td>
+                                  <td className="px-3 py-2 text-right tabular-nums">
+                                    {item.quantity}
+                                  </td>
+                                </tr>
+                              ));
+                            }
+                            return [
+                              <tr
+                                key={line.id}
+                                className="border-b border-border-subtle last:border-0"
+                              >
+                                <td className="px-3 py-2">{line.lineNumber}</td>
+                                <td className="px-3 py-2">{line.categoryName}</td>
+                                <td className="px-3 py-2">{line.subcategoryName}</td>
+                                <td className="px-3 py-2 text-muted-foreground">—</td>
+                                <td className="px-3 py-2 text-right tabular-nums">
+                                  {line.quantity}
+                                </td>
+                              </tr>,
+                            ];
+                          })}
                         </tbody>
                       </table>
                     </div>
+                    {isOps && displayStatus === PRStatus.PENDING_APPROVAL ? (
+                      <p className="mt-2 text-ds-xs text-status-warning">
+                        Proposed catalog items are reviewed when you approve — use Approve PR or{" "}
+                        <Link
+                          href="/admin/catalog?status=PENDING_APPROVAL"
+                          className="font-medium text-primary underline-offset-4 hover:underline"
+                        >
+                          Item catalog
+                        </Link>
+                        .
+                      </p>
+                    ) : null}
                     {pr.vendorName ? (
                       <p className="mt-3 text-ds-sm">
                         <span className="text-muted-foreground">Vendor: </span>
@@ -316,17 +400,18 @@ export function PRDetailView({
                   <p className="text-ds-xs text-muted-foreground">Status</p>
                   <StatusBadge
                     kind="PRStatus"
-                    status={pr.status}
+                    status={displayStatus}
                     awaitingPurchaseOrder={awaitingPurchaseOrder}
                   />
                 </div>
               </div>
             </CardContent>
           </Card>
+          )}
 
-          {progressSlot}
+          {pr.executionType === ExecutionType.VENDOR_PURCHASE ? progressSlot : null}
 
-          {printSlot}
+          {pr.executionType === ExecutionType.VENDOR_PURCHASE ? printSlot : null}
 
           {versionHistorySlot}
         </div>
@@ -339,7 +424,7 @@ export function PRDetailView({
         >
           <h2 className="text-ds-sm font-semibold">Actions</h2>
 
-          {isSm && pr.status === PRStatus.DRAFT ? (
+          {isSm && displayStatus === PRStatus.DRAFT && pr.executionType === ExecutionType.VENDOR_PURCHASE ? (
             <>
               {!draftEditMode ? (
                 <Button
@@ -355,16 +440,11 @@ export function PRDetailView({
                   type="button"
                   variant="outline"
                   className="w-full"
-                  disabled={pending || (draftEditMode && !vendorLinesValid && !selection)}
+                  disabled={isPending || (draftEditMode && !vendorLinesValid && !selection)}
                   onClick={() => {
-                    startTransition(async () => {
-                      const u = await updatePR(pr.id, payload());
-                      if (u.ok) {
-                        toast.success("Changes saved.");
-                        router.refresh();
-                      } else {
-                        toast.error(u.message ?? "Update failed.");
-                      }
+                    void run(() => updatePR(pr.id, payload()), {
+                      onSuccess: () => toast.success("Changes saved."),
+                      onError: (m) => toast.error(m),
                     });
                   }}
                 >
@@ -374,24 +454,26 @@ export function PRDetailView({
               <Button
                 type="button"
                 className="w-full"
-                disabled={pending || (draftEditMode && !vendorLinesValid && !selection)}
+                disabled={isPending || (draftEditMode && !vendorLinesValid && !selection)}
                 onClick={() => {
-                  startTransition(async () => {
-                    if (draftEditMode && selection) {
-                      const u = await updatePR(pr.id, payload());
-                      if (!u.ok) {
-                        toast.error(u.message ?? "Update failed.");
-                        return;
+                  void run(
+                    async () => {
+                      if (draftEditMode && selection) {
+                        const u = await updatePR(pr.id, payload());
+                        if (!u.ok) {
+                          return u;
+                        }
                       }
-                    }
-                    const s = await submitPR(pr.id);
-                    if (s.ok) {
-                      toast.success("Submitted for approval.");
-                      router.refresh();
-                    } else {
-                      toast.error(s.message ?? "Submit failed.");
-                    }
-                  });
+                      return submitPR(pr.id);
+                    },
+                    {
+                      onSuccess: () => {
+                        setOptimisticStatus(PRStatus.PENDING_APPROVAL);
+                        toast.success("Submitted for approval.");
+                      },
+                      onError: (m) => toast.error(m),
+                    },
+                  );
                 }}
               >
                 Submit for approval
@@ -407,21 +489,51 @@ export function PRDetailView({
             </>
           ) : null}
 
-          {isSm && pr.status === PRStatus.REVISION_REQUIRED ? (
+          {isSm &&
+          displayStatus === PRStatus.DRAFT &&
+          pr.executionType === ExecutionType.INTERNAL_PRINT ? (
+            <>
+              <p className="text-ds-xs text-muted-foreground">
+                Internal print requests are completed when a serial range is reserved and labels
+                print. This draft has not been executed yet.
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={() => setCancelOpen(true)}
+              >
+                Cancel PR
+              </Button>
+            </>
+          ) : null}
+
+          {isSm &&
+          pr.executionType === ExecutionType.INTERNAL_PRINT &&
+          displayStatus === PRStatus.EXECUTED_PRINT ? (
+            <Link
+              href={`/purchase-requests/${pr.id}/print`}
+              className={cn(buttonVariants({ size: "sm" }), "w-full")}
+            >
+              View reservation summary
+            </Link>
+          ) : null}
+
+          {isSm &&
+          displayStatus === PRStatus.REVISION_REQUIRED &&
+          pr.executionType === ExecutionType.VENDOR_PURCHASE ? (
             <>
               <Button
                 type="button"
                 className="w-full"
-                disabled={pending || !selection}
+                disabled={isPending || !selection}
                 onClick={() => {
-                  startTransition(async () => {
-                    const r = await resubmitPR(pr.id, payload());
-                    if (r.ok) {
+                  void run(() => resubmitPR(pr.id, payload()), {
+                    onSuccess: () => {
+                      setOptimisticStatus(PRStatus.PENDING_APPROVAL);
                       toast.success("Resubmitted for approval.");
-                      router.refresh();
-                    } else {
-                      toast.error(r.message ?? "Resubmit failed.");
-                    }
+                    },
+                    onError: (m) => toast.error(m),
                   });
                 }}
               >
@@ -438,7 +550,7 @@ export function PRDetailView({
             </>
           ) : null}
 
-          {isSm && pr.status === PRStatus.PENDING_APPROVAL ? (
+          {isSm && displayStatus === PRStatus.PENDING_APPROVAL ? (
             <Button
               type="button"
               variant="outline"
@@ -451,21 +563,38 @@ export function PRDetailView({
 
           {isOps &&
           pr.executionType === ExecutionType.VENDOR_PURCHASE &&
-          pr.status === PRStatus.PENDING_APPROVAL ? (
+          displayStatus === PRStatus.PENDING_APPROVAL ? (
             <>
-              <Button type="button" className="w-full" onClick={() => setApproveOpen(true)}>
+              <Button
+                type="button"
+                className="w-full"
+                disabled={isPending}
+                onClick={() => setApproveOpen(true)}
+              >
                 Approve
               </Button>
-              <Button type="button" variant="outline" className="w-full" onClick={() => setRejectOpen(true)}>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                disabled={isPending}
+                onClick={() => setRejectOpen(true)}
+              >
                 Reject
               </Button>
-              <Button type="button" variant="ghost" className="w-full" onClick={() => setRevisionOpen(true)}>
+              <Button
+                type="button"
+                variant="ghost"
+                className="w-full"
+                disabled={isPending}
+                onClick={() => setRevisionOpen(true)}
+              >
                 Send for revision
               </Button>
             </>
           ) : null}
 
-          {isOps ? (
+          {isOps && pr.executionType === ExecutionType.VENDOR_PURCHASE ? (
             <button
               type="button"
               disabled={!canForceClose}
@@ -501,21 +630,19 @@ export function PRDetailView({
         </aside>
       </div>
 
-      <ConfirmDialog
+      <PRCatalogApproveDialog
         open={approveOpen}
         onOpenChange={setApproveOpen}
-        title="Approve purchase request?"
-        description="Approves the request. Configure vendor, pricing, and delivery under Purchase Orders."
-        confirmLabel="Approve"
-        onConfirm={() => {
-          startTransition(async () => {
-            const r = await approvePR(pr.id);
-            if (r.ok) {
+        prId={pr.id}
+        pending={isPending}
+        onConfirm={(catalogReview) => {
+          void run(() => approvePR(pr.id, catalogReview), {
+            onSuccess: () => {
+              setOptimisticStatus(PRStatus.APPROVED);
               toast.success("Approved.");
-              router.refresh();
-            } else {
-              toast.error(r.message ?? "Approval failed.");
-            }
+              setApproveOpen(false);
+            },
+            onError: (m) => toast.error(m),
           });
         }}
       />
@@ -528,14 +655,12 @@ export function PRDetailView({
         label="Rejection reason"
         confirmLabel="Reject"
         onConfirm={(text) => {
-          startTransition(async () => {
-            const r = await rejectPR(pr.id, text);
-            if (r.ok) {
+          void run(() => rejectPR(pr.id, text), {
+            onSuccess: () => {
+              setOptimisticStatus(PRStatus.REJECTED);
               toast.success("Rejected.");
-              router.refresh();
-            } else {
-              toast.error(r.message ?? "Reject failed.");
-            }
+            },
+            onError: (m) => toast.error(m),
           });
         }}
       />
@@ -548,14 +673,12 @@ export function PRDetailView({
         label="Revision comment"
         confirmLabel="Send for revision"
         onConfirm={(text) => {
-          startTransition(async () => {
-            const r = await sendForRevision(pr.id, text);
-            if (r.ok) {
+          void run(() => sendForRevision(pr.id, text), {
+            onSuccess: () => {
+              setOptimisticStatus(PRStatus.REVISION_REQUIRED);
               toast.success("Sent for revision.");
-              router.refresh();
-            } else {
-              toast.error(r.message ?? "Failed.");
-            }
+            },
+            onError: (m) => toast.error(m),
           });
         }}
       />
@@ -568,14 +691,12 @@ export function PRDetailView({
         confirmLabel="Cancel PR"
         confirmVariant="destructive"
         onConfirm={() => {
-          startTransition(async () => {
-            const r = await cancelPR(pr.id);
-            if (r.ok) {
+          void run(() => cancelPR(pr.id), {
+            onSuccess: () => {
+              setOptimisticStatus(PRStatus.CANCELLED);
               toast.success("PR cancelled.");
-              router.refresh();
-            } else {
-              toast.error(r.message ?? "Cancel failed.");
-            }
+            },
+            onError: (m) => toast.error(m),
           });
         }}
       />
@@ -588,14 +709,12 @@ export function PRDetailView({
         label="Reason"
         confirmLabel="Force close"
         onConfirm={(text) => {
-          startTransition(async () => {
-            const r = await forceClosePR(pr.id, text);
-            if (r.ok) {
+          void run(() => forceClosePR(pr.id, text), {
+            onSuccess: () => {
+              setOptimisticStatus(PRStatus.FORCE_CANCELLED);
               toast.success("PR force closed.");
-              router.refresh();
-            } else {
-              toast.error(r.message ?? "Force close failed.");
-            }
+            },
+            onError: (m) => toast.error(m),
           });
         }}
       />

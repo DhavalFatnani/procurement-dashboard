@@ -1,14 +1,13 @@
 import { Suspense } from "react";
-import { Role } from "@prisma/client";
 
 import { PurchaseOrdersView } from "@/components/purchase-orders/PurchaseOrdersView";
 import { PageTableLoading } from "@/components/shared/PageTableLoading";
 import { parsePurchaseOrderPageParams } from "@/lib/list-search-params";
 import {
-  getApprovedPRsAwaitingPO,
-  getPOFilterOptions,
-  getPurchaseOrders,
-} from "@/lib/queries/purchase-orders";
+  AwaitingPRPanelLoader,
+  showAwaitingPRPanel,
+} from "@/components/purchase-orders/AwaitingPRPanelLoader";
+import { getPOFilterOptions, getPurchaseOrders } from "@/lib/queries/purchase-orders";
 import { ACCESS } from "@/lib/route-access";
 import { assertRole, getRequestSession, type SessionUser } from "@/lib/session";
 import { assignedWarehouseIds } from "@/lib/warehouse-scope";
@@ -46,12 +45,8 @@ async function PurchaseOrdersTableLoader({
   fulfillPrId: string;
 }) {
   const scopeWarehouseIds = assignedWarehouseIds(user);
-  const [filterOptions, awaitingPRs, rows] = await dbParallel(
+  const [filterOptions, rows] = await dbParallel(
     () => timed("PO.filterOptions", () => getPOFilterOptions()),
-    () =>
-      user.role === Role.OPS_HEAD
-        ? timed("PO.awaitingPRs", () => getApprovedPRsAwaitingPO())
-        : Promise.resolve([]),
     () =>
       timed("PO.getPurchaseOrders", () =>
         getPurchaseOrders({
@@ -67,11 +62,17 @@ async function PurchaseOrdersTableLoader({
       ),
   );
 
+  const awaitingPanel = showAwaitingPRPanel(user.role) ? (
+    <Suspense fallback={null}>
+      <AwaitingPRPanelLoader fulfillPrId={fulfillPrId || undefined} />
+    </Suspense>
+  ) : null;
+
   return (
     <PurchaseOrdersView
       role={user.role}
       initialRows={rows}
-      awaitingPRs={awaitingPRs}
+      awaitingPanel={awaitingPanel}
       fulfillPrId={fulfillPrId || undefined}
       filterOptions={filterOptions}
       filters={{

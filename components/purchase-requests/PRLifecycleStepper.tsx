@@ -1,10 +1,11 @@
 "use client";
 
-import { PRStatus } from "@prisma/client";
+import { ExecutionType, PRStatus } from "@prisma/client";
 
 import { HorizontalStepper, type StepperStep } from "@/components/shared/Stepper";
 
-type Lifecycle = {
+type VendorLifecycle = {
+  executionType: typeof ExecutionType.VENDOR_PURCHASE;
   status: PRStatus;
   hasPO: boolean;
   hasGRN: boolean;
@@ -13,7 +14,16 @@ type Lifecycle = {
   cancelled?: boolean;
 };
 
-const LIFECYCLE_STEPS: { id: string; label: string }[] = [
+type InternalPrintLifecycle = {
+  executionType: typeof ExecutionType.INTERNAL_PRINT;
+  status: PRStatus;
+  hasSerialReservation: boolean;
+  cancelled?: boolean;
+};
+
+export type PRLifecycleStepperProps = VendorLifecycle | InternalPrintLifecycle;
+
+const VENDOR_STEPS: { id: string; label: string }[] = [
   { id: "draft", label: "Draft" },
   { id: "pending", label: "Pending" },
   { id: "approved", label: "Approved" },
@@ -23,16 +33,22 @@ const LIFECYCLE_STEPS: { id: string; label: string }[] = [
   { id: "paid", label: "Paid" },
 ];
 
-function computeStates({
+const INTERNAL_PRINT_STEPS: { id: string; label: string }[] = [
+  { id: "draft", label: "Draft" },
+  { id: "reserved", label: "Range reserved" },
+  { id: "printed", label: "Labels printed" },
+];
+
+function computeVendorStates({
   status,
   hasPO,
   hasGRN,
   hasInvoice,
   isPaid,
   cancelled,
-}: Lifecycle): StepperStep["state"][] {
+}: Omit<VendorLifecycle, "executionType">): StepperStep["state"][] {
   if (cancelled) {
-    return LIFECYCLE_STEPS.map(() => "cancelled" as const);
+    return VENDOR_STEPS.map(() => "cancelled" as const);
   }
   const cursor =
     isPaid
@@ -48,19 +64,46 @@ function computeStates({
               : status === PRStatus.PENDING_APPROVAL || status === PRStatus.REVISION_REQUIRED
                 ? 1
                 : 0;
-  return LIFECYCLE_STEPS.map((_, i): StepperStep["state"] => {
+  return VENDOR_STEPS.map((_, i): StepperStep["state"] => {
     if (i < cursor) return "done";
     if (i === cursor) return "active";
     return "pending";
   });
 }
 
-export function PRLifecycleStepper(props: Lifecycle) {
-  const states = computeStates(props);
-  const steps: StepperStep[] = LIFECYCLE_STEPS.map((step, i) => ({
+function computeInternalPrintStates({
+  status,
+  hasSerialReservation,
+  cancelled,
+}: Omit<InternalPrintLifecycle, "executionType">): StepperStep["state"][] {
+  if (cancelled) {
+    return INTERNAL_PRINT_STEPS.map(() => "cancelled" as const);
+  }
+  if (status === PRStatus.EXECUTED_PRINT && hasSerialReservation) {
+    return ["done", "done", "done"];
+  }
+  if (hasSerialReservation) {
+    return ["done", "done", "active"];
+  }
+  return ["active", "pending", "pending"];
+}
+
+export function PRLifecycleStepper(props: PRLifecycleStepperProps) {
+  if (props.executionType === ExecutionType.INTERNAL_PRINT) {
+    const states = computeInternalPrintStates(props);
+    const steps: StepperStep[] = INTERNAL_PRINT_STEPS.map((step, i) => ({
+      id: step.id,
+      label: step.label,
+      state: states[i]!,
+    }));
+    return <HorizontalStepper steps={steps} />;
+  }
+
+  const states = computeVendorStates(props);
+  const steps: StepperStep[] = VENDOR_STEPS.map((step, i) => ({
     id: step.id,
     label: step.label,
-    state: states[i],
+    state: states[i]!,
   }));
   return <HorizontalStepper steps={steps} />;
 }

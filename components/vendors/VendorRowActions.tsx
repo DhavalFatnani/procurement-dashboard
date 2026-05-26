@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import * as React from "react";
 import { toast } from "sonner";
 
-import { deactivateVendor, type VendorListRow } from "@/app/actions/vendors";
+import { deactivateVendor } from "@/app/actions/vendors";
+import type { VendorListRow } from "@/lib/queries/vendors";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
