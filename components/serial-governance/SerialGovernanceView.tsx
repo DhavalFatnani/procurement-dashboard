@@ -127,11 +127,11 @@ export function SerialGovernanceView({
           ))}
         </TabsList>
 
-        <TabsContent value="summary" forceMount className="data-[state=inactive]:hidden">
+        <TabsContent value="summary">
           <SerialSummaryTab summaries={usageSummary} />
         </TabsContent>
 
-        <TabsContent value="activity" forceMount className="data-[state=inactive]:hidden">
+        <TabsContent value="activity">
           <SerialGovernanceListClient>
             <div className="space-y-4">
               <SerialSearchPanel />
@@ -148,7 +148,7 @@ export function SerialGovernanceView({
           </SerialGovernanceListClient>
         </TabsContent>
 
-        <TabsContent value="warehouses" forceMount className="data-[state=inactive]:hidden">
+        <TabsContent value="warehouses">
           <SerialWarehouseTab snapshots={warehouseSnapshots} />
         </TabsContent>
       </Tabs>

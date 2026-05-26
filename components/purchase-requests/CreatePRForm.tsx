@@ -57,18 +57,25 @@ type SerialHintState = {
   hint: SerialHint;
 };
 
+type WarehouseOption = { id: string; name: string };
+
 export function CreatePRForm({
   categories,
   subcategories,
-  warehouseName,
-  warehouseId,
+  warehouses,
+  defaultWarehouseId,
 }: {
   categories: CategoryOption[];
   subcategories: SubcategoryOption[];
-  warehouseName: string;
-  warehouseId: string;
+  warehouses: WarehouseOption[];
+  defaultWarehouseId: string;
 }) {
   const router = useRouter();
+  const [warehouseId, setWarehouseId] = React.useState(defaultWarehouseId);
+  const selectedWarehouse = React.useMemo(
+    () => warehouses.find((w) => w.id === warehouseId) ?? warehouses[0],
+    [warehouses, warehouseId],
+  );
   const [prId, setPrId] = React.useState<string | null>(null);
   const [mode, setMode] = React.useState<"unset" | "vendor" | "print">("unset");
   const [categoryId, setCategoryId] = React.useState("");
@@ -227,6 +234,7 @@ export function CreatePRForm({
         lines: toLineInputs(vendorLines),
         vendorId: null,
         vendorRequestId,
+        warehouseId,
       };
     }
     if (!selection) {
@@ -242,7 +250,33 @@ export function CreatePRForm({
       ],
       vendorId: null,
       vendorRequestId: null,
+      warehouseId,
     };
+  }
+
+  function renderWarehouseField() {
+    if (warehouses.length <= 1) {
+      return (
+        <p className="rounded-md border border-border-subtle bg-muted/30 px-3 py-2 text-ds-sm">
+          {selectedWarehouse?.name ?? "—"}
+        </p>
+      );
+    }
+
+    return (
+      <Select value={warehouseId} onValueChange={setWarehouseId}>
+        <SelectTrigger className="h-9">
+          <SelectValue placeholder="Select warehouse" />
+        </SelectTrigger>
+        <SelectContent>
+          {warehouses.map((warehouse) => (
+            <SelectItem key={warehouse.id} value={warehouse.id}>
+              {warehouse.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    );
   }
 
   async function persistDraft(): Promise<string | null> {
@@ -495,9 +529,7 @@ export function CreatePRForm({
             </div>
             <div className="space-y-1.5">
               <span className="text-ds-sm font-medium">Warehouse</span>
-              <p className="rounded-md border border-border-subtle bg-muted/30 px-3 py-2 text-ds-sm">
-                {warehouseName}
-              </p>
+              {renderWarehouseField()}
             </div>
           </div>
         </section>
@@ -506,9 +538,7 @@ export function CreatePRForm({
       {section1Done && mode === "vendor" ? (
         <section className="space-y-4 rounded-xl border border-border-subtle bg-card p-4">
           <h2 className="text-ds-sm font-semibold">2. Warehouse</h2>
-          <p className="rounded-md border border-border-subtle bg-muted/30 px-3 py-2 text-ds-sm">
-            {warehouseName}
-          </p>
+          {renderWarehouseField()}
         </section>
       ) : null}
 
@@ -664,7 +694,7 @@ export function CreatePRForm({
                   </li>
                   <li>
                     <span className="text-muted-foreground">Warehouse: </span>
-                    <span className="font-medium">{warehouseName}</span>
+                    <span className="font-medium">{selectedWarehouse?.name ?? "—"}</span>
                   </li>
                 </ul>
                 <p className="text-ds-xs text-muted-foreground">

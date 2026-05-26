@@ -30,6 +30,26 @@ export async function getWarehouseOptions(): Promise<{ id: string; name: string 
   return rows;
 }
 
+/** Warehouses the user may act on — from UserWarehouse, falling back to User.warehouseId. */
+export async function getWarehousesAssignedToUser(
+  userId: string,
+): Promise<{ id: string; name: string }[]> {
+  const assignments = await prisma.userWarehouse.findMany({
+    where: { userId },
+    orderBy: { warehouse: { name: "asc" } },
+    select: { warehouse: { select: { id: true, name: true } } },
+  });
+  if (assignments.length > 0) {
+    return assignments.map((a) => a.warehouse);
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { warehouse: { select: { id: true, name: true } } },
+  });
+  return user?.warehouse ? [user.warehouse] : [];
+}
+
 export async function getWarehouseById(id: string): Promise<WarehouseRow | null> {
   const w = await prisma.warehouse.findUnique({
     where: { id },

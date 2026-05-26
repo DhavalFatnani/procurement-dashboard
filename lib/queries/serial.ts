@@ -134,77 +134,78 @@ export async function getSeriesUsageSummary(): Promise<SeriesUsageSummary[]> {
   const configBySeries = new Map(configs.map((c) => [c.series, c]));
   const warehouseById = new Map(warehouses.map((w) => [w.id, w.name]));
 
-  return Promise.all(
-    SERIAL_SERIES_ORDER.map(async (series) => {
-      const validWhere = validReservationsForSeriesWhere(series);
-      const config = configBySeries.get(series);
-      const ceiling = resolveSeriesCeiling(
-        series,
-        config ? BigInt(config.ceilingNumber) : undefined,
-      );
-      const seriesStart = getSeriesStartNumber(series);
+  const summaries: SeriesUsageSummary[] = [];
+  for (const series of SERIAL_SERIES_ORDER) {
+    const validWhere = validReservationsForSeriesWhere(series);
+    const config = configBySeries.get(series);
+    const ceiling = resolveSeriesCeiling(
+      series,
+      config ? BigInt(config.ceilingNumber) : undefined,
+    );
+    const seriesStart = getSeriesStartNumber(series);
 
-      const [agg, warehouseGrouped, latest] = await dbParallel(
-        () =>
-          prisma.serialReservation.aggregate({
-            where: validWhere,
-            _count: { _all: true },
-            _max: { rangeEnd: true },
-          }),
-        () =>
-          prisma.serialReservation.groupBy({
-            by: ["warehouseId"],
-            where: validWhere,
-            _count: { _all: true },
-            _max: { rangeEnd: true },
-          }),
-        () =>
-          prisma.serialReservation.findFirst({
-            where: validWhere,
-            orderBy: { createdAt: "desc" },
-            select: {
-              createdAt: true,
-              poId: true,
-              prId: true,
-              createdBy: { select: { name: true } },
-            },
-          }),
-      );
+    const [agg, warehouseGrouped, latest] = await dbParallel(
+      () =>
+        prisma.serialReservation.aggregate({
+          where: validWhere,
+          _count: { _all: true },
+          _max: { rangeEnd: true },
+        }),
+      () =>
+        prisma.serialReservation.groupBy({
+          by: ["warehouseId"],
+          where: validWhere,
+          _count: { _all: true },
+          _max: { rangeEnd: true },
+        }),
+      () =>
+        prisma.serialReservation.findFirst({
+          where: validWhere,
+          orderBy: { createdAt: "desc" },
+          select: {
+            createdAt: true,
+            poId: true,
+            prId: true,
+            createdBy: { select: { name: true } },
+          },
+        }),
+    );
 
-      const lastEnd = agg._max.rangeEnd ?? null;
-      const nextStart = computeNextRangeStart(series, lastEnd);
+    const lastEnd = agg._max.rangeEnd ?? null;
+    const nextStart = computeNextRangeStart(series, lastEnd);
 
-      const warehouseUsage = warehouseGrouped
-        .map((g) => ({
-          warehouseId: g.warehouseId,
-          warehouseName: warehouseById.get(g.warehouseId) ?? g.warehouseId,
-          reservationCount: g._count._all,
-          lastRangeEnd:
-            g._max.rangeEnd != null
-              ? formatSerialNumberForSeries(series, g._max.rangeEnd)
-              : null,
-        }))
-        .sort((a, b) => b.reservationCount - a.reservationCount);
-
-      return {
-        series,
-        displayName: getSeriesDisplayName(series),
-        prefix: getSeriesPrefix(series),
-        seriesStart: formatSerialNumberForSeries(series, seriesStart),
+    const warehouseUsage = warehouseGrouped
+      .map((g) => ({
+        warehouseId: g.warehouseId,
+        warehouseName: warehouseById.get(g.warehouseId) ?? g.warehouseId,
+        reservationCount: g._count._all,
         lastRangeEnd:
-          lastEnd != null ? formatSerialNumberForSeries(series, lastEnd) : null,
-        nextStart: formatSerialNumberForSeries(series, nextStart),
-        reservationCount: agg._count._all,
-        usedPct: computeRangeUsedPct(series, lastEnd, ceiling),
-        lastEventType: latest
-          ? reservationEventType(latest.poId, latest.prId)
-          : null,
-        lastEventAt: latest?.createdAt.toISOString() ?? null,
-        lastEventBy: latest?.createdBy.name ?? null,
-        warehouseUsage,
-      };
-    }),
-  );
+          g._max.rangeEnd != null
+            ? formatSerialNumberForSeries(series, g._max.rangeEnd)
+            : null,
+      }))
+      .sort((a, b) => b.reservationCount - a.reservationCount);
+
+    summaries.push({
+      series,
+      displayName: getSeriesDisplayName(series),
+      prefix: getSeriesPrefix(series),
+      seriesStart: formatSerialNumberForSeries(series, seriesStart),
+      lastRangeEnd:
+        lastEnd != null ? formatSerialNumberForSeries(series, lastEnd) : null,
+      nextStart: formatSerialNumberForSeries(series, nextStart),
+      reservationCount: agg._count._all,
+      usedPct: computeRangeUsedPct(series, lastEnd, ceiling),
+      lastEventType: latest
+        ? reservationEventType(latest.poId, latest.prId)
+        : null,
+      lastEventAt: latest?.createdAt.toISOString() ?? null,
+      lastEventBy: latest?.createdBy.name ?? null,
+      warehouseUsage,
+    });
+  }
+
+  return summaries;
 }
 
 export async function getWarehouseSeriesSnapshot(options?: {

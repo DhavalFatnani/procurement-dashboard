@@ -27,7 +27,7 @@ import {
 } from "@/lib/serial-series";
 import { atomicReserveSerialRange } from "@/lib/serialReservation";
 import { requireRoles } from "@/lib/server-action-guard";
-import { userCanActForWarehouse } from "@/lib/warehouse-scope";
+import { assertUserWarehouseAccess } from "@/lib/warehouse-access";
 
 export type {
   SerialActivityFilters,
@@ -89,8 +89,9 @@ export async function reserveSerialRangeForPR(input: {
 }): Promise<{ ok: boolean; prId?: string; reservationId?: string; error?: string }> {
   const user = await requireRoles([Role.SM, Role.OPS_HEAD]);
 
-  if (!userCanActForWarehouse(user, input.warehouseId)) {
-    return { ok: false, error: WAREHOUSE_SCOPE_ERROR };
+  const access = await assertUserWarehouseAccess(user.id, input.warehouseId);
+  if (!access.ok) {
+    return { ok: false, error: access.message ?? WAREHOUSE_SCOPE_ERROR };
   }
 
   const sub = await prisma.subcategory.findUnique({ where: { id: input.subcategoryId } });

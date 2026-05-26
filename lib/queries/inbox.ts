@@ -6,9 +6,11 @@ import {
   Role,
 } from "@prisma/client";
 
+import { dbSerial } from "@/lib/db-serial";
 import { prisma } from "@/lib/prisma";
 import type { SessionUser } from "@/lib/session";
 import {
+  nestedPurchaseOrderWarehouseScope,
   nestedPurchaseRequestWarehouseScope,
   warehouseScopeForUser,
 } from "@/lib/warehouse-scope";
@@ -69,10 +71,11 @@ const ITEMS_PER_GROUP = 10;
 async function fetchSmInbox(user: SessionUser): Promise<InboxData> {
   const warehouseScope = warehouseScopeForUser(user);
   const poScope = nestedPurchaseRequestWarehouseScope(user);
+  const grnScope = nestedPurchaseOrderWarehouseScope(user);
 
   const [drafts, revisions, posToReceive, exceptions, invoicesToUpload, recent] =
-    await Promise.all([
-      prisma.purchaseRequest.findMany({
+    await dbSerial(
+      () => prisma.purchaseRequest.findMany({
         where: { status: PRStatus.DRAFT, createdById: user.id, ...warehouseScope },
         select: {
           id: true,
@@ -87,7 +90,7 @@ async function fetchSmInbox(user: SessionUser): Promise<InboxData> {
         orderBy: { updatedAt: "desc" },
         take: ITEMS_PER_GROUP,
       }),
-      prisma.purchaseRequest.findMany({
+      () => prisma.purchaseRequest.findMany({
         where: { status: PRStatus.REVISION_REQUIRED, createdById: user.id, ...warehouseScope },
         select: {
           id: true,
@@ -101,7 +104,7 @@ async function fetchSmInbox(user: SessionUser): Promise<InboxData> {
         orderBy: { updatedAt: "desc" },
         take: ITEMS_PER_GROUP,
       }),
-      prisma.purchaseOrder.findMany({
+      () => prisma.purchaseOrder.findMany({
         where: {
           status: { in: [POStatus.OPEN, POStatus.PARTIALLY_RECEIVED] },
           ...poScope,
@@ -115,10 +118,10 @@ async function fetchSmInbox(user: SessionUser): Promise<InboxData> {
         orderBy: { updatedAt: "desc" },
         take: ITEMS_PER_GROUP,
       }),
-      prisma.goodsReceipt.findMany({
+      () => prisma.goodsReceipt.findMany({
         where: {
           exceptions: { some: { resolutionStatus: null } },
-          ...poScope,
+          ...grnScope,
         },
         select: {
           id: true,
@@ -130,7 +133,7 @@ async function fetchSmInbox(user: SessionUser): Promise<InboxData> {
         orderBy: { receivedAt: "desc" },
         take: ITEMS_PER_GROUP,
       }),
-      prisma.purchaseOrder.findMany({
+      () => prisma.purchaseOrder.findMany({
         where: {
           status: POStatus.FULLY_RECEIVED,
           invoices: { none: {} },
@@ -144,7 +147,7 @@ async function fetchSmInbox(user: SessionUser): Promise<InboxData> {
         orderBy: { updatedAt: "desc" },
         take: ITEMS_PER_GROUP,
       }),
-      prisma.purchaseRequest.findMany({
+      () => prisma.purchaseRequest.findMany({
         where: { createdById: user.id, ...warehouseScope },
         select: {
           id: true,
@@ -159,7 +162,7 @@ async function fetchSmInbox(user: SessionUser): Promise<InboxData> {
         orderBy: { updatedAt: "desc" },
         take: ITEMS_PER_GROUP,
       }),
-    ]);
+    );
 
   const prTitle = (line?: { quantity: number; subcategory: { name: string } }) =>
     line ? `${line.subcategory.name} × ${line.quantity}` : "Purchase request";
@@ -275,10 +278,11 @@ async function fetchSmInbox(user: SessionUser): Promise<InboxData> {
 async function fetchOpsHeadInbox(user: SessionUser): Promise<InboxData> {
   const prScope = warehouseScopeForUser(user);
   const poScope = nestedPurchaseRequestWarehouseScope(user);
+  const grnScope = nestedPurchaseOrderWarehouseScope(user);
 
   const [pendingApprovals, vendorRequests, exceptions, atRiskPos, recentApprovals] =
-    await Promise.all([
-      prisma.purchaseRequest.findMany({
+    await dbSerial(
+      () => prisma.purchaseRequest.findMany({
         where: { status: PRStatus.PENDING_APPROVAL, ...prScope },
         select: {
           id: true,
@@ -293,7 +297,7 @@ async function fetchOpsHeadInbox(user: SessionUser): Promise<InboxData> {
         orderBy: { updatedAt: "asc" },
         take: ITEMS_PER_GROUP,
       }),
-      prisma.vendorRequest.findMany({
+      () => prisma.vendorRequest.findMany({
         where: { status: "PENDING" },
         select: {
           id: true,
@@ -304,8 +308,8 @@ async function fetchOpsHeadInbox(user: SessionUser): Promise<InboxData> {
         orderBy: { createdAt: "asc" },
         take: ITEMS_PER_GROUP,
       }),
-      prisma.goodsReceipt.findMany({
-        where: { exceptions: { some: { resolutionStatus: null } }, ...poScope },
+      () => prisma.goodsReceipt.findMany({
+        where: { exceptions: { some: { resolutionStatus: null } }, ...grnScope },
         select: {
           id: true,
           receivedAt: true,
@@ -316,7 +320,7 @@ async function fetchOpsHeadInbox(user: SessionUser): Promise<InboxData> {
         orderBy: { receivedAt: "desc" },
         take: ITEMS_PER_GROUP,
       }),
-      prisma.purchaseOrder.findMany({
+      () => prisma.purchaseOrder.findMany({
         where: {
           status: { in: [POStatus.FULLY_RECEIVED, POStatus.INVOICED] },
           invoices: { some: { matchStatus: InvoiceMatchStatus.MISMATCH, overrideReason: null } },
@@ -330,7 +334,7 @@ async function fetchOpsHeadInbox(user: SessionUser): Promise<InboxData> {
         orderBy: { updatedAt: "desc" },
         take: ITEMS_PER_GROUP,
       }),
-      prisma.purchaseRequest.findMany({
+      () => prisma.purchaseRequest.findMany({
         where: { status: { in: [PRStatus.APPROVED, PRStatus.CONVERTED_TO_PO] }, ...prScope },
         select: {
           id: true,
@@ -346,7 +350,7 @@ async function fetchOpsHeadInbox(user: SessionUser): Promise<InboxData> {
         orderBy: { updatedAt: "desc" },
         take: ITEMS_PER_GROUP,
       }),
-    ]);
+    );
 
   const prTitle = (line?: { quantity: number; subcategory: { name: string } }) =>
     line ? `${line.subcategory.name} × ${line.quantity}` : "Purchase request";
@@ -447,14 +451,12 @@ async function fetchOpsHeadInbox(user: SessionUser): Promise<InboxData> {
 }
 
 async function fetchFinanceInbox(user: SessionUser): Promise<InboxData> {
-  const poWarehouseScope = nestedPurchaseRequestWarehouseScope(user);
-  const invoiceScope = poWarehouseScope.purchaseRequest
-    ? { purchaseOrder: poWarehouseScope }
-    : {};
+  const invoiceScope = nestedPurchaseOrderWarehouseScope(user);
+  const prWarehouseFilter = invoiceScope.purchaseOrder?.purchaseRequest ?? {};
 
   const [readyToPay, partials, atRiskInvoices, vendorChanged, recent] =
-    await Promise.all([
-      prisma.invoice.findMany({
+    await dbSerial(
+      () => prisma.invoice.findMany({
         where: {
           paymentStatus: PaymentStatus.UNPAID,
           matchStatus: { in: [InvoiceMatchStatus.MATCHED, InvoiceMatchStatus.OVERRIDE_ACCEPTED] },
@@ -470,7 +472,7 @@ async function fetchFinanceInbox(user: SessionUser): Promise<InboxData> {
         orderBy: { updatedAt: "asc" },
         take: ITEMS_PER_GROUP,
       }),
-      prisma.invoice.findMany({
+      () => prisma.invoice.findMany({
         where: { paymentStatus: PaymentStatus.PARTIALLY_PAID, ...invoiceScope },
         select: {
           id: true,
@@ -483,7 +485,7 @@ async function fetchFinanceInbox(user: SessionUser): Promise<InboxData> {
         orderBy: { updatedAt: "asc" },
         take: ITEMS_PER_GROUP,
       }),
-      prisma.invoice.findMany({
+      () => prisma.invoice.findMany({
         where: { matchStatus: InvoiceMatchStatus.MISMATCH, overrideReason: null, ...invoiceScope },
         select: {
           id: true,
@@ -494,12 +496,12 @@ async function fetchFinanceInbox(user: SessionUser): Promise<InboxData> {
         orderBy: { updatedAt: "desc" },
         take: ITEMS_PER_GROUP,
       }),
-      prisma.invoice.findMany({
+      () => prisma.invoice.findMany({
         where: {
           paymentStatus: PaymentStatus.UNPAID,
           purchaseOrder: {
-            ...(poWarehouseScope.purchaseRequest
-              ? { purchaseRequest: poWarehouseScope.purchaseRequest }
+            ...(Object.keys(prWarehouseFilter).length > 0
+              ? { purchaseRequest: prWarehouseFilter }
               : {}),
             vendor: {
               updatedAt: { gt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 30) },
@@ -521,7 +523,7 @@ async function fetchFinanceInbox(user: SessionUser): Promise<InboxData> {
         orderBy: { updatedAt: "desc" },
         take: ITEMS_PER_GROUP,
       }),
-      prisma.payment.findMany({
+      () => prisma.payment.findMany({
         where: { amount: { not: null }, invoice: invoiceScope },
         select: {
           id: true,
@@ -539,7 +541,7 @@ async function fetchFinanceInbox(user: SessionUser): Promise<InboxData> {
         orderBy: { createdAt: "desc" },
         take: ITEMS_PER_GROUP,
       }),
-    ]);
+    );
 
   const readyToPayItems: InboxItem[] = readyToPay.map((inv) => ({
     id: inv.id,

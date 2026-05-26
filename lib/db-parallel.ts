@@ -1,19 +1,12 @@
 import { dbSerial } from "@/lib/db-serial";
 
 /**
- * True when Prisma can safely run concurrent queries (Accelerate or connection_limit > 1).
- * Transaction-mode PgBouncer with connection_limit=1 must stay serial — see lib/db-serial.ts.
+ * True only for Prisma Accelerate (`prisma://`). Session/direct Postgres URLs must
+ * stay serial — Supabase session pooler shares a small global pool across all
+ * serverless invocations (`max clients reached in session mode`).
  */
 export function canParallelizeQueries(): boolean {
-  const url = process.env.DATABASE_URL ?? "";
-  if (url.startsWith("prisma://")) {
-    return true;
-  }
-  const match = url.match(/connection_limit=(\d+)/i);
-  if (match) {
-    return parseInt(match[1]!, 10) > 1;
-  }
-  return false;
+  return (process.env.DATABASE_URL ?? "").startsWith("prisma://");
 }
 
 /** Run independent Prisma tasks in parallel when the pool allows it; otherwise serial. */

@@ -1,6 +1,7 @@
 import { Role } from "@prisma/client";
 
 import { UsersView } from "@/components/admin/UsersView";
+import { dbParallel } from "@/lib/db-parallel";
 import { getUsers } from "@/lib/queries/users";
 import { getWarehouseOptions } from "@/lib/queries/warehouses";
 import { assertRole, getRequestSession } from "@/lib/session";
@@ -27,16 +28,17 @@ export default async function AdminUsersPage({
   const page = Math.max(1, Number(str(sp.page)) || 1);
   const includeExactCount = str(sp.exactCount) === "1" || page === 1;
 
-  const [warehouses, rows] = await Promise.all([
-    getWarehouseOptions(),
-    getUsers({
-      search: search || undefined,
-      role: role && role in Role ? (role as Role) : undefined,
-      warehouseId: warehouseId || undefined,
-      page,
-      includeExactCount,
-    }),
-  ]);
+  const [warehouses, rows] = await dbParallel(
+    () => getWarehouseOptions(),
+    () =>
+      getUsers({
+        search: search || undefined,
+        role: role && role in Role ? (role as Role) : undefined,
+        warehouseId: warehouseId || undefined,
+        page,
+        includeExactCount,
+      }),
+  );
 
   return (
     <UsersView

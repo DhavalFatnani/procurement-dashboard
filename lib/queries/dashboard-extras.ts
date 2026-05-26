@@ -1,5 +1,6 @@
 import { POStatus, Prisma } from "@prisma/client";
 
+import { dbSerial } from "@/lib/db-serial";
 import { prisma } from "@/lib/prisma";
 
 export type POStageDistribution = {
@@ -54,73 +55,78 @@ export type RecentActivityItem = {
 };
 
 export async function getRecentActivity(limit = 10): Promise<RecentActivityItem[]> {
-  const [prs, pos, grns, invoices, payments] = await Promise.all([
-    prisma.purchaseRequest.findMany({
-      select: {
-        id: true,
-        updatedAt: true,
-        status: true,
-        createdBy: { select: { name: true } },
-        lines: {
-          orderBy: { lineNumber: "asc" },
-          select: { subcategory: { select: { name: true } } },
-          take: 1,
-        },
-      },
-      orderBy: { updatedAt: "desc" },
-      take: limit,
-    }),
-    prisma.purchaseOrder.findMany({
-      select: {
-        id: true,
-        updatedAt: true,
-        status: true,
-        vendor: { select: { businessName: true } },
-      },
-      orderBy: { updatedAt: "desc" },
-      take: limit,
-    }),
-    prisma.goodsReceipt.findMany({
-      select: {
-        id: true,
-        receivedAt: true,
-        poId: true,
-        receivedBy: { select: { name: true } },
-        purchaseOrder: { select: { vendor: { select: { businessName: true } } } },
-      },
-      orderBy: { receivedAt: "desc" },
-      take: limit,
-    }),
-    prisma.invoice.findMany({
-      select: {
-        id: true,
-        updatedAt: true,
-        invoiceNumber: true,
-        poId: true,
-        purchaseOrder: { select: { vendor: { select: { businessName: true } } } },
-        uploadedBy: { select: { name: true } },
-      },
-      orderBy: { updatedAt: "desc" },
-      take: limit,
-    }),
-    prisma.payment.findMany({
-      where: { amount: { not: null } },
-      select: {
-        id: true,
-        createdAt: true,
-        amount: true,
-        paidBy: { select: { name: true } },
-        invoice: {
-          select: {
-            invoiceNumber: true,
-            purchaseOrder: { select: { id: true, vendor: { select: { businessName: true } } } },
+  const [prs, pos, grns, invoices, payments] = await dbSerial(
+    () =>
+      prisma.purchaseRequest.findMany({
+        select: {
+          id: true,
+          updatedAt: true,
+          status: true,
+          createdBy: { select: { name: true } },
+          lines: {
+            orderBy: { lineNumber: "asc" },
+            select: { subcategory: { select: { name: true } } },
+            take: 1,
           },
         },
-      },
-      orderBy: { createdAt: "desc" },
-      take: limit,
-    }),
-  ]);
+        orderBy: { updatedAt: "desc" },
+        take: limit,
+      }),
+    () =>
+      prisma.purchaseOrder.findMany({
+        select: {
+          id: true,
+          updatedAt: true,
+          status: true,
+          vendor: { select: { businessName: true } },
+        },
+        orderBy: { updatedAt: "desc" },
+        take: limit,
+      }),
+    () =>
+      prisma.goodsReceipt.findMany({
+        select: {
+          id: true,
+          receivedAt: true,
+          poId: true,
+          receivedBy: { select: { name: true } },
+          purchaseOrder: { select: { vendor: { select: { businessName: true } } } },
+        },
+        orderBy: { receivedAt: "desc" },
+        take: limit,
+      }),
+    () =>
+      prisma.invoice.findMany({
+        select: {
+          id: true,
+          updatedAt: true,
+          invoiceNumber: true,
+          poId: true,
+          purchaseOrder: { select: { vendor: { select: { businessName: true } } } },
+          uploadedBy: { select: { name: true } },
+        },
+        orderBy: { updatedAt: "desc" },
+        take: limit,
+      }),
+    () =>
+      prisma.payment.findMany({
+        where: { amount: { not: null } },
+        select: {
+          id: true,
+          createdAt: true,
+          amount: true,
+          paidBy: { select: { name: true } },
+          invoice: {
+            select: {
+              invoiceNumber: true,
+              purchaseOrder: { select: { id: true, vendor: { select: { businessName: true } } } },
+            },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+        take: limit,
+      }),
+  );
 
   const items: RecentActivityItem[] = [
     ...prs.map((pr) => ({

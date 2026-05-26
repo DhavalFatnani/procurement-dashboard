@@ -1,5 +1,6 @@
 import { InvoiceMatchStatus, PaymentStatus, PRStatus } from "@prisma/client";
 
+import { dbSerial } from "@/lib/db-serial";
 import { prisma } from "@/lib/prisma";
 
 export type CycleTimePoint = { day: string; count: number };
@@ -33,36 +34,40 @@ export async function getReports(): Promise<ReportsData> {
   since.setDate(since.getDate() - DAYS + 1);
 
   const [prs, grnExceptions, unpaidInvoices, topVendorRows, monthMetrics] =
-    await Promise.all([
-      prisma.purchaseRequest.findMany({
-        where: { createdAt: { gte: since } },
-        select: { createdAt: true },
-      }),
-      prisma.gRNException.findMany({
-        where: { createdAt: { gte: since } },
-        select: { createdAt: true, resolutionStatus: true },
-      }),
-      prisma.invoice.findMany({
-        where: { paymentStatus: { not: PaymentStatus.PAID } },
-        select: {
-          amount: true,
-          createdAt: true,
-          payments: { select: { amount: true } },
-        },
-      }),
-      prisma.purchaseOrder.findMany({
-        where: { status: { notIn: ["CLOSED", "FORCE_CLOSED", "PARTIALLY_CLOSED"] } },
-        select: {
-          id: true,
-          unitPrice: true,
-          orderedQty: true,
-          lines: { select: { orderedQty: true, unitPrice: true } },
-          vendor: { select: { id: true, businessName: true } },
-        },
-        take: 200,
-      }),
-      monthlyMetrics(),
-    ]);
+    await dbSerial(
+      () =>
+        prisma.purchaseRequest.findMany({
+          where: { createdAt: { gte: since } },
+          select: { createdAt: true },
+        }),
+      () =>
+        prisma.gRNException.findMany({
+          where: { createdAt: { gte: since } },
+          select: { createdAt: true, resolutionStatus: true },
+        }),
+      () =>
+        prisma.invoice.findMany({
+          where: { paymentStatus: { not: PaymentStatus.PAID } },
+          select: {
+            amount: true,
+            createdAt: true,
+            payments: { select: { amount: true } },
+          },
+        }),
+      () =>
+        prisma.purchaseOrder.findMany({
+          where: { status: { notIn: ["CLOSED", "FORCE_CLOSED", "PARTIALLY_CLOSED"] } },
+          select: {
+            id: true,
+            unitPrice: true,
+            orderedQty: true,
+            lines: { select: { orderedQty: true, unitPrice: true } },
+            vendor: { select: { id: true, businessName: true } },
+          },
+          take: 200,
+        }),
+      () => monthlyMetrics(),
+    );
 
   // Build day-of-creation buckets
   const dayKeys: string[] = [];
@@ -140,21 +145,23 @@ async function monthlyMetrics(): Promise<ReportsData["summary"]> {
   const startMonth = startOf(new Date());
   startMonth.setDate(1);
 
-  const [prsThisMonth, matchedCount, totalInvoices, openInvoices] = await Promise.all([
-    prisma.purchaseRequest.count({ where: { createdAt: { gte: startMonth } } }),
-    prisma.invoice.count({
-      where: {
-        matchStatus: {
-          in: [InvoiceMatchStatus.MATCHED, InvoiceMatchStatus.OVERRIDE_ACCEPTED],
+  const [prsThisMonth, matchedCount, totalInvoices, openInvoices] = await dbSerial(
+    () => prisma.purchaseRequest.count({ where: { createdAt: { gte: startMonth } } }),
+    () =>
+      prisma.invoice.count({
+        where: {
+          matchStatus: {
+            in: [InvoiceMatchStatus.MATCHED, InvoiceMatchStatus.OVERRIDE_ACCEPTED],
+          },
         },
-      },
-    }),
-    prisma.invoice.count(),
-    prisma.invoice.findMany({
-      where: { paymentStatus: { not: PaymentStatus.PAID } },
-      select: { amount: true, payments: { select: { amount: true } } },
-    }),
-  ]);
+      }),
+    () => prisma.invoice.count(),
+    () =>
+      prisma.invoice.findMany({
+        where: { paymentStatus: { not: PaymentStatus.PAID } },
+        select: { amount: true, payments: { select: { amount: true } } },
+      }),
+  );
 
   const openValue = openInvoices.reduce((sum, inv) => {
     const paid = inv.payments.reduce(

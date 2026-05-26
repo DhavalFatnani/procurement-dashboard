@@ -34,6 +34,8 @@ import { hasLockTagsLines, LOCK_TAGS_SERIES, MAX_PR_LINES } from "@/lib/purchase
 import { revalidatePurchaseRequestMutation } from "@/lib/revalidate-tags";
 import { atomicReserveSerialRange } from "@/lib/serialReservation";
 import { requireRoles } from "@/lib/server-action-guard";
+import { assertUserWarehouseAccess } from "@/lib/warehouse-access";
+import { getWarehousesAssignedToUser } from "@/lib/queries/warehouses";
 
 // Re-export types from source — see note in app/actions/finder.ts.
 export type {
@@ -75,6 +77,7 @@ export type PRFormData = {
   lines: PRLineInput[];
   vendorId?: string | null;
   vendorRequestId?: string | null;
+  warehouseId?: string;
 };
 
 export type CreatePOLinePriceInput = {
@@ -202,9 +205,23 @@ export async function createPR(data: PRFormData): Promise<{ ok: boolean; prId?: 
     return { ok: false, message: validated.message };
   }
 
-  const warehouseId = user.warehouseId;
+  const assigned = await getWarehousesAssignedToUser(user.id);
+  const warehouseId =
+    data.warehouseId ??
+    (assigned.length === 1 ? assigned[0]!.id : null);
   if (!warehouseId) {
-    return { ok: false, message: "Your profile has no warehouse assigned." };
+    return {
+      ok: false,
+      message:
+        assigned.length === 0
+          ? "Your profile has no warehouse assigned."
+          : "Select a warehouse for this purchase request.",
+    };
+  }
+
+  const access = await assertUserWarehouseAccess(user.id, warehouseId);
+  if (!access.ok) {
+    return { ok: false, message: access.message };
   }
 
   const header = headerFromFirstLine(data.lines, validated.subs);

@@ -51,7 +51,7 @@ function NavLink({
   return (
     <Link
       href={item.href}
-      prefetch
+      prefetch={false}
       onClick={() => onNavigate?.()}
       className={cn(
         "group relative flex h-9 items-center gap-2.5 rounded-full px-3 text-ds-sm",

@@ -2,6 +2,8 @@ import { Role } from "@prisma/client";
 
 import { SerialGovernanceView } from "@/components/serial-governance/SerialGovernanceView";
 import { parseSerialGovernancePageParams } from "@/lib/list-search-params";
+import { toPaginated } from "@/lib/pagination";
+import type { SerialActivityRow } from "@/lib/serial-governance-types";
 import {
   getSerialActivity,
   getSerialGovernanceFilterOptions,
@@ -22,6 +24,7 @@ export default async function SerialGovernancePage({
   const user = assertRole(await getRequestSession(), [...ACCESS.serialGovernance]);
   const sp = await searchParams;
   const parsed = parseSerialGovernancePageParams(sp);
+  const tab = parsed.tab;
 
   const activityFilters = {
     series: parsed.series || undefined,
@@ -33,16 +36,26 @@ export default async function SerialGovernancePage({
     includeExactCount: parsed.includeExactCount,
   };
 
-  const [filterOptions, usageSummary, warehouseSnapshots, activity, seriesConfigs] =
-    await Promise.all([
-      getSerialGovernanceFilterOptions(),
-      getSeriesUsageSummary(),
-      getWarehouseSeriesSnapshot({
-        ensureWarehouseIds: user.warehouseId ? [user.warehouseId] : [],
-      }),
-      getSerialActivity(activityFilters),
-      user.role === Role.OPS_HEAD ? getSeriesConfigsForAdvanced() : [],
-    ]);
+  const filterOptions = await getSerialGovernanceFilterOptions();
+  const emptyActivity = toPaginated<SerialActivityRow>([], 0, parsed.page, 25);
+
+  let usageSummary: Awaited<ReturnType<typeof getSeriesUsageSummary>> = [];
+  let warehouseSnapshots: Awaited<ReturnType<typeof getWarehouseSeriesSnapshot>> = [];
+  let activity = emptyActivity;
+  let seriesConfigs: Awaited<ReturnType<typeof getSeriesConfigsForAdvanced>> = [];
+
+  if (tab === "summary") {
+    usageSummary = await getSeriesUsageSummary();
+  } else if (tab === "activity") {
+    activity = await getSerialActivity(activityFilters);
+    if (user.role === Role.OPS_HEAD) {
+      seriesConfigs = await getSeriesConfigsForAdvanced();
+    }
+  } else if (tab === "warehouses") {
+    warehouseSnapshots = await getWarehouseSeriesSnapshot({
+      ensureWarehouseIds: user.warehouseId ? [user.warehouseId] : [],
+    });
+  }
 
   return (
     <SerialGovernanceView
