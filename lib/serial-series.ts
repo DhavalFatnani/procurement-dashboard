@@ -11,7 +11,7 @@ export function validateInternalPrintQuantity(
     executionType === ExecutionType.INTERNAL_PRINT &&
     quantity > MAX_INTERNAL_PRINT_QUANTITY
   ) {
-    return `Maximum ${MAX_INTERNAL_PRINT_QUANTITY} serial numbers per print job.`;
+    return `Maximum ${MAX_INTERNAL_PRINT_QUANTITY.toLocaleString("en-IN")} serial numbers per print job.`;
   }
   return null;
 }
