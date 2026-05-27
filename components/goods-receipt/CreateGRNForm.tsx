@@ -13,6 +13,7 @@ import { PageHeader } from "@/components/shared/PageHeader";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Combobox } from "@/components/ui/combobox";
+import { QuantityInput } from "@/components/shared/QuantityInput";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -28,6 +29,22 @@ const EXCEPTION_TYPES: { value: GRNExceptionType; label: string }[] = [
   { value: "QUANTITY_SHORT", label: "Quantity short of delivery note" },
   { value: "QUALITY_REJECTION", label: "Quality rejection" },
 ];
+
+type LineExceptionDraft = {
+  flagged: boolean;
+  exceptionType: GRNExceptionType;
+  exceptionQty: string;
+  note: string;
+};
+
+function emptyLineException(): LineExceptionDraft {
+  return {
+    flagged: false,
+    exceptionType: "DAMAGED",
+    exceptionQty: "",
+    note: "",
+  };
+}
 
 export function CreateGRNForm({
   receivedByName,
@@ -46,12 +63,11 @@ export function CreateGRNForm({
   const [loadingPoOptions, setLoadingPoOptions] = React.useState(true);
   const [loadingSelected, setLoadingSelected] = React.useState(false);
   const [lineQty, setLineQty] = React.useState<Record<string, string>>({});
+  const [lineException, setLineException] = React.useState<Record<string, LineExceptionDraft>>(
+    {},
+  );
   const [receivedAt, setReceivedAt] = React.useState(today);
   const [deliveryNoteRef, setDeliveryNoteRef] = React.useState("");
-  const [flagException, setFlagException] = React.useState(false);
-  const [exceptionType, setExceptionType] = React.useState<GRNExceptionType>("DAMAGED");
-  const [exceptionQty, setExceptionQty] = React.useState("");
-  const [exceptionNote, setExceptionNote] = React.useState("");
   const [submitting, setSubmitting] = React.useState(false);
 
   React.useEffect(() => {
@@ -92,10 +108,16 @@ export function CreateGRNForm({
   React.useEffect(() => {
     if (!selected) {
       setLineQty({});
+      setLineException({});
       return;
     }
     setLineQty(
       Object.fromEntries(selected.lines.map((line) => [line.poLineItemId, ""])),
+    );
+    setLineException(
+      Object.fromEntries(
+        selected.lines.map((line) => [line.poLineItemId, emptyLineException()]),
+      ),
     );
   }, [selected]);
 
@@ -105,9 +127,16 @@ export function CreateGRNForm({
         0,
       )
     : 0;
-  const exceptionNum = flagException ? Number(exceptionQty) || 0 : 0;
-  const acceptedPreview = Math.max(0, receivedNum - exceptionNum);
-  const disputedPreview = exceptionNum;
+  const disputedPreview = selected
+    ? selected.lines.reduce((sum, line) => {
+        const draft = lineException[line.poLineItemId];
+        if (!draft?.flagged) {
+          return sum;
+        }
+        return sum + (Number(draft.exceptionQty) || 0);
+      }, 0)
+    : 0;
+  const acceptedPreview = Math.max(0, receivedNum - disputedPreview);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -119,20 +148,25 @@ export function CreateGRNForm({
     const res = await createGRN({
       poId,
       lineItemReceipts: selected.lines
-        .map((line) => ({
-          poLineItemId: line.poLineItemId,
-          receivedQty: Number(lineQty[line.poLineItemId]) || 0,
-        }))
+        .map((line) => {
+          const receivedQty = Number(lineQty[line.poLineItemId]) || 0;
+          const draft = lineException[line.poLineItemId];
+          return {
+            poLineItemId: line.poLineItemId,
+            receivedQty,
+            exception:
+              draft?.flagged && receivedQty > 0
+                ? {
+                    exceptionType: draft.exceptionType,
+                    exceptionQty: Number(draft.exceptionQty) || 0,
+                    note: draft.note.trim(),
+                  }
+                : undefined,
+          };
+        })
         .filter((r) => r.receivedQty > 0),
       receivedAt,
       deliveryNoteRef: deliveryNoteRef.trim() || undefined,
-      exception: flagException
-        ? {
-            exceptionType,
-            exceptionQty: exceptionNum,
-            note: exceptionNote.trim(),
-          }
-        : undefined,
     });
     setSubmitting(false);
     if (!res.ok) {
@@ -238,42 +272,177 @@ export function CreateGRNForm({
           <CardContent className="space-y-4">
             {selected ? (
               <div className="space-y-3">
-                {selected.lines.map((line) => (
-                  <div
-                    key={line.poLineItemId}
-                    className="rounded-lg border border-border-subtle p-3"
-                  >
-                    <p className="text-ds-sm font-medium">
-                      Line {line.lineNumber}
-                      {line.lineItemNumber > 1 ? `.${line.lineItemNumber}` : ""}: {line.label}
-                    </p>
-                    <p className="text-ds-xs text-muted-foreground">
-                      Pending {line.pendingQty} of {line.orderedQty} ordered
-                    </p>
-                    <label
-                      htmlFor={`line-qty-${line.poLineItemId}`}
-                      className="mt-2 block text-ds-sm font-medium"
+                {selected.lines.map((line) => {
+                  const lineReceived = Number(lineQty[line.poLineItemId]) || 0;
+                  const draft = lineException[line.poLineItemId] ?? emptyLineException();
+                  return (
+                    <div
+                      key={line.poLineItemId}
+                      className="space-y-3 rounded-lg border border-border-subtle p-3"
                     >
-                      Received qty
-                    </label>
-                    <Input
-                      id={`line-qty-${line.poLineItemId}`}
-                      type="number"
-                      min={0}
-                      max={line.pendingQty}
-                      value={lineQty[line.poLineItemId] ?? ""}
-                      onChange={(e) =>
-                        setLineQty((prev) => ({
-                          ...prev,
-                          [line.poLineItemId]: e.target.value,
-                        }))
-                      }
-                      className="mt-1 max-w-[200px]"
-                    />
-                  </div>
-                ))}
+                      <p className="text-ds-sm font-medium">
+                        Line {line.lineNumber}
+                        {line.lineItemNumber > 1 ? `.${line.lineItemNumber}` : ""}: {line.label}
+                      </p>
+                      <p className="text-ds-xs text-muted-foreground">
+                        Pending {line.pendingQty} of {line.orderedQty} ordered
+                      </p>
+                      <label
+                        htmlFor={`line-qty-${line.poLineItemId}`}
+                        className="block text-ds-sm font-medium"
+                      >
+                        Received qty
+                      </label>
+                      <QuantityInput
+                        id={`line-qty-${line.poLineItemId}`}
+                        min={0}
+                        max={line.pendingQty}
+                        showEmptyWhenZero
+                        value={Number(lineQty[line.poLineItemId]) || 0}
+                        onChange={(n) => {
+                          setLineQty((prev) => ({
+                            ...prev,
+                            [line.poLineItemId]: n === 0 ? "" : String(n),
+                          }));
+                          if (n < 1) {
+                            setLineException((prev) => ({
+                              ...prev,
+                              [line.poLineItemId]: emptyLineException(),
+                            }));
+                          }
+                        }}
+                        className="mt-1 max-w-[10rem]"
+                      />
+                      {lineReceived > 0 ? (
+                        <div className="space-y-3 border-t border-border-subtle pt-3">
+                          <label className="flex items-center gap-3 text-ds-sm">
+                            <input
+                              type="checkbox"
+                              checked={draft.flagged}
+                              onChange={(e) =>
+                                setLineException((prev) => ({
+                                  ...prev,
+                                  [line.poLineItemId]: {
+                                    ...(prev[line.poLineItemId] ?? emptyLineException()),
+                                    flagged: e.target.checked,
+                                  },
+                                }))
+                              }
+                            />
+                            Flag exception on this line
+                          </label>
+                          {draft.flagged ? (
+                            <div className="space-y-3 pl-1">
+                              <div className="space-y-1">
+                                <label
+                                  htmlFor={`exception-type-${line.poLineItemId}`}
+                                  className="text-ds-sm font-medium"
+                                >
+                                  Exception type
+                                </label>
+                                <Select
+                                  value={draft.exceptionType}
+                                  onValueChange={(v) =>
+                                    setLineException((prev) => ({
+                                      ...prev,
+                                      [line.poLineItemId]: {
+                                        ...(prev[line.poLineItemId] ?? emptyLineException()),
+                                        exceptionType: v as GRNExceptionType,
+                                      },
+                                    }))
+                                  }
+                                >
+                                  <SelectTrigger
+                                    className="w-full"
+                                    aria-label={`Exception type for line ${line.lineNumber}`}
+                                  >
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {EXCEPTION_TYPES.map((t) => (
+                                      <SelectItem key={t.value} value={t.value}>
+                                        {t.label}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              <div>
+                                <label
+                                  htmlFor={`exception-qty-${line.poLineItemId}`}
+                                  className="text-ds-sm font-medium"
+                                >
+                                  Exception quantity
+                                </label>
+                                <QuantityInput
+                                  id={`exception-qty-${line.poLineItemId}`}
+                                  min={1}
+                                  max={lineReceived}
+                                  value={
+                                    draft.exceptionQty === ""
+                                      ? 0
+                                      : Number(draft.exceptionQty) || 1
+                                  }
+                                  showEmptyWhenZero
+                                  onChange={(n) =>
+                                    setLineException((prev) => ({
+                                      ...prev,
+                                      [line.poLineItemId]: {
+                                        ...(prev[line.poLineItemId] ?? emptyLineException()),
+                                        exceptionQty: n === 0 ? "" : String(n),
+                                      },
+                                    }))
+                                  }
+                                  className="mt-1 max-w-[10rem]"
+                                />
+                              </div>
+                              <div>
+                                <label
+                                  htmlFor={`exception-note-${line.poLineItemId}`}
+                                  className="text-ds-sm font-medium"
+                                >
+                                  Exception note
+                                </label>
+                                <textarea
+                                  id={`exception-note-${line.poLineItemId}`}
+                                  required
+                                  value={draft.note}
+                                  onChange={(e) =>
+                                    setLineException((prev) => ({
+                                      ...prev,
+                                      [line.poLineItemId]: {
+                                        ...(prev[line.poLineItemId] ?? emptyLineException()),
+                                        note: e.target.value,
+                                      },
+                                    }))
+                                  }
+                                  className="mt-1 min-h-[72px] w-full rounded-lg border border-input px-2 py-2 text-sm"
+                                />
+                              </div>
+                              <p className="text-ds-xs text-muted-foreground">
+                                This line: accepted{" "}
+                                {Math.max(
+                                  0,
+                                  lineReceived - (Number(draft.exceptionQty) || 0),
+                                )}{" "}
+                                · disputed {Number(draft.exceptionQty) || 0}
+                              </p>
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
                 <p className="text-ds-sm text-muted-foreground">
                   Total received this entry: <strong>{receivedNum}</strong>
+                  {disputedPreview > 0 ? (
+                    <>
+                      {" "}
+                      · Accepted <strong>{acceptedPreview}</strong> · Disputed{" "}
+                      <strong>{disputedPreview}</strong>
+                    </>
+                  ) : null}
                 </p>
               </div>
             ) : (
@@ -307,79 +476,6 @@ export function CreateGRNForm({
               <p className="text-ds-sm font-medium">Received by</p>
               <p className="mt-1 text-ds-sm text-muted-foreground">{receivedByName}</p>
             </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">3. Exception (optional)</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <label className="flex items-center gap-3 text-ds-sm">
-              <input
-                type="checkbox"
-                checked={flagException}
-                onChange={(e) => setFlagException(e.target.checked)}
-              />
-              Flag an exception on this receipt
-            </label>
-            {flagException ? (
-              <>
-                <div className="space-y-1">
-                  <label htmlFor="exceptionType" className="text-ds-sm font-medium">
-                    Exception type
-                  </label>
-                  <Select
-                    value={exceptionType}
-                    onValueChange={(v) => setExceptionType(v as GRNExceptionType)}
-                  >
-                    <SelectTrigger className="w-full" aria-label="Exception type">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {EXCEPTION_TYPES.map((t) => (
-                        <SelectItem key={t.value} value={t.value}>
-                          {t.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <label htmlFor="exceptionQty" className="text-ds-sm font-medium">
-                    Exception quantity
-                  </label>
-                  <Input
-                    id="exceptionQty"
-                    type="number"
-                    min={1}
-                    max={receivedNum || undefined}
-                    required
-                    value={exceptionQty}
-                    onChange={(e) => setExceptionQty(e.target.value)}
-                    className="mt-1 max-w-[200px]"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="exceptionNote" className="text-ds-sm font-medium">
-                    Exception note
-                  </label>
-                  <textarea
-                    id="exceptionNote"
-                    required
-                    value={exceptionNote}
-                    onChange={(e) => setExceptionNote(e.target.value)}
-                    className="mt-1 min-h-[88px] w-full rounded-lg border border-input px-2 py-2 text-sm"
-                  />
-                </div>
-                {receivedNum > 0 ? (
-                  <p className="text-ds-sm text-muted-foreground">
-                    Accepted qty will be {acceptedPreview} and disputed qty will be {disputedPreview}.
-                    These must sum to {receivedNum}.
-                  </p>
-                ) : null}
-              </>
-            ) : null}
           </CardContent>
         </Card>
 

@@ -3,7 +3,7 @@
 import { CatalogItemStatus, ExecutionType, PRStatus, Role } from "@prisma/client";
 
 import type { MutationResult } from "@/lib/action-result";
-import { WAREHOUSE_MAINTENANCE_CATEGORY_NAME } from "@/lib/catalog-atomicity";
+import { usesCatalogItemAtomicity } from "@/lib/catalog-atomicity";
 import { normalizeCatalogItemName } from "@/lib/catalog-items";
 import { prisma } from "@/lib/prisma";
 import {
@@ -37,11 +37,12 @@ export async function createCatalogItem(data: {
   if (
     !sub ||
     sub.executionType !== ExecutionType.VENDOR_PURCHASE ||
-    sub.category.name !== WAREHOUSE_MAINTENANCE_CATEGORY_NAME
+    !usesCatalogItemAtomicity(sub.category.name)
   ) {
     return {
       ok: false,
-      message: "Catalog items can only be added under Warehouse Maintenance subcategories.",
+      message:
+        "Catalog items can only be added under Warehouse Maintenance or IT and Hardware Assets subcategories.",
     };
   }
 

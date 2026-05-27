@@ -226,8 +226,8 @@ export function CatalogView({
         title="Item catalog"
         subtitle={
           pendingCount > 0
-            ? `${pendingCount} warehouse maintenance item${pendingCount === 1 ? "" : "s"} pending approval. Packaging and Lock Tags bill at subcategory level on PRs.`
-            : "Warehouse Maintenance catalog only. Packaging and Lock Tags use subcategory quantity on purchase requests."
+            ? `${pendingCount} catalog item${pendingCount === 1 ? "" : "s"} pending approval. Packaging, Lock Tags, and Last Mile bill at subcategory level on PRs.`
+            : "Warehouse Maintenance and IT and Hardware Assets use the item catalog. Packaging, Lock Tags, and Last Mile use subcategory quantity on PRs."
         }
         action={
           <Button onClick={() => setDrawerMode({ kind: "create" })}>

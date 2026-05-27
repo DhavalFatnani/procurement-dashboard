@@ -41,6 +41,7 @@ import { PageAlert } from "@/components/shared/PageAlert";
 import { ExecutionTypeBadge } from "@/components/shared/ExecutionTypeBadge";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { QuantityInput } from "@/components/shared/QuantityInput";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -589,17 +590,23 @@ export function CreatePRForm({
         <section className="space-y-4 rounded-xl border border-border-subtle bg-card p-4">
           <div className="space-y-3">
             <h2 className="text-ds-sm font-semibold">2. Line items</h2>
-            <ul className="grid gap-2 sm:grid-cols-2">
+            <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
               <li className="rounded-lg border border-border-subtle bg-muted/20 px-3 py-2.5 text-ds-xs">
-                <p className="font-medium text-foreground">Packaging & Lock Tags</p>
+                <p className="font-medium text-foreground">Packaging, Lock Tags, Last Mile</p>
                 <p className="mt-0.5 text-muted-foreground">
-                  Choose subcategory and quantity — billed as one line per subcategory.
+                  Choose subcategory and quantity — one billed line per subcategory.
                 </p>
               </li>
               <li className="rounded-lg border border-border-subtle bg-muted/20 px-3 py-2.5 text-ds-xs">
                 <p className="font-medium text-foreground">Warehouse Maintenance</p>
                 <p className="mt-0.5 text-muted-foreground">
-                  Search the item catalog or add a missing name for Ops approval.
+                  In-warehouse facility spend — pick catalog items or propose new names.
+                </p>
+              </li>
+              <li className="rounded-lg border border-border-subtle bg-muted/20 px-3 py-2.5 text-ds-xs">
+                <p className="font-medium text-foreground">IT and Hardware Assets</p>
+                <p className="mt-0.5 text-muted-foreground">
+                  Laptops, networking, and other assets — catalog item per SKU or model.
                 </p>
               </li>
             </ul>
@@ -680,18 +687,14 @@ export function CreatePRForm({
               <label htmlFor="pr-quantity" className="text-ds-sm font-medium">
                 Quantity
               </label>
-              <Input
+              <QuantityInput
                 id="pr-quantity"
-                type="number"
+                value={quantity}
                 min={1}
                 max={MAX_INTERNAL_PRINT_QUANTITY}
-                required
-                value={quantity}
-                onChange={(e) => {
-                  const next = Number(e.target.value) || 1;
-                  setQuantity(Math.min(MAX_INTERNAL_PRINT_QUANTITY, Math.max(1, next)));
-                }}
-                className="h-8"
+                showSteppers
+                onChange={setQuantity}
+                className="max-w-[10rem]"
               />
               <p className="text-ds-xs text-muted-foreground">
                 Up to {MAX_INTERNAL_PRINT_QUANTITY} per print job.

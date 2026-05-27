@@ -30,6 +30,7 @@ import { StatusBadge } from "@/components/shared/StatusBadge";
 import { TextareaActionDialog } from "@/components/shared/TextareaActionDialog";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { QuantityInput } from "@/components/shared/QuantityInput";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -273,12 +274,11 @@ export function PRDetailView({
                       <label className="text-ds-xs font-medium text-muted-foreground">
                         Quantity
                       </label>
-                      <Input
-                        type="number"
-                        min={1}
+                      <QuantityInput
                         value={quantity}
-                        onChange={(e) => setQuantity(Math.max(1, Number(e.target.value) || 1))}
-                        className="h-8"
+                        onChange={setQuantity}
+                        size="sm"
+                        showSteppers
                       />
                     </div>
                   </>

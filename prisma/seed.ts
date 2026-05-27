@@ -130,6 +130,18 @@ async function seedCategoriesAndSubcategories() {
     create: { id: "seed-cat-lock-tags", name: "Lock Tags" },
   });
 
+  const lastMile = await prisma.category.upsert({
+    where: { id: "seed-cat-last-mile" },
+    update: { name: "Last Mile" },
+    create: { id: "seed-cat-last-mile", name: "Last Mile" },
+  });
+
+  const itHardware = await prisma.category.upsert({
+    where: { id: "seed-cat-it-hardware" },
+    update: { name: "IT and Hardware Assets" },
+    create: { id: "seed-cat-it-hardware", name: "IT and Hardware Assets" },
+  });
+
   const packagingRows: { name: string }[] = [
     { name: "Primary Packaging (Zip lock Bag)" },
     { name: "Secondary Packaging (Courier Bag)" },
@@ -222,6 +234,69 @@ async function seedCategoriesAndSubcategories() {
         name: row.name,
         series: row.series,
         executionType: row.executionType,
+      },
+    });
+  }
+
+  // Last Mile: subcategory-level qty (outbound delivery ops — not in-warehouse facility).
+  const lastMileRows: { name: string }[] = [
+    { name: "Fuel & conveyance" },
+    { name: "Vehicle maintenance & spares" },
+    { name: "Delivery partner equipment & uniforms" },
+    { name: "Delivery bags & carriers (operational)" },
+    { name: "Hub last-mile infrastructure" },
+    { name: "Reverse logistics supplies" },
+    { name: "GPS & telematics" },
+  ];
+
+  for (let i = 0; i < lastMileRows.length; i++) {
+    const row = lastMileRows[i]!;
+    await prisma.subcategory.upsert({
+      where: { id: `seed-sub-lm-${i}` },
+      update: {
+        name: row.name,
+        executionType: ExecutionType.VENDOR_PURCHASE,
+        series: null,
+      },
+      create: {
+        id: `seed-sub-lm-${i}`,
+        categoryId: lastMile.id,
+        name: row.name,
+        executionType: ExecutionType.VENDOR_PURCHASE,
+        series: null,
+      },
+    });
+  }
+
+  // IT and Hardware Assets: catalog-item level (capital / IT assets — not warehouse facility).
+  const itHardwareRows: { name: string }[] = [
+    { name: "Laptops & desktops" },
+    { name: "Monitors & displays" },
+    { name: "Mobile devices & tablets" },
+    { name: "Networking equipment" },
+    { name: "Printers & scanners" },
+    { name: "Server & storage" },
+    { name: "Peripherals & accessories" },
+    { name: "Power backup & UPS" },
+    { name: "Security & surveillance" },
+    { name: "Software licenses & subscriptions" },
+  ];
+
+  for (let i = 0; i < itHardwareRows.length; i++) {
+    const row = itHardwareRows[i]!;
+    await prisma.subcategory.upsert({
+      where: { id: `seed-sub-it-${i}` },
+      update: {
+        name: row.name,
+        executionType: ExecutionType.VENDOR_PURCHASE,
+        series: null,
+      },
+      create: {
+        id: `seed-sub-it-${i}`,
+        categoryId: itHardware.id,
+        name: row.name,
+        executionType: ExecutionType.VENDOR_PURCHASE,
+        series: null,
       },
     });
   }
@@ -354,6 +429,24 @@ async function seedCatalogItems(opsId: string) {
       subcategoryId: "seed-sub-lock-0",
       name: "Apparel lock tag — standard",
       sku: "LT-APP-STD",
+      unit: "pcs",
+    },
+    {
+      subcategoryId: "seed-sub-it-0",
+      name: "Business laptop — 14\" standard",
+      sku: "IT-LAP-14-STD",
+      unit: "pcs",
+    },
+    {
+      subcategoryId: "seed-sub-it-2",
+      name: "Handheld scanner — warehouse",
+      sku: "IT-SCN-HH",
+      unit: "pcs",
+    },
+    {
+      subcategoryId: "seed-sub-it-4",
+      name: "Label printer — thermal 4\"",
+      sku: "IT-PRT-4",
       unit: "pcs",
     },
   ];

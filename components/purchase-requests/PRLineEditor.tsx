@@ -16,7 +16,7 @@ import { MAX_ITEMS_PER_PR_LINE } from "@/lib/catalog-items";
 import { MAX_PR_LINES } from "@/lib/purchase-lines";
 import { Button } from "@/components/ui/button";
 import { CatalogItemPicker } from "@/components/purchase-requests/CatalogItemPicker";
-import { Input } from "@/components/ui/input";
+import { QuantityInput } from "@/components/shared/QuantityInput";
 import {
   Select,
   SelectContent,
@@ -221,7 +221,7 @@ function CategorySubcategoryRow({
       className={cn(
         "grid items-end gap-2 sm:gap-3",
         showQuantity
-          ? "grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)_4.25rem]"
+          ? "grid-cols-1 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)_minmax(5.5rem,7.5rem)]"
           : "sm:grid-cols-2",
       )}
     >
@@ -266,15 +266,11 @@ function CategorySubcategoryRow({
       {showQuantity ? (
         <div className="space-y-1.5">
           {fieldLabel({ children: "Qty" })}
-          <Input
-            type="number"
-            min={1}
+          <QuantityInput
             value={quantity}
             disabled={readOnly}
-            onChange={(e) =>
-              onQuantityChange(Math.max(1, Number(e.target.value) || 1))
-            }
-            className="h-8 tabular-nums"
+            onChange={onQuantityChange}
+            size="sm"
             aria-label={`Line ${lineIndex + 1} quantity`}
           />
         </div>
@@ -370,7 +366,7 @@ export function PRLineEditor({
               readOnly={readOnly}
               onRemove={() => removeLine(index)}
             >
-              <div className="grid gap-3 sm:grid-cols-[1fr_1fr_6rem]">
+              <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(5.5rem,7.5rem)]">
                 <div className="space-y-1.5 sm:col-span-1">
                   {fieldLabel({ children: "Category" })}
                   <Select
@@ -413,15 +409,12 @@ export function PRLineEditor({
                 </div>
                 <div className="space-y-1.5">
                   {fieldLabel({ children: "Qty" })}
-                  <Input
-                    type="number"
-                    min={1}
+                  <QuantityInput
                     value={line.quantity}
                     disabled={readOnly}
-                    onChange={(e) =>
-                      updateLine(index, { quantity: Math.max(1, Number(e.target.value) || 1) })
-                    }
-                    className="h-8"
+                    onChange={(q) => updateLine(index, { quantity: q })}
+                    size="sm"
+                    aria-label={`Line ${index + 1} quantity`}
                   />
                 </div>
               </div>
@@ -513,7 +506,7 @@ export function PRLineEditor({
             />
 
             <div className="overflow-hidden rounded-md border border-border-subtle">
-              <div className="hidden border-b border-border-subtle bg-muted/20 px-3 py-2 sm:grid sm:grid-cols-[minmax(0,1fr)_5.5rem_2.25rem] sm:gap-3 sm:text-ds-xs sm:font-medium sm:text-muted-foreground">
+              <div className="hidden border-b border-border-subtle bg-muted/20 px-3 py-2 sm:grid sm:grid-cols-[minmax(0,1fr)_minmax(5.5rem,7.5rem)_2.25rem] sm:gap-3 sm:text-ds-xs sm:font-medium sm:text-muted-foreground">
                 <span>Item</span>
                 <span className="text-right">Qty</span>
                 <span className="sr-only">Actions</span>
@@ -523,7 +516,7 @@ export function PRLineEditor({
                 {line.items.map((item, itemIndex) => (
                     <li
                       key={item.key}
-                      className="grid gap-3 px-3 py-3 sm:grid-cols-[minmax(0,1fr)_5.5rem_2.25rem] sm:items-end sm:gap-3"
+                      className="grid gap-3 px-3 py-3 sm:grid-cols-[minmax(0,1fr)_minmax(5.5rem,7.5rem)_2.25rem] sm:items-end sm:gap-3"
                     >
                       <div className="min-w-0 space-y-1.5">
                         <span className="text-ds-xs font-medium text-muted-foreground sm:sr-only">
@@ -551,17 +544,14 @@ export function PRLineEditor({
                         <span className="text-ds-xs font-medium text-muted-foreground sm:sr-only">
                           Qty
                         </span>
-                        <Input
-                          type="number"
-                          min={1}
+                        <QuantityInput
                           value={item.quantity}
                           disabled={readOnly}
-                          onChange={(e) =>
-                            updateItem(lineIndex, itemIndex, {
-                              quantity: Math.max(1, Number(e.target.value) || 1),
-                            })
+                          onChange={(q) =>
+                            updateItem(lineIndex, itemIndex, { quantity: q })
                           }
-                          className="h-8 tabular-nums sm:text-right"
+                          size="sm"
+                          aria-label={`Line ${lineIndex + 1} item ${itemIndex + 1} quantity`}
                         />
                       </div>
 

@@ -427,6 +427,7 @@ model PurchaseOrderLine {
   category        Category            @relation(fields: [categoryId], references: [id])
   subcategory     Subcategory         @relation(fields: [subcategoryId], references: [id])
   goodsReceiptLines GoodsReceiptLine[]
+  grnExceptions     GRNException[]
 
   @@index([poId])
   @@index([categoryId])
@@ -449,6 +450,7 @@ model PurchaseOrderLineItem {
   category              Category                   @relation(fields: [categoryId], references: [id])
   subcategory           Subcategory                @relation(fields: [subcategoryId], references: [id])
   goodsReceiptLineItems GoodsReceiptLineItem[]
+  grnExceptions         GRNException[]
 
   @@index([poId])
   @@index([catalogItemId])
@@ -515,6 +517,8 @@ model GoodsReceiptLine {
 model GRNException {
   id               String                  @id @default(cuid())
   grnId            String
+  poLineItemId     String?
+  poLineId         String?
   exceptionType    GRNExceptionType
   exceptionQty     Int
   note             String
@@ -525,10 +529,14 @@ model GRNException {
   createdAt        DateTime                @default(now())
   updatedAt        DateTime                @default(now()) @updatedAt
 
-  grn        GoodsReceipt @relation(fields: [grnId], references: [id], onDelete: Cascade)
-  resolvedBy User?        @relation(fields: [resolvedById], references: [id])
+  grn                  GoodsReceipt           @relation(fields: [grnId], references: [id], onDelete: Cascade)
+  purchaseOrderLineItem PurchaseOrderLineItem? @relation(fields: [poLineItemId], references: [id], onDelete: SetNull)
+  purchaseOrderLine     PurchaseOrderLine?     @relation(fields: [poLineId], references: [id], onDelete: SetNull)
+  resolvedBy            User?                  @relation(fields: [resolvedById], references: [id])
 
   @@index([grnId])
+  @@index([poLineItemId])
+  @@index([poLineId])
 }
 
 model Invoice {

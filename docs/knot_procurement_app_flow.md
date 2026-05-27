@@ -75,7 +75,7 @@ Subcategory `executionType` (from seed / catalog) splits the product into two pa
 
 | # | Who | Route / action | Result |
 |---|-----|----------------|--------|
-| 1 | SM | `/purchase-requests/new` → `createPR` — **Packaging / Lock Tags:** subcategory + qty; **Warehouse Maintenance:** catalog items (or propose new names) | `DRAFT` with lines (+ line items where applicable) |
+| 1 | SM | `/purchase-requests/new` → `createPR` — **Packaging / Lock Tags / Last Mile:** subcategory + qty; **Warehouse Maintenance / IT and Hardware Assets:** catalog items (or propose new names) | `DRAFT` with lines (+ line items where applicable) |
 | 2 | SM | `submitPR` | `PENDING_APPROVAL` + PRVersion |
 | 3 | OPS | `approvePR` (review pending catalog proposals) | `APPROVED`; proposed items → `ACTIVE` catalog |
 | 4 | OPS | `/purchase-orders` → `createPOFromPR` (rates grid or CSV) | PO `OPEN` with `PurchaseOrderLineItem` prices; PR `CONVERTED_TO_PO` |

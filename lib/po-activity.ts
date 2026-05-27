@@ -48,20 +48,22 @@ export function buildPOActivity(po: PODetail): POActivityEvent[] {
       byName: grn.receivedByName,
     });
 
-    for (const ex of grn.exceptions) {
-      if (ex.resolutionStatus) {
-        events.push({
-          id: `grn-${grn.id}-ex-${ex.id}`,
-          kind: "grn_exception_resolved",
-          // No timestamp on resolution today — surface at GRN time so it
-          // anchors next to the receipt it relates to.
-          at: grn.receivedAt,
-          title: `Exception resolved — ${humanise(ex.resolutionStatus)}`,
-          description: ex.resolutionNote
-            ? `${humanise(ex.exceptionType)} · ${ex.resolutionNote}`
-            : humanise(ex.exceptionType),
-        });
+    for (const line of grn.lines) {
+      const ex = line.exception;
+      if (!ex?.resolutionStatus) {
+        continue;
       }
+      events.push({
+        id: `grn-${grn.id}-ex-${ex.id}`,
+        kind: "grn_exception_resolved",
+        // No timestamp on resolution today — surface at GRN time so it
+        // anchors next to the receipt line it relates to.
+        at: grn.receivedAt,
+        title: `Exception resolved — ${humanise(ex.resolutionStatus)}`,
+        description: ex.resolutionNote
+          ? `${humanise(ex.exceptionType)} · ${ex.resolutionNote} (${line.label})`
+          : `${humanise(ex.exceptionType)} (${line.label})`,
+      });
     }
   }
 

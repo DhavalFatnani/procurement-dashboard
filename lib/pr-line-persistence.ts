@@ -5,9 +5,9 @@ import {
 } from "@prisma/client";
 
 import {
+  catalogItemAtomicityCategoryNames,
   usesCatalogItemAtomicity,
   usesSubcategoryAtomicity,
-  WAREHOUSE_MAINTENANCE_CATEGORY_NAME,
 } from "@/lib/catalog-atomicity";
 import {
   MAX_ITEMS_PER_PR,
@@ -410,7 +410,7 @@ export async function listPendingCatalogItemsForPR(prId: string) {
         some: {
           prLine: {
             prId,
-            category: { name: WAREHOUSE_MAINTENANCE_CATEGORY_NAME },
+            category: { name: { in: [...catalogItemAtomicityCategoryNames()] } },
           },
         },
       },
@@ -435,7 +435,7 @@ export async function approvePendingCatalogItems(
         some: {
           prLine: {
             prId,
-            category: { name: WAREHOUSE_MAINTENANCE_CATEGORY_NAME },
+            category: { name: { in: [...catalogItemAtomicityCategoryNames()] } },
           },
         },
       },

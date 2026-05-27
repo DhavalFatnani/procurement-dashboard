@@ -12,6 +12,11 @@ import {
 
 import { getCachedActiveVendorOptions, getCachedWarehouses } from "@/lib/cache";
 import { dbParallel } from "@/lib/db-parallel";
+import {
+  resolveExceptionForLegacyLine,
+  resolveExceptionForLineItem,
+  type GrnExceptionSnapshot,
+} from "@/lib/grn-exception-lines";
 import { formatWarehouseLabel, warehouseOptionsFromRows } from "@/lib/format-warehouse";
 import { mapPrLinesFromDb, prLinesInclude } from "@/lib/map-pr-lines";
 import { cachedQuery, LIST_CACHE_TAGS, stableFilterKey } from "@/lib/list-cache";
@@ -62,6 +67,17 @@ export type PurchaseOrderListRow = {
   createdAt: string;
 };
 
+export type POGRNLineRow = {
+  poLineItemId: string;
+  lineNumber: number;
+  lineItemNumber: number;
+  label: string;
+  receivedQty: number;
+  acceptedQty: number;
+  disputedQty: number;
+  exception: GrnExceptionSnapshot | null;
+};
+
 export type POGRNRow = {
   id: string;
   receivedQty: number;
@@ -70,14 +86,7 @@ export type POGRNRow = {
   receivedByName: string;
   receivedAt: string;
   hasOpenDispute: boolean;
-  exceptions: {
-    id: string;
-    exceptionType: string;
-    exceptionQty: number;
-    note: string;
-    resolutionStatus: GRNExceptionResolution | null;
-    resolutionNote: string | null;
-  }[];
+  lines: POGRNLineRow[];
 };
 
 export type POInvoiceRow = {
@@ -332,6 +341,36 @@ async function fetchPOById(id: string): Promise<PODetail | null> {
         include: {
           receivedBy: { select: { name: true } },
           exceptions: true,
+          lineItems: {
+            orderBy: [
+              { purchaseOrderLineItem: { prLineItem: { prLine: { lineNumber: "asc" } } } },
+              { purchaseOrderLineItem: { prLineItem: { lineItemNumber: "asc" } } },
+            ],
+            include: {
+              purchaseOrderLineItem: {
+                select: {
+                  category: { select: { name: true } },
+                  subcategory: { select: { name: true } },
+                  catalogItem: { select: { name: true } },
+                  prLineItem: {
+                    select: { lineItemNumber: true, prLine: { select: { lineNumber: true } } },
+                  },
+                },
+              },
+            },
+          },
+          lines: {
+            orderBy: { purchaseOrderLine: { prLine: { lineNumber: "asc" } } },
+            include: {
+              purchaseOrderLine: {
+                select: {
+                  category: { select: { name: true } },
+                  subcategory: { select: { name: true } },
+                  prLine: { select: { lineNumber: true } },
+                },
+              },
+            },
+          },
         },
       },
       invoices: {
@@ -480,23 +519,58 @@ async function fetchPOById(id: string): Promise<PODetail | null> {
       paid: snapshot.paidAmount,
       checks: closureLabels,
     },
-    grns: po.grns.map((g) => ({
-      id: g.id,
-      receivedQty: g.receivedQty,
-      acceptedQty: g.acceptedQty,
-      disputedQty: g.disputedQty,
-      receivedByName: g.receivedBy.name,
-      receivedAt: g.receivedAt.toISOString(),
-      hasOpenDispute: g.disputedQty > 0 && g.exceptions.some((e) => e.resolutionStatus == null),
-      exceptions: g.exceptions.map((e) => ({
-        id: e.id,
-        exceptionType: e.exceptionType,
-        exceptionQty: e.exceptionQty,
-        note: e.note,
-        resolutionStatus: e.resolutionStatus,
-        resolutionNote: e.resolutionNote,
-      })),
-    })),
+    grns: po.grns.map((g) => {
+      const grnLines: POGRNLineRow[] =
+        g.lineItems.length > 0
+          ? g.lineItems.map((line) => {
+              const poLine = line.purchaseOrderLineItem;
+              const exception = resolveExceptionForLineItem(
+                g.exceptions,
+                line.poLineItemId,
+                line.disputedQty,
+              );
+              return {
+                poLineItemId: line.poLineItemId,
+                lineNumber: poLine.prLineItem.prLine.lineNumber,
+                lineItemNumber: poLine.prLineItem.lineItemNumber,
+                label: `${poLine.category.name} / ${poLine.subcategory.name} · ${poLine.catalogItem.name}`,
+                receivedQty: line.receivedQty,
+                acceptedQty: line.acceptedQty,
+                disputedQty: line.disputedQty,
+                exception,
+              };
+            })
+          : g.lines.map((line) => {
+              const poLine = line.purchaseOrderLine;
+              const exception = resolveExceptionForLegacyLine(
+                g.exceptions,
+                line.poLineId,
+                line.disputedQty,
+              );
+              return {
+                poLineItemId: line.poLineId,
+                lineNumber: poLine.prLine.lineNumber,
+                lineItemNumber: 1,
+                label: `${poLine.category.name} / ${poLine.subcategory.name}`,
+                receivedQty: line.receivedQty,
+                acceptedQty: line.acceptedQty,
+                disputedQty: line.disputedQty,
+                exception,
+              };
+            });
+
+      return {
+        id: g.id,
+        receivedQty: g.receivedQty,
+        acceptedQty: g.acceptedQty,
+        disputedQty: g.disputedQty,
+        receivedByName: g.receivedBy.name,
+        receivedAt: g.receivedAt.toISOString(),
+        hasOpenDispute:
+          g.disputedQty > 0 && g.exceptions.some((e) => e.resolutionStatus == null),
+        lines: grnLines,
+      };
+    }),
     invoices: po.invoices.map((inv) => ({
       id: inv.id,
       invoiceNumber: inv.invoiceNumber,

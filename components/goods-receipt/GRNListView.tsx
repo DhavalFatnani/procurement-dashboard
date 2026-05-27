@@ -24,6 +24,7 @@ import type { Paginated } from "@/lib/pagination";
 import { cn } from "@/lib/utils";
 import { Button, buttonVariants } from "@/components/ui/button";
 
+import { GrnReceiptLineList } from "@/components/goods-receipt/GrnReceiptLineList";
 import { ProcurementRefLink } from "@/components/shared/ProcurementRef";
 import { formatGrnReceiptLabel } from "@/lib/display-ref";
 import { formatDateTimeMedium } from "@/lib/format-datetime";
@@ -343,35 +344,7 @@ export function GRNListView({
               </div>
             </SheetSection>
 
-            {detail.exceptions.length > 0 ? (
-              <SheetSection title="Exceptions">
-                <ul className="space-y-2">
-                  {detail.exceptions.map((ex) => (
-                    <li
-                      key={ex.id}
-                      className="space-y-1 rounded-lg border border-border-subtle bg-card p-3 text-ds-sm"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-medium">
-                          {ex.exceptionType.replaceAll("_", " ")}
-                        </span>
-                        {ex.resolutionStatus ? (
-                          <Chip tone="success" size="sm">
-                            {ex.resolutionStatus.replaceAll("_", " ")}
-                          </Chip>
-                        ) : (
-                          <Chip tone="error" size="sm" showDot>
-                            Open
-                          </Chip>
-                        )}
-                      </div>
-                      <p className="text-ds-xs text-muted-foreground">Qty {ex.exceptionQty}</p>
-                      <p className="text-ds-xs text-muted-foreground">{ex.note}</p>
-                    </li>
-                  ))}
-                </ul>
-              </SheetSection>
-            ) : null}
+            <GrnReceiptLineList lines={detail.lines} />
 
             <div className="flex justify-end">
               <Link

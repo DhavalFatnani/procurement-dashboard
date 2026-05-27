@@ -5,6 +5,11 @@ import { formatProcurementRef } from "@/lib/display-ref";
 import { cachedQuery, LIST_CACHE_TAGS, stableFilterKey } from "@/lib/list-cache";
 import { paginatedListQuery, type Paginated } from "@/lib/pagination";
 import { prisma } from "@/lib/prisma";
+import {
+  resolveExceptionForLegacyLine,
+  resolveExceptionForLineItem,
+  type GrnExceptionSnapshot,
+} from "@/lib/grn-exception-lines";
 import { hasLockTagsLines, sumOrderedQty } from "@/lib/purchase-lines";
 
 export type GRNFilters = {
@@ -30,6 +35,17 @@ export type GRNListRow = {
   receivedAt: string;
 };
 
+export type GRNDetailLine = {
+  poLineItemId: string;
+  lineNumber: number;
+  lineItemNumber: number;
+  label: string;
+  receivedQty: number;
+  acceptedQty: number;
+  disputedQty: number;
+  exception: GrnExceptionSnapshot | null;
+};
+
 export type GRNDetail = {
   id: string;
   poId: string;
@@ -41,14 +57,7 @@ export type GRNDetail = {
   receivedByName: string;
   receivedAt: string;
   deliveryNoteRef: string | null;
-  exceptions: {
-    id: string;
-    exceptionType: GRNExceptionType;
-    exceptionQty: number;
-    note: string;
-    resolutionStatus: string | null;
-    resolutionNote: string | null;
-  }[];
+  lines: GRNDetailLine[];
 };
 
 export type POForGRNLine = {
@@ -171,6 +180,36 @@ export async function getGRNById(id: string): Promise<GRNDetail | null> {
     include: {
       receivedBy: { select: { name: true } },
       exceptions: true,
+      lineItems: {
+        orderBy: [
+          { purchaseOrderLineItem: { prLineItem: { prLine: { lineNumber: "asc" } } } },
+          { purchaseOrderLineItem: { prLineItem: { lineItemNumber: "asc" } } },
+        ],
+        include: {
+          purchaseOrderLineItem: {
+            select: {
+              category: { select: { name: true } },
+              subcategory: { select: { name: true } },
+              catalogItem: { select: { name: true } },
+              prLineItem: {
+                select: { lineItemNumber: true, prLine: { select: { lineNumber: true } } },
+              },
+            },
+          },
+        },
+      },
+      lines: {
+        orderBy: { purchaseOrderLine: { prLine: { lineNumber: "asc" } } },
+        include: {
+          purchaseOrderLine: {
+            select: {
+              category: { select: { name: true } },
+              subcategory: { select: { name: true } },
+              prLine: { select: { lineNumber: true } },
+            },
+          },
+        },
+      },
       purchaseOrder: {
         select: {
           prId: true,
@@ -184,6 +223,43 @@ export async function getGRNById(id: string): Promise<GRNDetail | null> {
     return null;
   }
 
+  const detailLines: GRNDetailLine[] =
+    grn.lineItems.length > 0
+      ? grn.lineItems.map((line) => {
+          const poLine = line.purchaseOrderLineItem;
+          return {
+            poLineItemId: line.poLineItemId,
+            lineNumber: poLine.prLineItem.prLine.lineNumber,
+            lineItemNumber: poLine.prLineItem.lineItemNumber,
+            label: `${poLine.category.name} / ${poLine.subcategory.name} · ${poLine.catalogItem.name}`,
+            receivedQty: line.receivedQty,
+            acceptedQty: line.acceptedQty,
+            disputedQty: line.disputedQty,
+            exception: resolveExceptionForLineItem(
+              grn.exceptions,
+              line.poLineItemId,
+              line.disputedQty,
+            ),
+          };
+        })
+      : grn.lines.map((line) => {
+          const poLine = line.purchaseOrderLine;
+          return {
+            poLineItemId: line.poLineId,
+            lineNumber: poLine.prLine.lineNumber,
+            lineItemNumber: 1,
+            label: `${poLine.category.name} / ${poLine.subcategory.name}`,
+            receivedQty: line.receivedQty,
+            acceptedQty: line.acceptedQty,
+            disputedQty: line.disputedQty,
+            exception: resolveExceptionForLegacyLine(
+              grn.exceptions,
+              line.poLineId,
+              line.disputedQty,
+            ),
+          };
+        });
+
   return {
     id: grn.id,
     poId: grn.poId,
@@ -195,14 +271,7 @@ export async function getGRNById(id: string): Promise<GRNDetail | null> {
     receivedByName: grn.receivedBy.name,
     receivedAt: grn.receivedAt.toISOString(),
     deliveryNoteRef: grn.deliveryNoteRef,
-    exceptions: grn.exceptions.map((e) => ({
-      id: e.id,
-      exceptionType: e.exceptionType,
-      exceptionQty: e.exceptionQty,
-      note: e.note,
-      resolutionStatus: e.resolutionStatus,
-      resolutionNote: e.resolutionNote,
-    })),
+    lines: detailLines,
   };
 }
 

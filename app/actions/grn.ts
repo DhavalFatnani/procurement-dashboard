@@ -31,6 +31,7 @@ export type CreateGRNInput = {
   lineReceipts?: GRNLineInput[];
   receivedAt: string;
   deliveryNoteRef?: string;
+  /** @deprecated Flag exceptions on each lineItemReceipts[].exception instead */
   exception?: {
     exceptionType: GRNExceptionType;
     exceptionQty: number;
@@ -98,7 +99,7 @@ export async function createGRN(
   }
 
   const useLineItems = po.lineItems.length > 0;
-  const receipts = useLineItems
+  const receipts: GRNLineItemInput[] = useLineItems
     ? data.lineItemReceipts
     : (data.lineReceipts ?? []).map((r) => ({
         poLineItemId: r.poLineId,
@@ -163,9 +164,61 @@ export async function createGRN(
     return { ok: false, message: "Total received quantity must be at least 1." };
   }
 
-  const exceptionQty = data.exception?.exceptionQty ?? 0;
-  const acceptedQty = receivedQty - exceptionQty;
-  const disputedQty = exceptionQty;
+  let disputedQty = 0;
+  const lineExceptions: {
+    poLineItemId: string;
+    exception: NonNullable<GRNLineItemInput["exception"]>;
+  }[] = [];
+
+  for (const receipt of receipts) {
+    if (!receipt.exception) {
+      continue;
+    }
+    if (receipt.receivedQty < 1) {
+      return {
+        ok: false,
+        message: "Cannot flag an exception on a line with zero received quantity.",
+      };
+    }
+    if (!receipt.exception.note.trim()) {
+      return { ok: false, message: "Exception note is required for each flagged line." };
+    }
+    if (receipt.exception.exceptionQty < 1) {
+      return { ok: false, message: "Exception quantity must be at least 1 per flagged line." };
+    }
+    if (receipt.exception.exceptionQty > receipt.receivedQty) {
+      return {
+        ok: false,
+        message: "Exception quantity cannot exceed received quantity on that line.",
+      };
+    }
+    disputedQty += receipt.exception.exceptionQty;
+    lineExceptions.push({
+      poLineItemId: receipt.poLineItemId,
+      exception: receipt.exception,
+    });
+  }
+
+  if (data.exception) {
+    if (!data.exception.note.trim()) {
+      return { ok: false, message: "Exception note is required." };
+    }
+    if (data.exception.exceptionQty < 1) {
+      return { ok: false, message: "Exception quantity must be at least 1." };
+    }
+    if (data.exception.exceptionQty > receivedQty) {
+      return { ok: false, message: "Exception quantity cannot exceed received quantity." };
+    }
+    if (lineExceptions.length > 0) {
+      return {
+        ok: false,
+        message: "Use per-line exceptions instead of a receipt-level exception.",
+      };
+    }
+    disputedQty = data.exception.exceptionQty;
+  }
+
+  const acceptedQty = receivedQty - disputedQty;
 
   if (acceptedQty < 0 || disputedQty < 0) {
     return { ok: false, message: "Invalid exception quantity." };
@@ -175,18 +228,6 @@ export async function createGRN(
       ok: false,
       message: "Accepted and disputed quantities must sum to received quantity.",
     };
-  }
-
-  if (data.exception) {
-    if (!data.exception.note.trim()) {
-      return { ok: false, message: "Exception note is required." };
-    }
-    if (exceptionQty < 1) {
-      return { ok: false, message: "Exception quantity must be at least 1." };
-    }
-    if (exceptionQty > receivedQty) {
-      return { ok: false, message: "Exception quantity cannot exceed received quantity." };
-    }
   }
 
   const receivedAt = new Date(data.receivedAt);
@@ -208,15 +249,15 @@ export async function createGRN(
     });
 
     const positiveReceipts = receipts.filter((r) => r.receivedQty > 0);
-    let remainingException = exceptionQty;
+    let remainingLegacyException = data.exception?.exceptionQty ?? 0;
     for (const receipt of positiveReceipts) {
-      let lineAccepted = receipt.receivedQty;
-      let lineDisputed = 0;
-      if (remainingException > 0) {
-        lineDisputed = Math.min(remainingException, receipt.receivedQty);
-        lineAccepted = receipt.receivedQty - lineDisputed;
-        remainingException -= lineDisputed;
+      const lineExceptionQty = receipt.exception?.exceptionQty ?? 0;
+      let lineDisputed = lineExceptionQty;
+      if (lineDisputed === 0 && remainingLegacyException > 0) {
+        lineDisputed = Math.min(remainingLegacyException, receipt.receivedQty);
+        remainingLegacyException -= lineDisputed;
       }
+      const lineAccepted = receipt.receivedQty - lineDisputed;
       if (useLineItems) {
         await tx.goodsReceiptLineItem.create({
           data: {
@@ -240,7 +281,20 @@ export async function createGRN(
       }
     }
 
-    if (data.exception) {
+    for (const row of lineExceptions) {
+      await tx.gRNException.create({
+        data: {
+          grnId: created.id,
+          poLineItemId: useLineItems ? row.poLineItemId : null,
+          poLineId: useLineItems ? null : row.poLineItemId,
+          exceptionType: row.exception.exceptionType,
+          exceptionQty: row.exception.exceptionQty,
+          note: row.exception.note.trim(),
+        },
+      });
+    }
+
+    if (data.exception && lineExceptions.length === 0) {
       await tx.gRNException.create({
         data: {
           grnId: created.id,

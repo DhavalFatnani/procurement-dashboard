@@ -1,4 +1,4 @@
-import { SerialSeries } from "@prisma/client";
+import { SerialSeries, type GRNExceptionType } from "@prisma/client";
 
 export type PRLineItemRow = {
   id: string;
@@ -42,9 +42,16 @@ export type GRNLineInput = {
   receivedQty: number;
 };
 
+export type GRNLineItemExceptionInput = {
+  exceptionType: GRNExceptionType;
+  exceptionQty: number;
+  note: string;
+};
+
 export type GRNLineItemInput = {
   poLineItemId: string;
   receivedQty: number;
+  exception?: GRNLineItemExceptionInput;
 };
 
 export type POLineItemRow = {
