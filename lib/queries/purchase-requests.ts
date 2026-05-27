@@ -149,18 +149,16 @@ export type PRDetail = {
   };
 };
 
-export const getFilterOptions = cache(async (): Promise<{
+export const getListFilterOptions = cache(async (): Promise<{
   categories: CategoryOption[];
   subcategories: SubcategoryOption[];
-  catalogItems: CatalogItemOption[];
   warehouses: WarehouseOption[];
   creators: UserOption[];
 }> => {
-  const [categoriesWithSubs, warehouses, creators, catalogItems] = await dbParallel(
+  const [categoriesWithSubs, warehouses, creators] = await dbParallel(
     () => getCachedCategories(),
     () => getCachedWarehouses(),
     () => getCachedCreators(),
-    () => getCachedActiveCatalogItems(),
   );
 
   const categories = categoriesWithSubs.map((c) => ({ id: c.id, name: c.name }));
@@ -177,9 +175,26 @@ export const getFilterOptions = cache(async (): Promise<{
   return {
     categories,
     subcategories,
-    catalogItems,
     warehouses: warehouseOptionsFromRows(warehouses),
     creators,
+  };
+});
+
+export const getFilterOptions = cache(async (): Promise<{
+  categories: CategoryOption[];
+  subcategories: SubcategoryOption[];
+  catalogItems: CatalogItemOption[];
+  warehouses: WarehouseOption[];
+  creators: UserOption[];
+}> => {
+  const [listOptions, catalogItems] = await dbParallel(
+    () => getListFilterOptions(),
+    () => getCachedActiveCatalogItems(),
+  );
+
+  return {
+    ...listOptions,
+    catalogItems,
   };
 });
 
@@ -273,7 +288,6 @@ async function fetchPurchaseRequests(
               quantity: true,
               category: { select: { name: true } },
               subcategory: { select: { name: true } },
-              items: { select: { quantity: true } },
             },
           },
           warehouse: { select: { name: true, location: true } },
@@ -291,7 +305,6 @@ async function fetchPurchaseRequests(
         subcategoryName: l.subcategory.name,
         categoryName: l.category.name,
         quantity: l.quantity ?? 0,
-        items: l.items,
       }));
       const summary = formatLineSummary(lineRows);
       const totalQty =

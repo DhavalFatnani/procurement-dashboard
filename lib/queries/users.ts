@@ -42,7 +42,9 @@ function mapUserRow(
 ): UserListRow {
   const assignments =
     u.warehouseAssignments.length > 0
-      ? u.warehouseAssignments.map((a) => a.warehouse)
+      ? [...u.warehouseAssignments.map((a) => a.warehouse)].sort((a, b) =>
+          a.name.localeCompare(b.name),
+        )
       : [{ id: u.warehouseId, name: u.warehouse.name, location: u.warehouse.location }];
   const warehouseIds = assignments.map((w) => w.id);
   const warehouseNames = assignments.map((w) =>
@@ -61,13 +63,20 @@ function mapUserRow(
   };
 }
 
-const userInclude = {
+const userListSelect = {
+  id: true,
+  email: true,
+  name: true,
+  role: true,
+  warehouseId: true,
+  createdAt: true,
   warehouse: { select: { name: true, location: true } },
   warehouseAssignments: {
-    orderBy: { warehouse: { name: "asc" as const } },
-    select: { warehouse: { select: { id: true, name: true, location: true } } },
+    select: {
+      warehouse: { select: { id: true, name: true, location: true } },
+    },
   },
-} satisfies Prisma.UserInclude;
+} satisfies Prisma.UserSelect;
 
 export async function getUsers(filters: UserFilters): Promise<Paginated<UserListRow>> {
   const page = Math.max(1, filters.page ?? 1);
@@ -104,7 +113,7 @@ export async function getUsers(filters: UserFilters): Promise<Paginated<UserList
           skip,
           take,
           orderBy: { createdAt: "desc" },
-          include: userInclude,
+          select: userListSelect,
         })
         .then((rows) => rows.map(mapUserRow)),
     count: () => prisma.user.count({ where }),
@@ -114,7 +123,7 @@ export async function getUsers(filters: UserFilters): Promise<Paginated<UserList
 export async function getUserById(id: string): Promise<UserDetail | null> {
   const u = await prisma.user.findUnique({
     where: { id },
-    include: userInclude,
+    select: userListSelect,
   });
   if (!u) return null;
   return mapUserRow(u);

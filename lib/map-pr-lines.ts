@@ -54,6 +54,33 @@ export function mapPrLinesFromDb(lines: DbLine[]): PRLineRow[] {
   });
 }
 
+/** Lighter line select for awaiting-PO panel (no catalog status). */
+export const prLinesAwaitingPoSelect = {
+  orderBy: { lineNumber: "asc" as const },
+  select: {
+    id: true,
+    lineNumber: true,
+    categoryId: true,
+    subcategoryId: true,
+    quantity: true,
+    notes: true,
+    category: { select: { name: true } },
+    subcategory: { select: { name: true } },
+    items: {
+      orderBy: { lineItemNumber: "asc" as const },
+      select: {
+        id: true,
+        lineItemNumber: true,
+        catalogItemId: true,
+        quantity: true,
+        catalogItem: {
+          select: { name: true, sku: true, unit: true, status: true },
+        },
+      },
+    },
+  },
+} as const;
+
 export const prLinesInclude = {
   orderBy: { lineNumber: "asc" as const },
   include: {

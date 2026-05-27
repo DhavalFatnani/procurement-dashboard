@@ -136,6 +136,8 @@ model User {
   seriesConfigsConfigured   SeriesConfig[]
   catalogItemsCreated       CatalogItem[]       @relation("CatalogItemCreatedBy")
   catalogItemsApproved      CatalogItem[]       @relation("CatalogItemApprovedBy")
+
+  @@index([role])
 }
 
 model Warehouse {
@@ -319,6 +321,7 @@ model PurchaseRequest {
 
   @@index([status])
   @@index([warehouseId, status])
+  @@index([warehouseId, createdAt(sort: Desc)])
   @@index([createdAt])
   @@index([executionType, status])
   @@index([createdById])
@@ -565,6 +568,7 @@ model Invoice {
 
   @@unique([poId, invoiceNumber])
   @@index([createdAt])
+  @@index([paymentStatus])
 }
 
 model InvoiceGRNLink {

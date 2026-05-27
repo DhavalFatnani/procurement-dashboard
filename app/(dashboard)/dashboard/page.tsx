@@ -2,16 +2,14 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { Inbox } from "lucide-react";
 
-import { DashboardMetricsSection } from "@/components/dashboard/DashboardMetricsSection";
+import { DashboardOverviewSection } from "@/components/dashboard/DashboardOverviewSection";
 import { DashboardQuickActions } from "@/components/dashboard/DashboardQuickActions";
-import { DashboardWelcomeStrip } from "@/components/dashboard/DashboardWelcomeStrip";
 import { POStageDistributionCard } from "@/components/dashboard/POStageDistribution";
 import { RecentActivityCard } from "@/components/dashboard/RecentActivityCard";
 import { SkeletonMetrics } from "@/components/shared/SkeletonMetrics";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ACCESS } from "@/lib/route-access";
-import { getDashboardMetricsForSession } from "@/lib/queries/dashboard";
 import {
   getPOStageDistribution,
   getRecentActivity,
@@ -23,7 +21,6 @@ export const dynamic = "force-dynamic";
 
 export default async function DashboardHomePage() {
   const user = assertRole(await getRequestSession(), [...ACCESS.dashboard]);
-  const metrics = await getDashboardMetricsForSession(user);
   const displayName =
     (typeof user.user_metadata?.name === "string" && user.user_metadata.name) ||
     user.email ||
@@ -46,14 +43,15 @@ export default async function DashboardHomePage() {
         </Button>
       </div>
 
-      <DashboardWelcomeStrip
-        displayName={displayName}
-        role={user.role}
-        metrics={metrics}
-      />
-
-      <Suspense fallback={<SkeletonMetrics count={4} />}>
-        <DashboardMetricsSection user={user} />
+      <Suspense
+        fallback={
+          <>
+            <Skeleton className="h-28 rounded-2xl" />
+            <SkeletonMetrics count={4} />
+          </>
+        }
+      >
+        <DashboardOverviewSection user={user} displayName={displayName} />
       </Suspense>
 
       <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr]">

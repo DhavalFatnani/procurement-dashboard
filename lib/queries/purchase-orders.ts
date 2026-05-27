@@ -18,7 +18,7 @@ import {
   type GrnExceptionSnapshot,
 } from "@/lib/grn-exception-lines";
 import { formatWarehouseLabel, warehouseOptionsFromRows } from "@/lib/format-warehouse";
-import { mapPrLinesFromDb, prLinesInclude } from "@/lib/map-pr-lines";
+import { mapPrLinesFromDb, prLinesAwaitingPoSelect } from "@/lib/map-pr-lines";
 import { cachedQuery, LIST_CACHE_TAGS, stableFilterKey } from "@/lib/list-cache";
 import {
   aggregateInvoiceMatchStatus,
@@ -669,7 +669,7 @@ async function fetchApprovedPRsAwaitingPO(
       createdAt: true,
       category: { select: { name: true } },
       subcategory: { select: { name: true } },
-      lines: prLinesInclude,
+      lines: prLinesAwaitingPoSelect,
       warehouse: { select: { name: true, location: true } },
       createdBy: { select: { name: true } },
       vendorRequest: { select: { businessName: true, status: true } },
