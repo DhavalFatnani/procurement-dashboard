@@ -1,31 +1,22 @@
 "use client";
 
 import { SerialSeries } from "@prisma/client";
-import dynamic from "next/dynamic";
 import Link from "next/link";
 import * as React from "react";
 
+import { SerialBarcodePrintSheet } from "@/components/purchase-requests/SerialBarcodePrintSheet";
 import { PageAlert } from "@/components/shared/PageAlert";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatProcurementRef, formatSerialBatchLabel } from "@/lib/display-ref";
 import { formatDateTimeMedium } from "@/lib/format-datetime";
 import {
-  DEFAULT_BARCODE_LABEL_CONFIG,
   loadBarcodeLabelConfigFromSession,
   type BarcodeLabelConfig,
 } from "@/lib/barcode-label-config";
 import { getSeriesDisplayName } from "@/lib/serial-series";
 import { cn } from "@/lib/utils";
 import { CheckCircle2, Loader2, Printer } from "lucide-react";
-
-const SerialBarcodePrintSheet = dynamic(
-  () =>
-    import("@/components/purchase-requests/SerialBarcodePrintSheet").then((module) => ({
-      default: module.SerialBarcodePrintSheet,
-    })),
-  { ssr: false },
-);
 
 type PrintStatus = "preparing" | "ready" | "printing" | "done";
 
@@ -126,17 +117,7 @@ export function SMPrintSummaryView({
     if (!autoPrint) {
       return;
     }
-    let cancelled = false;
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        if (!cancelled) {
-          setMountPrintSheet(true);
-        }
-      });
-    });
-    return () => {
-      cancelled = true;
-    };
+    setMountPrintSheet(true);
   }, [autoPrint]);
 
   const seriesName = getSeriesDisplayName(reservation.series as SerialSeries);

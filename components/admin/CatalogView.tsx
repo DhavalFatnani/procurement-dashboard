@@ -6,7 +6,10 @@ import { useRouter, useSearchParams } from "next/navigation";
 import * as React from "react";
 
 import { CatalogItemFormDrawer } from "@/components/admin/CatalogItemFormDrawer";
-import { CatalogRowActions } from "@/components/admin/CatalogRowActions";
+import {
+  CatalogRowActions,
+  type CatalogItemResolveOutcome,
+} from "@/components/admin/CatalogRowActions";
 import { Chip } from "@/components/shared/Chip";
 import {
   DataTable,
@@ -72,7 +75,66 @@ export function CatalogView({
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const rows = initialRows;
+  const [, startTransition] = React.useTransition();
+  const [pageRows, setPageRows] = React.useState(initialRows);
+  const [localPendingCount, setLocalPendingCount] = React.useState(pendingCount);
+
+  React.useEffect(() => {
+    setPageRows(initialRows);
+  }, [initialRows]);
+
+  React.useEffect(() => {
+    setLocalPendingCount(pendingCount);
+  }, [pendingCount]);
+
+  const handleItemResolved = React.useCallback(
+    (id: string, outcome: CatalogItemResolveOutcome) => {
+      const viewingPendingOnly = filters.status === CatalogItemStatus.PENDING_APPROVAL;
+
+      setPageRows((prev) => {
+        let items = prev.items;
+
+        if (outcome === "approved") {
+          items = items.map((r) =>
+            r.id === id
+              ? {
+                  ...r,
+                  status: CatalogItemStatus.ACTIVE,
+                  approvedAt: new Date().toISOString(),
+                }
+              : r,
+          );
+          if (viewingPendingOnly) {
+            items = items.filter((r) => r.id !== id);
+          }
+          setLocalPendingCount((c) => Math.max(0, c - 1));
+        } else if (outcome === "rejected") {
+          items = items.map((r) =>
+            r.id === id ? { ...r, status: CatalogItemStatus.REJECTED } : r,
+          );
+          if (viewingPendingOnly) {
+            items = items.filter((r) => r.id !== id);
+          }
+          setLocalPendingCount((c) => Math.max(0, c - 1));
+        } else if (outcome === "deactivated") {
+          items = items.map((r) =>
+            r.id === id ? { ...r, status: CatalogItemStatus.INACTIVE } : r,
+          );
+        } else if (outcome === "reactivated") {
+          items = items.map((r) =>
+            r.id === id ? { ...r, status: CatalogItemStatus.ACTIVE } : r,
+          );
+        }
+
+        return { ...prev, items };
+      });
+
+      startTransition(() => {
+        router.refresh();
+      });
+    },
+    [filters.status, router],
+  );
 
   const [drawerMode, setDrawerMode] = React.useState<
     { kind: "create" } | { kind: "edit"; item: CatalogItemListRow } | null
@@ -213,11 +275,12 @@ export function CatalogView({
           <CatalogRowActions
             row={r}
             onEdit={() => setDrawerMode({ kind: "edit", item: r })}
+            onResolved={handleItemResolved}
           />
         ),
       },
     ],
-    [],
+    [handleItemResolved],
   );
 
   return (
@@ -225,8 +288,8 @@ export function CatalogView({
       <PageHeader
         title="Item catalog"
         subtitle={
-          pendingCount > 0
-            ? `${pendingCount} catalog item${pendingCount === 1 ? "" : "s"} pending approval. Packaging, Lock Tags, and Last Mile bill at subcategory level on PRs.`
+          localPendingCount > 0
+            ? `${localPendingCount} catalog item${localPendingCount === 1 ? "" : "s"} pending approval. Packaging, Lock Tags, and Last Mile bill at subcategory level on PRs.`
             : "Warehouse Maintenance and IT and Hardware Assets use the item catalog. Packaging, Lock Tags, and Last Mile use subcategory quantity on PRs."
         }
         action={
@@ -239,7 +302,7 @@ export function CatalogView({
 
       <form onSubmit={handleFilterSubmit}>
         <FilterBar
-          resultCount={rows.total ?? undefined}
+          resultCount={pageRows.total ?? undefined}
           activeChips={
             chipSpecs.length > 0 ? (
               <FilterChipsRow
@@ -292,7 +355,7 @@ export function CatalogView({
         </FilterBar>
       </form>
 
-      {rows.items.length === 0 ? (
+      {pageRows.items.length === 0 ? (
         <EmptyState
           title="No catalog items"
           description="Adjust filters or add an active item for store managers to use on vendor PRs."
@@ -302,7 +365,7 @@ export function CatalogView({
         <>
           <DataTable
             columns={columns}
-            data={rows.items}
+            data={pageRows.items}
             getRowKey={getRowId}
             onRowClick={(r) => {
               if (
@@ -315,11 +378,11 @@ export function CatalogView({
           />
           <Pagination
             basePath="/admin/catalog"
-            page={rows.page}
-            pageSize={rows.pageSize}
-            total={rows.total}
-            totalPages={rows.totalPages}
-            hasNextPage={rows.hasNextPage}
+            page={pageRows.page}
+            pageSize={pageRows.pageSize}
+            total={pageRows.total}
+            totalPages={pageRows.totalPages}
+            hasNextPage={pageRows.hasNextPage}
             onPageChange={handlePageChange}
             searchParams={{
               q: filters.search || undefined,

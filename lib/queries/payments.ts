@@ -10,6 +10,7 @@ import {
 } from "@/lib/payment-totals";
 import { prisma } from "@/lib/prisma";
 import { STORAGE_BUCKETS } from "@/lib/storage";
+import { invoiceWhereFromScopeIds } from "@/lib/warehouse-scope";
 
 export type PaymentFilters = {
   paymentStatus?: PaymentStatus;
@@ -110,15 +111,8 @@ async function fetchPayments(
   const pageSize = Math.min(100, Math.max(10, filters.pageSize ?? 25));
 
   const clauses: Prisma.InvoiceWhereInput[] = [];
-  if (filters.scopeWarehouseIds?.length) {
-    const ids = filters.scopeWarehouseIds;
-    clauses.push({
-      purchaseOrder: {
-        purchaseRequest: {
-          warehouseId: ids.length === 1 ? ids[0]! : { in: ids },
-        },
-      },
-    });
+  if (filters.scopeWarehouseIds !== undefined) {
+    clauses.push(invoiceWhereFromScopeIds(filters.scopeWarehouseIds));
   }
   if (filters.paymentStatus) {
     clauses.push({ paymentStatus: filters.paymentStatus });

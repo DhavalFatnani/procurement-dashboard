@@ -5,15 +5,22 @@ import {
   getApprovedPRsAwaitingPO,
   getPOFilterOptions,
 } from "@/lib/queries/purchase-orders";
+import type { SessionUser } from "@/lib/session";
+import { assignedWarehouseIds } from "@/lib/warehouse-scope";
 import { timed } from "@/lib/server-timing";
 
 export async function AwaitingPRPanelLoader({
+  user,
   fulfillPrId,
 }: {
+  user: SessionUser;
   fulfillPrId?: string;
 }) {
+  const scopeWarehouseIds = assignedWarehouseIds(user);
   const [awaitingPRs, filterOptions] = await Promise.all([
-    timed("PO.awaitingPRs", () => getApprovedPRsAwaitingPO()),
+    timed("PO.awaitingPRs", () =>
+      getApprovedPRsAwaitingPO({ scopeWarehouseIds }),
+    ),
     getPOFilterOptions(),
   ]);
 

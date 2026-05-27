@@ -26,6 +26,11 @@ import { requireRoles } from "@/lib/server-action-guard";
 import { STORAGE_BUCKETS } from "@/lib/storage";
 import { uploadStorageObject } from "@/lib/upload-storage";
 import { prisma } from "@/lib/prisma";
+import {
+  assertSessionInvoiceAccess,
+  assertSessionPurchaseOrderAccess,
+} from "@/lib/warehouse-access";
+import { assignedWarehouseIds } from "@/lib/warehouse-scope";
 
 export async function getInvoices(
   filters: InvoiceFilters,
@@ -33,12 +38,18 @@ export async function getInvoices(
   const user = await requireRoles([Role.SM, Role.OPS_HEAD, Role.FINANCE]);
   return getInvoicesQuery({
     ...filters,
+    scopeWarehouseIds:
+      filters.scopeWarehouseIds ?? assignedWarehouseIds(user),
     uploadedById: user.role === Role.SM ? user.id : filters.uploadedById,
   });
 }
 
 export async function getInvoiceById(id: string): Promise<InvoiceDetail | null> {
-  await requireRoles([Role.SM, Role.OPS_HEAD, Role.FINANCE]);
+  const user = await requireRoles([Role.SM, Role.OPS_HEAD, Role.FINANCE]);
+  const access = await assertSessionInvoiceAccess(user, id);
+  if (!access.ok) {
+    return null;
+  }
   return getInvoiceByIdQuery(id);
 }
 
@@ -48,24 +59,32 @@ export async function getInvoiceFilterOptions() {
 }
 
 export async function getPOsForInvoice(): Promise<POForInvoiceOption[]> {
-  await requireRoles([Role.SM, Role.OPS_HEAD]);
-  return getPOsForInvoiceQuery();
+  const user = await requireRoles([Role.SM, Role.OPS_HEAD]);
+  return getPOsForInvoiceQuery(assignedWarehouseIds(user));
 }
 
 export async function searchPOsForInvoice(
   q: string,
 ): Promise<Pick<POForInvoiceOption, "id" | "label" | "vendorName">[]> {
-  await requireRoles([Role.SM, Role.OPS_HEAD]);
-  return searchPOsForInvoiceQuery(q);
+  const user = await requireRoles([Role.SM, Role.OPS_HEAD]);
+  return searchPOsForInvoiceQuery(q, 20, assignedWarehouseIds(user));
 }
 
 export async function getPOForInvoice(poId: string): Promise<POForInvoiceOption | null> {
-  await requireRoles([Role.SM, Role.OPS_HEAD]);
+  const user = await requireRoles([Role.SM, Role.OPS_HEAD]);
+  const access = await assertSessionPurchaseOrderAccess(user, poId);
+  if (!access.ok) {
+    return null;
+  }
   return getPOForInvoiceByIdQuery(poId);
 }
 
 export async function getGRNsForPO(poId: string) {
-  await requireRoles([Role.SM, Role.OPS_HEAD]);
+  const user = await requireRoles([Role.SM, Role.OPS_HEAD]);
+  const access = await assertSessionPurchaseOrderAccess(user, poId);
+  if (!access.ok) {
+    return [];
+  }
   return getGRNsForPOQuery(poId);
 }
 
@@ -75,6 +94,15 @@ export async function createInvoice(
   const user = await requireRoles([Role.SM, Role.OPS_HEAD]);
 
   const poId = String(formData.get("poId") ?? "").trim();
+  if (!poId) {
+    return { ok: false, message: "Purchase order is required." };
+  }
+
+  const poAccess = await assertSessionPurchaseOrderAccess(user, poId);
+  if (!poAccess.ok) {
+    return { ok: false, message: poAccess.message };
+  }
+
   const grnIds = formData
     .getAll("grnId")
     .map((v) => String(v).trim())
@@ -222,6 +250,11 @@ export async function overrideInvoiceMatch(
   const trimmed = reason.trim();
   if (!trimmed) {
     return { ok: false, message: "Override reason is required." };
+  }
+
+  const access = await assertSessionInvoiceAccess(user, invoiceId);
+  if (!access.ok) {
+    return { ok: false, message: access.message };
   }
 
   const invoice = await prisma.invoice.findUnique({

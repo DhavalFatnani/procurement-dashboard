@@ -23,6 +23,8 @@ import type {
 } from "@/lib/queries/grn";
 import { revalidateGRNMutation } from "@/lib/revalidate-tags";
 import { requireRoles } from "@/lib/server-action-guard";
+import { assertSessionGrnAccess, assertSessionPurchaseOrderAccess } from "@/lib/warehouse-access";
+import { assignedWarehouseIds } from "@/lib/warehouse-scope";
 
 export type CreateGRNInput = {
   poId: string;
@@ -40,27 +42,38 @@ export type CreateGRNInput = {
 };
 
 export async function getGRNs(filters: GRNFilters): Promise<Paginated<GRNListRow>> {
-  await requireRoles([Role.SM, Role.OPS_HEAD]);
-  return getGRNsQuery(filters);
+  const user = await requireRoles([Role.SM, Role.OPS_HEAD]);
+  return getGRNsQuery({
+    ...filters,
+    scopeWarehouseIds: assignedWarehouseIds(user),
+  });
 }
 
 export async function getGRNById(id: string): Promise<GRNDetail | null> {
-  await requireRoles([Role.SM, Role.OPS_HEAD]);
+  const user = await requireRoles([Role.SM, Role.OPS_HEAD]);
+  const access = await assertSessionGrnAccess(user, id);
+  if (!access.ok) {
+    return null;
+  }
   return getGRNByIdQuery(id);
 }
 
 export async function getPOsForGRN(): Promise<POForGRNOption[]> {
-  await requireRoles([Role.SM, Role.OPS_HEAD]);
-  return getPOsForGRNQuery();
+  const user = await requireRoles([Role.SM, Role.OPS_HEAD]);
+  return getPOsForGRNQuery(assignedWarehouseIds(user));
 }
 
 export async function searchPOsForGRN(q: string): Promise<POForGRNOption[]> {
-  await requireRoles([Role.SM, Role.OPS_HEAD]);
-  return searchPOsForGRNQuery(q);
+  const user = await requireRoles([Role.SM, Role.OPS_HEAD]);
+  return searchPOsForGRNQuery(q, 20, assignedWarehouseIds(user));
 }
 
 export async function getPOForGRN(poId: string): Promise<POForGRNOption | null> {
-  await requireRoles([Role.SM, Role.OPS_HEAD]);
+  const user = await requireRoles([Role.SM, Role.OPS_HEAD]);
+  const access = await assertSessionPurchaseOrderAccess(user, poId);
+  if (!access.ok) {
+    return null;
+  }
   return getPOForGRNByIdQuery(poId);
 }
 
@@ -73,6 +86,11 @@ export async function createGRN(
   data: CreateGRNInput,
 ): Promise<{ ok: boolean; grnId?: string; message?: string }> {
   const user = await requireRoles([Role.SM, Role.OPS_HEAD]);
+
+  const poAccess = await assertSessionPurchaseOrderAccess(user, data.poId);
+  if (!poAccess.ok) {
+    return { ok: false, message: poAccess.message };
+  }
 
   const po = await prisma.purchaseOrder.findUnique({
     where: { id: data.poId },

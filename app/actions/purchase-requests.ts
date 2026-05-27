@@ -48,7 +48,10 @@ import {
 import { timed } from "@/lib/server-timing";
 import { atomicReserveSerialRange } from "@/lib/serialReservation";
 import { requireRoles } from "@/lib/server-action-guard";
-import { assertUserWarehouseAccess } from "@/lib/warehouse-access";
+import {
+  assertSessionPurchaseRequestAccess,
+  assertUserWarehouseAccess,
+} from "@/lib/warehouse-access";
 import { getWarehousesAssignedToUser } from "@/lib/queries/warehouses";
 
 function vendorFieldsForUser(
@@ -158,6 +161,11 @@ export async function updatePR(
     return { ok: false, message: "You can only edit your own purchase requests." };
   }
 
+  const warehouseAccess = await assertSessionPurchaseRequestAccess(user, prId);
+  if (!warehouseAccess.ok) {
+    return { ok: false, message: warehouseAccess.message };
+  }
+
   const validated = await validatePRLines(data.lines);
   if (!validated.ok) {
     return { ok: false, message: validated.message };
@@ -190,6 +198,11 @@ export async function submitPR(prId: string): Promise<MutationResult> {
   const pr = await prisma.purchaseRequest.findUnique({ where: { id: prId } });
   if (!pr) {
     return { ok: false, message: "PR not found." };
+  }
+
+  const warehouseAccess = await assertSessionPurchaseRequestAccess(user, prId);
+  if (!warehouseAccess.ok) {
+    return { ok: false, message: warehouseAccess.message };
   }
 
   try {
@@ -226,6 +239,11 @@ export async function cancelPR(prId: string): Promise<MutationResult> {
   const pr = await prisma.purchaseRequest.findUnique({ where: { id: prId } });
   if (!pr) {
     return { ok: false, message: "PR not found." };
+  }
+
+  const warehouseAccess = await assertSessionPurchaseRequestAccess(user, prId);
+  if (!warehouseAccess.ok) {
+    return { ok: false, message: warehouseAccess.message };
   }
 
   try {
@@ -277,6 +295,11 @@ export async function forceClosePR(
     return { ok: false, message: "PR not found." };
   }
 
+  const warehouseAccess = await assertSessionPurchaseRequestAccess(user, prId);
+  if (!warehouseAccess.ok) {
+    return { ok: false, message: warehouseAccess.message };
+  }
+
   if (!FORCE_CLOSE_ALLOWED.includes(pr.status)) {
     return { ok: false, message: `Cannot force close a PR in ${pr.status} status.` };
   }
@@ -315,6 +338,11 @@ export async function resubmitPR(
   }
   if (pr.createdById !== user.id) {
     return { ok: false, message: "You can only resubmit your own purchase requests." };
+  }
+
+  const warehouseAccess = await assertSessionPurchaseRequestAccess(user, prId);
+  if (!warehouseAccess.ok) {
+    return { ok: false, message: warehouseAccess.message };
   }
 
   if (pr.revisionCount >= 3) {
@@ -456,6 +484,12 @@ export async function createPOFromPR(
   if (!pr) {
     return { ok: false, message: "Purchase request not found." };
   }
+
+  const warehouseAccess = await assertSessionPurchaseRequestAccess(user, prId);
+  if (!warehouseAccess.ok) {
+    return { ok: false, message: warehouseAccess.message };
+  }
+
   if (pr.executionType !== ExecutionType.VENDOR_PURCHASE) {
     return { ok: false, message: "Purchase orders are only created for vendor purchase requests." };
   }
@@ -746,6 +780,12 @@ export async function approvePR(
     if (!pr) {
       return { ok: false, message: "Purchase request not found." };
     }
+
+    const warehouseAccess = await assertSessionPurchaseRequestAccess(user, prId);
+    if (!warehouseAccess.ok) {
+      return { ok: false, message: warehouseAccess.message };
+    }
+
     if (pr.executionType !== ExecutionType.VENDOR_PURCHASE) {
       return { ok: false, message: "Use standard approval for non-vendor requests." };
     }
@@ -819,6 +859,11 @@ export async function rejectPR(
     return { ok: false, message: "Purchase request not found." };
   }
 
+  const warehouseAccess = await assertSessionPurchaseRequestAccess(user, prId);
+  if (!warehouseAccess.ok) {
+    return { ok: false, message: warehouseAccess.message };
+  }
+
   try {
     assertPRStatusTransition(pr.status, PRStatus.REJECTED);
   } catch (e) {
@@ -861,6 +906,11 @@ export async function sendForRevision(
   const pr = await prisma.purchaseRequest.findUnique({ where: { id: prId } });
   if (!pr) {
     return { ok: false, message: "Purchase request not found." };
+  }
+
+  const warehouseAccess = await assertSessionPurchaseRequestAccess(user, prId);
+  if (!warehouseAccess.ok) {
+    return { ok: false, message: warehouseAccess.message };
   }
 
   try {

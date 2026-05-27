@@ -1,7 +1,6 @@
 "use client";
 
 import { CatalogItemStatus } from "@prisma/client";
-import { useRouter } from "next/navigation";
 import * as React from "react";
 import { toast } from "sonner";
 
@@ -16,32 +15,68 @@ import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { TextareaActionDialog } from "@/components/shared/TextareaActionDialog";
 import { Button } from "@/components/ui/button";
 
+export type CatalogItemResolveOutcome =
+  | "approved"
+  | "rejected"
+  | "deactivated"
+  | "reactivated";
+
 export function CatalogRowActions({
   row,
   onEdit,
+  onResolved,
 }: {
   row: CatalogItemListRow;
   onEdit: () => void;
+  /** Optimistic row update — skips full-page refresh when provided. */
+  onResolved?: (id: string, outcome: CatalogItemResolveOutcome) => void;
 }) {
-  const router = useRouter();
-  const [, startTransition] = React.useTransition();
   const [approveOpen, setApproveOpen] = React.useState(false);
   const [rejectOpen, setRejectOpen] = React.useState(false);
   const [deactivateOpen, setDeactivateOpen] = React.useState(false);
   const [reactivateOpen, setReactivateOpen] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
 
-  function refresh() {
-    router.refresh();
+  async function runAction(
+    fn: () => Promise<{ ok: boolean; message?: string }>,
+    onSuccess: () => void,
+  ) {
+    setBusy(true);
+    try {
+      const r = await fn();
+      if (r.ok) {
+        onSuccess();
+      } else {
+        toast.error(r.message ?? "Action failed.");
+      }
+    } finally {
+      setBusy(false);
+    }
   }
 
   if (row.status === CatalogItemStatus.PENDING_APPROVAL) {
     return (
       <div className="flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-        <Button type="button" variant="outline" size="sm" onClick={() => setApproveOpen(true)}>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={busy}
+          onClick={() => setApproveOpen(true)}
+        >
           Approve
         </Button>
-        <Button type="button" variant="ghost" size="sm" onClick={() => setRejectOpen(true)}>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          disabled={busy}
+          onClick={() => setRejectOpen(true)}
+        >
           Reject
+        </Button>
+        <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={onEdit}>
+          Edit
         </Button>
         <ConfirmDialog
           open={approveOpen}
@@ -50,16 +85,14 @@ export function CatalogRowActions({
           description="Item becomes active and selectable on vendor purchase requests."
           confirmLabel="Approve"
           onConfirm={() => {
-            startTransition(async () => {
-              const r = await approveCatalogItem(row.id);
-              if (r.ok) {
+            void runAction(
+              () => approveCatalogItem(row.id),
+              () => {
                 toast.success("Catalog item approved.");
                 setApproveOpen(false);
-                refresh();
-              } else {
-                toast.error(r.message ?? "Approval failed.");
-              }
-            });
+                onResolved?.(row.id, "approved");
+              },
+            );
           }}
         />
         <TextareaActionDialog
@@ -70,16 +103,14 @@ export function CatalogRowActions({
           label="Rejection reason"
           confirmLabel="Reject"
           onConfirm={(text) => {
-            startTransition(async () => {
-              const r = await rejectCatalogItem(row.id, text);
-              if (r.ok) {
+            void runAction(
+              () => rejectCatalogItem(row.id, text),
+              () => {
                 toast.success("Catalog item rejected.");
                 setRejectOpen(false);
-                refresh();
-              } else {
-                toast.error(r.message ?? "Rejection failed.");
-              }
-            });
+                onResolved?.(row.id, "rejected");
+              },
+            );
           }}
         />
       </div>
@@ -89,10 +120,16 @@ export function CatalogRowActions({
   if (row.status === CatalogItemStatus.ACTIVE) {
     return (
       <div className="flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-        <Button type="button" variant="ghost" size="sm" onClick={onEdit}>
+        <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={onEdit}>
           Edit
         </Button>
-        <Button type="button" variant="ghost" size="sm" onClick={() => setDeactivateOpen(true)}>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          disabled={busy}
+          onClick={() => setDeactivateOpen(true)}
+        >
           Deactivate
         </Button>
         <ConfirmDialog
@@ -103,16 +140,14 @@ export function CatalogRowActions({
           confirmLabel="Deactivate"
           confirmVariant="destructive"
           onConfirm={() => {
-            startTransition(async () => {
-              const r = await deactivateCatalogItem(row.id);
-              if (r.ok) {
+            void runAction(
+              () => deactivateCatalogItem(row.id),
+              () => {
                 toast.success("Catalog item deactivated.");
                 setDeactivateOpen(false);
-                refresh();
-              } else {
-                toast.error(r.message ?? "Deactivate failed.");
-              }
-            });
+                onResolved?.(row.id, "deactivated");
+              },
+            );
           }}
         />
       </div>
@@ -122,10 +157,16 @@ export function CatalogRowActions({
   if (row.status === CatalogItemStatus.INACTIVE) {
     return (
       <div className="flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-        <Button type="button" variant="ghost" size="sm" onClick={onEdit}>
+        <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={onEdit}>
           Edit
         </Button>
-        <Button type="button" variant="outline" size="sm" onClick={() => setReactivateOpen(true)}>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={busy}
+          onClick={() => setReactivateOpen(true)}
+        >
           Reactivate
         </Button>
         <ConfirmDialog
@@ -135,16 +176,14 @@ export function CatalogRowActions({
           description="Item will appear again in vendor PR line pickers."
           confirmLabel="Reactivate"
           onConfirm={() => {
-            startTransition(async () => {
-              const r = await reactivateCatalogItem(row.id);
-              if (r.ok) {
+            void runAction(
+              () => reactivateCatalogItem(row.id),
+              () => {
                 toast.success("Catalog item reactivated.");
                 setReactivateOpen(false);
-                refresh();
-              } else {
-                toast.error(r.message ?? "Reactivate failed.");
-              }
-            });
+                onResolved?.(row.id, "reactivated");
+              },
+            );
           }}
         />
       </div>

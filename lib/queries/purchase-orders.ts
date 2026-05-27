@@ -30,6 +30,10 @@ import { paginatedListQuery, type Paginated } from "@/lib/pagination";
 import { prisma } from "@/lib/prisma";
 import { timed } from "@/lib/server-timing";
 import {
+  purchaseOrderWhereFromScopeIds,
+  warehouseIdFilter,
+} from "@/lib/warehouse-scope";
+import {
   formatLineSummary,
   hasLockTagsLines,
   sumLineQuantities,
@@ -170,13 +174,8 @@ async function fetchPurchaseOrders(
   if (filters.vendorId) {
     clauses.push({ vendorId: filters.vendorId });
   }
-  if (filters.scopeWarehouseIds?.length) {
-    const ids = filters.scopeWarehouseIds;
-    clauses.push({
-      purchaseRequest: {
-        warehouseId: ids.length === 1 ? ids[0]! : { in: ids },
-      },
-    });
+  if (filters.scopeWarehouseIds !== undefined) {
+    clauses.push(purchaseOrderWhereFromScopeIds(filters.scopeWarehouseIds));
   } else if (filters.warehouseId) {
     clauses.push({
       purchaseRequest: { warehouseId: filters.warehouseId },
@@ -637,21 +636,30 @@ export type ApprovedPRAwaitingPO = {
   vendorRequestLabel: string | null;
 };
 
-export async function getApprovedPRsAwaitingPO(limit = 25): Promise<ApprovedPRAwaitingPO[]> {
+export async function getApprovedPRsAwaitingPO(
+  filters: { scopeWarehouseIds?: string[]; limit?: number } = {},
+): Promise<ApprovedPRAwaitingPO[]> {
+  const limit = filters.limit ?? 25;
   return cachedQuery(
     LIST_CACHE_TAGS.awaitingPo,
-    [String(limit)],
-    () => fetchApprovedPRsAwaitingPO(limit),
+    [String(limit), (filters.scopeWarehouseIds ?? []).join(",")],
+    () => fetchApprovedPRsAwaitingPO(limit, filters.scopeWarehouseIds),
     { tags: [LIST_CACHE_TAGS.awaitingPo, LIST_CACHE_TAGS.purchaseOrders] },
   );
 }
 
-async function fetchApprovedPRsAwaitingPO(limit: number): Promise<ApprovedPRAwaitingPO[]> {
+async function fetchApprovedPRsAwaitingPO(
+  limit: number,
+  scopeWarehouseIds?: string[],
+): Promise<ApprovedPRAwaitingPO[]> {
   const rows = await prisma.purchaseRequest.findMany({
     where: {
       status: PRStatus.APPROVED,
       executionType: ExecutionType.VENDOR_PURCHASE,
       purchaseOrder: null,
+      ...(scopeWarehouseIds !== undefined
+        ? { warehouseId: warehouseIdFilter(scopeWarehouseIds) }
+        : {}),
     },
     orderBy: { updatedAt: "desc" },
     take: limit,

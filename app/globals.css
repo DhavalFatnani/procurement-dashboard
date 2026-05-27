@@ -372,23 +372,14 @@
   border-left: 3px solid var(--status-info) !important;
 }
 
-/* Serial barcode label sheet (SM internal print) — one barcode per page */
-@media print {
-  body * {
-    visibility: hidden;
-  }
-
-  #serial-barcode-print-root,
-  #serial-barcode-print-root * {
-    visibility: visible;
-  }
-
-  #serial-barcode-print-root {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    background: #fff;
-  }
+/* Serial barcode label sheet — staging DOM for iframe print (see lib/barcode-print-document.ts) */
+#serial-barcode-print-root {
+  position: fixed;
+  left: -10000px;
+  top: 0;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .serial-label-grid {
@@ -400,8 +391,6 @@
 .serial-label {
   box-sizing: border-box;
   display: flex;
-  width: 100%;
-  min-height: 100vh;
   flex-direction: column;
   align-items: center;
   justify-content: center;
@@ -409,93 +398,65 @@
   padding: 0;
   border: none;
   background: #fff;
-  break-inside: avoid;
-  page-break-inside: avoid;
-  page-break-after: always;
 }
 
-.serial-label:last-child {
-  page-break-after: auto;
+.serial-label-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  max-width: 100%;
+  transform: scale(var(--serial-fit-scale, 1));
+  transform-origin: center center;
 }
 
-#serial-barcode-print-root[data-label-stock="true"] .serial-label {
-  min-height: 100%;
-  padding: var(--serial-margin-mm, 0);
-}
-
-#serial-barcode-print-root[data-label-stock="true"] .serial-label-barcode {
-  width: min(var(--serial-barcode-max-width, 96%), 100%);
-}
-
-#serial-barcode-print-root[data-label-stock="true"][data-brand-size="medium"] .serial-label-brand {
-  font-size: 8pt;
-  letter-spacing: 0.2em;
-}
-
-#serial-barcode-print-root[data-label-stock="true"][data-brand-size="large"] .serial-label-brand {
-  font-size: 10pt;
-  letter-spacing: 0.24em;
-}
-
-#serial-barcode-print-root[data-label-stock="true"][data-brand-size="xlarge"] .serial-label-brand {
-  font-size: 12pt;
-  letter-spacing: 0.26em;
-}
-
-#serial-barcode-print-root[data-label-stock="true"][data-brand-size="xxlarge"] .serial-label-brand {
-  font-size: 14pt;
-  letter-spacing: 0.28em;
-}
-
-#serial-barcode-print-root[data-label-stock="true"][data-brand-size="display"] .serial-label-brand {
-  font-size: 17pt;
-  letter-spacing: 0.3em;
-}
-
-#serial-barcode-print-root[data-label-stock="true"] .serial-label-series {
-  font-size: 6pt;
+.serial-label-stack {
+  display: flex;
+  width: 100%;
+  max-width: 100%;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--serial-text-gap-mm, 4mm);
 }
 
 .serial-label-brand {
-  margin: 0;
+  margin: 0 0 var(--serial-brand-barcode-gap-mm, 4mm);
   color: #111;
   font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: var(--serial-brand-font-pt, 22pt);
   font-weight: 800;
+  letter-spacing: var(--serial-brand-letter-spacing, 0.34em);
   line-height: 1;
   text-transform: uppercase;
-}
-
-#serial-barcode-print-root[data-brand-size="medium"] .serial-label-brand {
-  font-size: 14pt;
-  letter-spacing: 0.28em;
-}
-
-#serial-barcode-print-root[data-brand-size="large"] .serial-label-brand {
-  font-size: 22pt;
-  letter-spacing: 0.34em;
-}
-
-#serial-barcode-print-root[data-brand-size="xlarge"] .serial-label-brand {
-  font-size: 30pt;
-  letter-spacing: 0.36em;
-}
-
-#serial-barcode-print-root[data-brand-size="xxlarge"] .serial-label-brand {
-  font-size: 38pt;
-  letter-spacing: 0.38em;
-}
-
-#serial-barcode-print-root[data-brand-size="display"] .serial-label-brand {
-  font-size: 48pt;
-  letter-spacing: 0.4em;
 }
 
 .serial-label-barcode {
   display: flex;
   width: min(var(--serial-barcode-max-width, 92%), 140mm);
   flex: 0 1 auto;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 0.5mm;
+}
+
+.serial-label-value {
+  margin: 0;
+  max-width: 100%;
+  overflow: hidden;
+  color: #111;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--serial-barcode-value-font-pt, 11pt);
+  line-height: 1.1;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#serial-barcode-print-root[data-hide-serial-value="true"] .serial-label-value {
+  display: none;
 }
 
 .serial-label-barcode svg {
@@ -513,7 +474,7 @@
   overflow: hidden;
   color: #444;
   font-family: ui-sans-serif, system-ui, sans-serif;
-  font-size: 11pt;
+  font-size: var(--serial-series-font-pt, 11pt);
   line-height: 1.2;
   text-align: center;
   text-overflow: ellipsis;

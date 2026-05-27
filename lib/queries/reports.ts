@@ -2,6 +2,11 @@ import { InvoiceMatchStatus, PaymentStatus, PRStatus } from "@prisma/client";
 
 import { dbSerial } from "@/lib/db-serial";
 import { prisma } from "@/lib/prisma";
+import {
+  invoiceWhereFromScopeIds,
+  purchaseOrderWhereFromScopeIds,
+  warehouseIdFilter,
+} from "@/lib/warehouse-scope";
 
 export type CycleTimePoint = { day: string; count: number };
 export type ExceptionPoint = { day: string; total: number; open: number };
@@ -29,25 +34,47 @@ function startOf(day: Date): Date {
   return d;
 }
 
-export async function getReports(): Promise<ReportsData> {
+function grnExceptionWarehouseWhere(scopeWarehouseIds: string[]) {
+  return {
+    grn: {
+      purchaseOrder: {
+        purchaseRequest: { warehouseId: warehouseIdFilter(scopeWarehouseIds) },
+      },
+    },
+  };
+}
+
+export async function getReports(scopeWarehouseIds: string[]): Promise<ReportsData> {
   const since = startOf(new Date());
   since.setDate(since.getDate() - DAYS + 1);
+
+  const invoiceScope = invoiceWhereFromScopeIds(scopeWarehouseIds);
+  const poScope = purchaseOrderWhereFromScopeIds(scopeWarehouseIds);
 
   const [prs, grnExceptions, unpaidInvoices, topVendorRows, monthMetrics] =
     await dbSerial(
       () =>
         prisma.purchaseRequest.findMany({
-          where: { createdAt: { gte: since } },
+          where: {
+            createdAt: { gte: since },
+            warehouseId: warehouseIdFilter(scopeWarehouseIds),
+          },
           select: { createdAt: true },
         }),
       () =>
         prisma.gRNException.findMany({
-          where: { createdAt: { gte: since } },
+          where: {
+            createdAt: { gte: since },
+            ...grnExceptionWarehouseWhere(scopeWarehouseIds),
+          },
           select: { createdAt: true, resolutionStatus: true },
         }),
       () =>
         prisma.invoice.findMany({
-          where: { paymentStatus: { not: PaymentStatus.PAID } },
+          where: {
+            paymentStatus: { not: PaymentStatus.PAID },
+            ...invoiceScope,
+          },
           select: {
             amount: true,
             createdAt: true,
@@ -56,7 +83,10 @@ export async function getReports(): Promise<ReportsData> {
         }),
       () =>
         prisma.purchaseOrder.findMany({
-          where: { status: { notIn: ["CLOSED", "FORCE_CLOSED", "PARTIALLY_CLOSED"] } },
+          where: {
+            status: { notIn: ["CLOSED", "FORCE_CLOSED", "PARTIALLY_CLOSED"] },
+            ...poScope,
+          },
           select: {
             id: true,
             unitPrice: true,
@@ -66,10 +96,9 @@ export async function getReports(): Promise<ReportsData> {
           },
           take: 200,
         }),
-      () => monthlyMetrics(),
+      () => monthlyMetrics(scopeWarehouseIds),
     );
 
-  // Build day-of-creation buckets
   const dayKeys: string[] = [];
   for (let i = 0; i < DAYS; i++) {
     const d = new Date(since);
@@ -141,24 +170,42 @@ export async function getReports(): Promise<ReportsData> {
   };
 }
 
-async function monthlyMetrics(): Promise<ReportsData["summary"]> {
+async function monthlyMetrics(
+  scopeWarehouseIds: string[],
+): Promise<ReportsData["summary"]> {
   const startMonth = startOf(new Date());
   startMonth.setDate(1);
 
+  const invoiceScope = invoiceWhereFromScopeIds(scopeWarehouseIds);
+  const poScope = purchaseOrderWhereFromScopeIds(scopeWarehouseIds);
+
   const [prsThisMonth, matchedCount, totalInvoices, openInvoices] = await dbSerial(
-    () => prisma.purchaseRequest.count({ where: { createdAt: { gte: startMonth } } }),
+    () =>
+      prisma.purchaseRequest.count({
+        where: {
+          createdAt: { gte: startMonth },
+          warehouseId: warehouseIdFilter(scopeWarehouseIds),
+        },
+      }),
     () =>
       prisma.invoice.count({
         where: {
           matchStatus: {
             in: [InvoiceMatchStatus.MATCHED, InvoiceMatchStatus.OVERRIDE_ACCEPTED],
           },
+          ...invoiceScope,
         },
       }),
-    () => prisma.invoice.count(),
+    () =>
+      prisma.invoice.count({
+        where: invoiceScope,
+      }),
     () =>
       prisma.invoice.findMany({
-        where: { paymentStatus: { not: PaymentStatus.PAID } },
+        where: {
+          paymentStatus: { not: PaymentStatus.PAID },
+          ...invoiceScope,
+        },
         select: { amount: true, payments: { select: { amount: true } } },
       }),
   );
@@ -171,9 +218,11 @@ async function monthlyMetrics(): Promise<ReportsData["summary"]> {
     return sum + Math.max(0, Number(inv.amount) - paid);
   }, 0);
 
-  // Average PR → PO days for items converted in the last 30 days
   const avgRows = await prisma.purchaseOrder.findMany({
-    where: { createdAt: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } },
+    where: {
+      createdAt: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
+      ...poScope,
+    },
     select: { createdAt: true, purchaseRequest: { select: { createdAt: true } } },
   });
   const avgPrToPoDays =
@@ -195,5 +244,4 @@ async function monthlyMetrics(): Promise<ReportsData["summary"]> {
   };
 }
 
-// Re-export needed Prisma type for action callers
 export type { PRStatus };

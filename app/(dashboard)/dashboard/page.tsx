@@ -17,6 +17,7 @@ import {
   getRecentActivity,
 } from "@/lib/queries/dashboard-extras";
 import { assertRole, getRequestSession } from "@/lib/session";
+import { assignedWarehouseIds } from "@/lib/warehouse-scope";
 
 export const dynamic = "force-dynamic";
 
@@ -70,11 +71,15 @@ export default async function DashboardHomePage() {
 }
 
 async function PODistributionSection() {
-  const stages = await getPOStageDistribution();
+  const user = assertRole(await getRequestSession(), [...ACCESS.dashboard]);
+  const scopeWarehouseIds = assignedWarehouseIds(user);
+  const stages = await getPOStageDistribution(scopeWarehouseIds);
   return <POStageDistributionCard stages={stages} />;
 }
 
 async function ActivitySection() {
-  const items = await getRecentActivity(8);
+  const user = assertRole(await getRequestSession(), [...ACCESS.dashboard]);
+  const scopeWarehouseIds = assignedWarehouseIds(user);
+  const items = await getRecentActivity(scopeWarehouseIds, 8);
   return <RecentActivityCard items={items} />;
 }

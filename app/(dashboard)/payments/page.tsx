@@ -46,7 +46,7 @@ async function PaymentsTableLoader({
         matchStatus: parsed.matchStatus || undefined,
         vendorId: parsed.vendorId || undefined,
         poId: parsed.poId || undefined,
-        scopeWarehouseIds: scopeWarehouseIds.length > 0 ? scopeWarehouseIds : undefined,
+        scopeWarehouseIds,
         dateFrom: parsed.dateFrom || undefined,
         dateTo: parsed.dateTo || undefined,
         page: parsed.page,

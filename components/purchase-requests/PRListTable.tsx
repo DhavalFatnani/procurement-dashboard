@@ -27,8 +27,11 @@ import { cn } from "@/lib/utils";
 import { useServerMutation } from "@/lib/use-server-mutation";
 import Link from "next/link";
 
-const ConfirmDialog = dynamic(
-  () => import("@/components/shared/ConfirmDialog").then((m) => ({ default: m.ConfirmDialog })),
+const PRCatalogApproveDialog = dynamic(
+  () =>
+    import("@/components/purchase-requests/PRCatalogApproveDialog").then((m) => ({
+      default: m.PRCatalogApproveDialog,
+    })),
   { ssr: false },
 );
 const TextareaActionDialog = dynamic(
@@ -249,34 +252,27 @@ export function PRListTable({
         onPageChange={onPageChange}
       />
 
-      <ConfirmDialog
-        open={approveId != null}
-        onOpenChange={(o) => !o && setApproveId(null)}
-        title="Approve purchase request?"
-        description="Approves the request. Configure vendor, pricing, and delivery under Purchase Orders."
-        confirmLabel="Approve"
-        onConfirm={() => {
-          if (!approveId) {
-            return;
-          }
-          const id = approveId;
-          setApproveId(null);
-          void run(
-            () =>
-              approvePR(id, {
-                approvedCatalogItemIds: [],
-                rejected: [],
-              }),
-            {
+      {approveId ? (
+        <PRCatalogApproveDialog
+          open
+          onOpenChange={(o) => !o && setApproveId(null)}
+          prId={approveId}
+          pending={actionPending}
+          onConfirm={(catalogReview) => {
+            const id = approveId;
+            void run(() => approvePR(id, catalogReview), {
+              refresh: false,
               onSuccess: () => {
                 setOptimisticStatuses({ id, status: PRStatus.APPROVED });
                 toast.success("PR approved. Create the purchase order when ready.");
+                setApproveId(null);
+                onRowsChange();
               },
               onError: (m) => toast.error(m),
-            },
-          );
-        }}
-      />
+            });
+          }}
+        />
+      ) : null}
 
       <TextareaActionDialog
         open={rejectId != null}

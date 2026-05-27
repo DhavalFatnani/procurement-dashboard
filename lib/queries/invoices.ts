@@ -11,6 +11,7 @@ import { cachedQuery, LIST_CACHE_TAGS, stableFilterKey } from "@/lib/list-cache"
 import { paginatedListQuery, type Paginated } from "@/lib/pagination";
 import { prisma } from "@/lib/prisma";
 import { STORAGE_BUCKETS } from "@/lib/storage";
+import { invoiceWhereFromScopeIds, purchaseOrderWhereFromScopeIds } from "@/lib/warehouse-scope";
 
 export type InvoiceFilters = {
   matchStatus?: InvoiceMatchStatus;
@@ -104,15 +105,8 @@ async function fetchInvoices(
   const pageSize = Math.min(100, Math.max(10, filters.pageSize ?? 25));
 
   const clauses: Prisma.InvoiceWhereInput[] = [];
-  if (filters.scopeWarehouseIds?.length) {
-    const ids = filters.scopeWarehouseIds;
-    clauses.push({
-      purchaseOrder: {
-        purchaseRequest: {
-          warehouseId: ids.length === 1 ? ids[0]! : { in: ids },
-        },
-      },
-    });
+  if (filters.scopeWarehouseIds !== undefined) {
+    clauses.push(invoiceWhereFromScopeIds(filters.scopeWarehouseIds));
   }
   if (filters.matchStatus) {
     clauses.push({ matchStatus: filters.matchStatus });
@@ -259,6 +253,7 @@ export async function getInvoiceById(id: string): Promise<InvoiceDetail | null> 
 export async function searchPOsForInvoice(
   q: string,
   limit = 20,
+  scopeWarehouseIds?: string[],
 ): Promise<Pick<POForInvoiceOption, "id" | "label" | "vendorName">[]> {
   const trimmed = q.trim();
   const where: Prisma.PurchaseOrderWhereInput = {
@@ -273,6 +268,9 @@ export async function searchPOsForInvoice(
       ],
     },
     grns: { some: { acceptedQty: { gt: 0 } } },
+    ...(scopeWarehouseIds !== undefined
+      ? purchaseOrderWhereFromScopeIds(scopeWarehouseIds)
+      : {}),
   };
   if (trimmed) {
     where.OR = [
@@ -391,7 +389,9 @@ export async function getPOForInvoiceById(poId: string): Promise<POForInvoiceOpt
 }
 
 /** @deprecated Prefer searchPOsForInvoice — loads all eligible POs. */
-export async function getPOsForInvoice(): Promise<POForInvoiceOption[]> {
+export async function getPOsForInvoice(
+  scopeWarehouseIds?: string[],
+): Promise<POForInvoiceOption[]> {
   const pos = await prisma.purchaseOrder.findMany({
     where: {
       status: {
@@ -405,6 +405,9 @@ export async function getPOsForInvoice(): Promise<POForInvoiceOption[]> {
         ],
       },
       grns: { some: { acceptedQty: { gt: 0 } } },
+      ...(scopeWarehouseIds !== undefined
+        ? purchaseOrderWhereFromScopeIds(scopeWarehouseIds)
+        : {}),
     },
     orderBy: { createdAt: "desc" },
     select: {

@@ -24,12 +24,17 @@ import { requireRoles } from "@/lib/server-action-guard";
 import { STORAGE_BUCKETS } from "@/lib/storage";
 import { uploadStorageObject } from "@/lib/upload-storage";
 import { prisma } from "@/lib/prisma";
+import { assertSessionInvoiceAccess } from "@/lib/warehouse-access";
+import { assignedWarehouseIds } from "@/lib/warehouse-scope";
 
 export async function getPayments(
   filters: PaymentFilters,
 ): Promise<Paginated<PaymentListRow>> {
-  await requireRoles([Role.OPS_HEAD, Role.FINANCE]);
-  return getPaymentsQuery(filters);
+  const user = await requireRoles([Role.OPS_HEAD, Role.FINANCE]);
+  return getPaymentsQuery({
+    ...filters,
+    scopeWarehouseIds: filters.scopeWarehouseIds ?? assignedWarehouseIds(user),
+  });
 }
 
 export async function getPaymentFilterOptions() {
@@ -40,7 +45,11 @@ export async function getPaymentFilterOptions() {
 export async function getInvoicePaymentDetail(
   invoiceId: string,
 ): Promise<InvoicePaymentDetail | null> {
-  await requireRoles([Role.FINANCE]);
+  const user = await requireRoles([Role.FINANCE]);
+  const access = await assertSessionInvoiceAccess(user, invoiceId);
+  if (!access.ok) {
+    return null;
+  }
   return getInvoicePaymentDetailQuery(invoiceId);
 }
 
@@ -58,6 +67,11 @@ export async function recordPayment(
 
   if (!invoiceId) {
     return { ok: false, message: "Invoice is required." };
+  }
+
+  const invoiceAccess = await assertSessionInvoiceAccess(user, invoiceId);
+  if (!invoiceAccess.ok) {
+    return { ok: false, message: invoiceAccess.message };
   }
 
   const amount = Number(amountRaw);

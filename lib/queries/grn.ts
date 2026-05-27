@@ -11,6 +11,10 @@ import {
   type GrnExceptionSnapshot,
 } from "@/lib/grn-exception-lines";
 import { hasLockTagsLines, sumOrderedQty } from "@/lib/purchase-lines";
+import {
+  goodsReceiptWhereFromScopeIds,
+  purchaseOrderWhereFromScopeIds,
+} from "@/lib/warehouse-scope";
 
 export type GRNFilters = {
   poId?: string;
@@ -18,6 +22,7 @@ export type GRNFilters = {
   dateFrom?: string;
   dateTo?: string;
   hasExceptions?: boolean;
+  scopeWarehouseIds?: string[];
   page?: number;
   pageSize?: number;
   includeExactCount?: boolean;
@@ -121,6 +126,9 @@ async function fetchGRNs(filters: GRNFilters): Promise<Paginated<GRNListRow>> {
     clauses.push({ disputedQty: { gt: 0 } });
   } else if (filters.hasExceptions === false) {
     clauses.push({ disputedQty: 0 });
+  }
+  if (filters.scopeWarehouseIds !== undefined) {
+    clauses.push(goodsReceiptWhereFromScopeIds(filters.scopeWarehouseIds));
   }
 
   const where: Prisma.GoodsReceiptWhereInput =
@@ -396,10 +404,14 @@ function mapPoToGrnOption(
 export async function searchPOsForGRN(
   q: string,
   limit = 20,
+  scopeWarehouseIds?: string[],
 ): Promise<POForGRNOption[]> {
   const trimmed = q.trim();
   const where: Prisma.PurchaseOrderWhereInput = {
     status: { in: GRN_ELIGIBLE_STATUSES },
+    ...(scopeWarehouseIds !== undefined
+      ? purchaseOrderWhereFromScopeIds(scopeWarehouseIds)
+      : {}),
   };
   if (trimmed) {
     where.OR = [
@@ -420,9 +432,18 @@ export async function searchPOsForGRN(
     .filter((p): p is POForGRNOption => p != null);
 }
 
-export async function getPOForGRNById(poId: string): Promise<POForGRNOption | null> {
+export async function getPOForGRNById(
+  poId: string,
+  scopeWarehouseIds?: string[],
+): Promise<POForGRNOption | null> {
   const po = await prisma.purchaseOrder.findFirst({
-    where: { id: poId, status: { in: GRN_ELIGIBLE_STATUSES } },
+    where: {
+      id: poId,
+      status: { in: GRN_ELIGIBLE_STATUSES },
+      ...(scopeWarehouseIds !== undefined
+        ? purchaseOrderWhereFromScopeIds(scopeWarehouseIds)
+        : {}),
+    },
     select: poForGrnSelect,
   });
   if (!po) {
@@ -432,8 +453,8 @@ export async function getPOForGRNById(poId: string): Promise<POForGRNOption | nu
 }
 
 /** @deprecated Prefer searchPOsForGRN — loads all eligible POs. */
-export async function getPOsForGRN(): Promise<POForGRNOption[]> {
-  return searchPOsForGRN("", 100);
+export async function getPOsForGRN(scopeWarehouseIds?: string[]): Promise<POForGRNOption[]> {
+  return searchPOsForGRN("", 100, scopeWarehouseIds);
 }
 
 export async function getGRNFilterOptions() {

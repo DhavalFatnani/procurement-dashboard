@@ -33,7 +33,7 @@ export function DashboardWelcomeStrip({
   const firstName = displayName.split(/\s+/)[0] ?? displayName;
   const pendingCount =
     role === Role.FINANCE
-      ? metrics.openPurchaseOrders
+      ? metrics.unpaidInvoices
       : metrics.pendingApprovals;
   const pendingLink = PENDING_LINKS[role];
 

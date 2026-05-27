@@ -2,6 +2,12 @@ import { POStatus, Prisma } from "@prisma/client";
 
 import { dbSerial } from "@/lib/db-serial";
 import { prisma } from "@/lib/prisma";
+import {
+  goodsReceiptWhereFromScopeIds,
+  invoiceWhereFromScopeIds,
+  purchaseOrderWhereFromScopeIds,
+  warehouseIdFilter,
+} from "@/lib/warehouse-scope";
 
 export type POStageDistribution = {
   status: POStatus;
@@ -29,9 +35,12 @@ const STAGE_ORDER: POStatus[] = [
   POStatus.CLOSED,
 ];
 
-export async function getPOStageDistribution(): Promise<POStageDistribution[]> {
+export async function getPOStageDistribution(
+  scopeWarehouseIds: string[],
+): Promise<POStageDistribution[]> {
   const rows = await prisma.purchaseOrder.groupBy({
     by: ["status"],
+    where: purchaseOrderWhereFromScopeIds(scopeWarehouseIds),
     _count: { _all: true },
   });
   const map = new Map<POStatus, number>();
@@ -54,10 +63,19 @@ export type RecentActivityItem = {
   href: string;
 };
 
-export async function getRecentActivity(limit = 10): Promise<RecentActivityItem[]> {
+export async function getRecentActivity(
+  scopeWarehouseIds: string[],
+  limit = 10,
+): Promise<RecentActivityItem[]> {
+  const prWhere = { warehouseId: warehouseIdFilter(scopeWarehouseIds) };
+  const poWhere = purchaseOrderWhereFromScopeIds(scopeWarehouseIds);
+  const grnWhere = goodsReceiptWhereFromScopeIds(scopeWarehouseIds);
+  const invoiceWhere = invoiceWhereFromScopeIds(scopeWarehouseIds);
+
   const [prs, pos, grns, invoices, payments] = await dbSerial(
     () =>
       prisma.purchaseRequest.findMany({
+        where: prWhere,
         select: {
           id: true,
           updatedAt: true,
@@ -74,6 +92,7 @@ export async function getRecentActivity(limit = 10): Promise<RecentActivityItem[
       }),
     () =>
       prisma.purchaseOrder.findMany({
+        where: poWhere,
         select: {
           id: true,
           updatedAt: true,
@@ -85,6 +104,7 @@ export async function getRecentActivity(limit = 10): Promise<RecentActivityItem[
       }),
     () =>
       prisma.goodsReceipt.findMany({
+        where: grnWhere,
         select: {
           id: true,
           receivedAt: true,
@@ -97,6 +117,7 @@ export async function getRecentActivity(limit = 10): Promise<RecentActivityItem[
       }),
     () =>
       prisma.invoice.findMany({
+        where: invoiceWhere,
         select: {
           id: true,
           updatedAt: true,
@@ -110,7 +131,10 @@ export async function getRecentActivity(limit = 10): Promise<RecentActivityItem[
       }),
     () =>
       prisma.payment.findMany({
-        where: { amount: { not: null } },
+        where: {
+          amount: { not: null },
+          invoice: invoiceWhereFromScopeIds(scopeWarehouseIds),
+        },
         select: {
           id: true,
           createdAt: true,
@@ -189,7 +213,7 @@ export async function getPrCreationSparkline(
 
   const warehouseFilter =
     scope.warehouseIds.length === 0
-      ? Prisma.empty
+      ? Prisma.sql`AND false`
       : scope.warehouseIds.length === 1
         ? Prisma.sql`AND pr."warehouseId" = ${scope.warehouseIds[0]!}`
         : Prisma.sql`AND pr."warehouseId" IN (${Prisma.join(scope.warehouseIds)})`;

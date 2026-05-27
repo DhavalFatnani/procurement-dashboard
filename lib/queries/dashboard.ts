@@ -10,6 +10,7 @@ export type DashboardMetrics = {
   openPurchaseOrders: number;
   draftPurchaseRequests: number;
   pendingVendorRequests: number;
+  unpaidInvoices: number;
 };
 
 type MetricsRow = {
@@ -17,11 +18,12 @@ type MetricsRow = {
   open_purchase_orders: number;
   draft_purchase_requests: number;
   pending_vendor_requests: number;
+  unpaid_invoices: number;
 };
 
 function warehouseFilterSql(warehouseIds: string[]) {
   if (warehouseIds.length === 0) {
-    return Prisma.empty;
+    return Prisma.sql`AND false`;
   }
   if (warehouseIds.length === 1) {
     return Prisma.sql`AND pr."warehouseId" = ${warehouseIds[0]!}`;
@@ -31,7 +33,7 @@ function warehouseFilterSql(warehouseIds: string[]) {
 
 function poWarehouseFilterSql(warehouseIds: string[]) {
   if (warehouseIds.length === 0) {
-    return Prisma.empty;
+    return Prisma.sql`AND false`;
   }
   if (warehouseIds.length === 1) {
     return Prisma.sql`AND pr."warehouseId" = ${warehouseIds[0]!}`;
@@ -82,7 +84,15 @@ async function fetchDashboardMetrics(
               WHERE status = 'PENDING'::"VendorRequestStatus"
             )`
           : Prisma.sql`0::int`
-      } AS pending_vendor_requests
+      } AS pending_vendor_requests,
+      (
+        SELECT COUNT(*)::int
+        FROM "Invoice" inv
+        INNER JOIN "PurchaseOrder" po ON po.id = inv."poId"
+        INNER JOIN "PurchaseRequest" pr ON pr.id = po."prId"
+        WHERE inv."paymentStatus" != 'PAID'::"PaymentStatus"
+          ${poWarehouseFilter}
+      ) AS unpaid_invoices
   `;
 
   return {
@@ -90,6 +100,7 @@ async function fetchDashboardMetrics(
     openPurchaseOrders: row?.open_purchase_orders ?? 0,
     draftPurchaseRequests: row?.draft_purchase_requests ?? 0,
     pendingVendorRequests: row?.pending_vendor_requests ?? 0,
+    unpaidInvoices: row?.unpaid_invoices ?? 0,
   };
 }
 

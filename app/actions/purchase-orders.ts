@@ -24,21 +24,32 @@ import {
   revalidatePurchaseOrdersCache,
 } from "@/lib/revalidate-tags";
 import { requireRoles } from "@/lib/server-action-guard";
+import { assertSessionPurchaseOrderAccess } from "@/lib/warehouse-access";
+import { assignedWarehouseIds } from "@/lib/warehouse-scope";
 
 export async function getApprovedPRsAwaitingPO(): Promise<ApprovedPRAwaitingPO[]> {
-  await requireRoles([Role.OPS_HEAD]);
-  return getApprovedPRsAwaitingPOQuery();
+  const user = await requireRoles([Role.OPS_HEAD]);
+  return getApprovedPRsAwaitingPOQuery({
+    scopeWarehouseIds: assignedWarehouseIds(user),
+  });
 }
 
 export async function getPurchaseOrders(
   filters: PurchaseOrderFilters,
 ): Promise<Paginated<PurchaseOrderListRow>> {
-  await requireRoles([Role.SM, Role.OPS_HEAD, Role.FINANCE]);
-  return getPurchaseOrdersQuery(filters);
+  const user = await requireRoles([Role.SM, Role.OPS_HEAD, Role.FINANCE]);
+  return getPurchaseOrdersQuery({
+    ...filters,
+    scopeWarehouseIds: filters.scopeWarehouseIds ?? assignedWarehouseIds(user),
+  });
 }
 
 export async function getPOById(id: string): Promise<PODetail | null> {
-  await requireRoles([Role.SM, Role.OPS_HEAD, Role.FINANCE]);
+  const user = await requireRoles([Role.SM, Role.OPS_HEAD, Role.FINANCE]);
+  const access = await assertSessionPurchaseOrderAccess(user, id);
+  if (!access.ok) {
+    return null;
+  }
   return getPOByIdQuery(id);
 }
 
@@ -50,7 +61,12 @@ export async function getPOFilterOptions() {
 export async function markDeliveryComplete(
   poId: string,
 ): Promise<MutationResult> {
-  await requireRoles([Role.OPS_HEAD]);
+  const user = await requireRoles([Role.OPS_HEAD]);
+
+  const access = await assertSessionPurchaseOrderAccess(user, poId);
+  if (!access.ok) {
+    return { ok: false, message: access.message };
+  }
 
   const po = await prisma.purchaseOrder.findUnique({ where: { id: poId } });
   if (!po) {
@@ -77,6 +93,11 @@ export async function forceClosePO(
     return { ok: false, message: "Reason is required." };
   }
 
+  const access = await assertSessionPurchaseOrderAccess(user, poId);
+  if (!access.ok) {
+    return { ok: false, message: access.message };
+  }
+
   const po = await prisma.purchaseOrder.findUnique({ where: { id: poId } });
   if (!po) {
     return { ok: false, message: "Purchase order not found." };
@@ -99,7 +120,12 @@ export async function updatePOExpectedDelivery(
   poId: string,
   expectedDelivery: string,
 ): Promise<MutationResult> {
-  await requireRoles([Role.OPS_HEAD]);
+  const user = await requireRoles([Role.OPS_HEAD]);
+
+  const access = await assertSessionPurchaseOrderAccess(user, poId);
+  if (!access.ok) {
+    return { ok: false, message: access.message };
+  }
 
   const date = new Date(expectedDelivery);
   if (Number.isNaN(date.getTime())) {
@@ -131,6 +157,11 @@ export async function resolveGRNException(
     return { ok: false, message: "Exception not found." };
   }
 
+  const access = await assertSessionPurchaseOrderAccess(user, exception.grn.poId);
+  if (!access.ok) {
+    return { ok: false, message: access.message };
+  }
+
   if (resolution === "OVERRIDE_ACCEPTED" && !note?.trim()) {
     return { ok: false, message: "Override reason is required." };
   }
@@ -154,7 +185,13 @@ export async function resolveGRNException(
 export async function runEvaluatePOClosure(
   poId: string,
 ): Promise<{ ok: boolean; status?: string; message?: string }> {
-  await requireRoles([Role.OPS_HEAD]);
+  const user = await requireRoles([Role.OPS_HEAD]);
+
+  const access = await assertSessionPurchaseOrderAccess(user, poId);
+  if (!access.ok) {
+    return { ok: false, message: access.message };
+  }
+
   try {
     const snapshot = await evaluatePOClosure(poId);
     revalidateProcurementLists(undefined, poId);

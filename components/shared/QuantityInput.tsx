@@ -141,7 +141,7 @@ export function QuantityInput({
   return (
     <div
       className={cn(
-        "inline-flex w-full max-w-[10rem] items-stretch overflow-hidden rounded-md border border-border bg-input",
+        "flex w-full max-w-[10rem] items-stretch overflow-hidden rounded-md border border-border bg-input",
         "focus-within:border-[var(--brand-accent)] focus-within:shadow-ds-focus",
         disabled && "pointer-events-none opacity-50",
         className,

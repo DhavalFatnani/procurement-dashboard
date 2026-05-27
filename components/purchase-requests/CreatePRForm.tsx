@@ -8,9 +8,10 @@ import { toast } from "sonner";
 
 import { getSerialSeriesHint, reserveSerialRangeForPR } from "@/app/actions/serial";
 import {
-  DEFAULT_BARCODE_LABEL_CONFIG,
+  getLatestBarcodeLabelConfigForLock,
   loadBarcodeLabelDefaults,
   lockBarcodeLabelDefaults,
+  normalizeBarcodeLabelConfig,
   saveBarcodeLabelDefaultsDraft,
   saveBarcodeLabelConfigToSession,
   unlockBarcodeLabelDefaults,
@@ -109,10 +110,13 @@ export function CreatePRForm({
   const [printWaitMessage, setPrintWaitMessage] = React.useState<string | null>(null);
   const printIdempotencyKeyRef = React.useRef<string | null>(null);
   const confirmPrintInFlightRef = React.useRef(false);
-  const [barcodeLabelConfig, setBarcodeLabelConfig] = React.useState<BarcodeLabelConfig>(
-    DEFAULT_BARCODE_LABEL_CONFIG,
+  const [labelDefaults] = React.useState(() => loadBarcodeLabelDefaults());
+  const [barcodeLabelConfig, setBarcodeLabelConfig] = React.useState<BarcodeLabelConfig>(() =>
+    normalizeBarcodeLabelConfig(labelDefaults.config),
   );
-  const [labelLayoutLocked, setLabelLayoutLocked] = React.useState(false);
+  const [labelLayoutLocked, setLabelLayoutLocked] = React.useState(labelDefaults.locked);
+  const barcodeLabelConfigRef = React.useRef(barcodeLabelConfig);
+  barcodeLabelConfigRef.current = barcodeLabelConfig;
   const [vendorSheetOpen, setVendorSheetOpen] = React.useState(false);
   const [pending, startTransition] = React.useTransition();
 
@@ -294,12 +298,6 @@ export function CreatePRForm({
   }, [hintSubcategoryId]);
 
   React.useEffect(() => {
-    const saved = loadBarcodeLabelDefaults();
-    setBarcodeLabelConfig(saved.config);
-    setLabelLayoutLocked(saved.locked);
-  }, []);
-
-  React.useEffect(() => {
     if (executionType !== ExecutionType.INTERNAL_PRINT) {
       setPrintOpen(false);
     }
@@ -310,7 +308,9 @@ export function CreatePRForm({
       printIdempotencyKeyRef.current = crypto.randomUUID();
       confirmPrintInFlightRef.current = false;
       const saved = loadBarcodeLabelDefaults();
-      setBarcodeLabelConfig(saved.config);
+      const normalized = normalizeBarcodeLabelConfig(saved.config);
+      barcodeLabelConfigRef.current = normalized;
+      setBarcodeLabelConfig(normalized);
       setLabelLayoutLocked(saved.locked);
     }
   }, [printOpen]);
@@ -478,7 +478,10 @@ export function CreatePRForm({
             resolvedPrId = result.prId;
             setPrId(result.prId);
             if (result.reservationId) {
-              saveBarcodeLabelConfigToSession(result.reservationId, barcodeLabelConfig);
+              saveBarcodeLabelConfigToSession(
+                result.reservationId,
+                barcodeLabelConfigRef.current,
+              );
             }
             setPrintOpen(false);
             toast.success("Serial range reserved.");
@@ -512,20 +515,22 @@ export function CreatePRForm({
   }
 
   function handleLabelConfigChange(next: BarcodeLabelConfig) {
-    setBarcodeLabelConfig(next);
+    const normalized = normalizeBarcodeLabelConfig(next);
+    barcodeLabelConfigRef.current = normalized;
+    setBarcodeLabelConfig(normalized);
     if (!labelLayoutLocked) {
-      saveBarcodeLabelDefaultsDraft(next);
+      saveBarcodeLabelDefaultsDraft(normalized);
     }
   }
 
   function handleLockLabelLayout() {
-    const state = lockBarcodeLabelDefaults(barcodeLabelConfig);
+    const state = lockBarcodeLabelDefaults(getLatestBarcodeLabelConfigForLock());
     setLabelLayoutLocked(state.locked);
     toast.success("Label layout locked as your default for future prints.");
   }
 
   function handleUnlockLabelLayout() {
-    const state = unlockBarcodeLabelDefaults(barcodeLabelConfig);
+    const state = unlockBarcodeLabelDefaults(barcodeLabelConfigRef.current);
     setLabelLayoutLocked(state.locked);
     toast.message("Layout unlocked — adjust settings, then lock again to save as default.");
   }
@@ -651,7 +656,7 @@ export function CreatePRForm({
                 </p>
               </div>
               <div className="space-y-1.5">
-                <label htmlFor="pr-subcategory" className="text-ds-sm font-medium">
+                <label htmlFor="pr-subcategory" className="block text-ds-sm font-medium">
                   Subcategory
                 </label>
                 <Select value={subcategoryId} onValueChange={handleSubcategoryChange}>
@@ -684,7 +689,7 @@ export function CreatePRForm({
           <h2 className="text-ds-sm font-semibold">2. Request details</h2>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <label htmlFor="pr-quantity" className="text-ds-sm font-medium">
+              <label htmlFor="pr-quantity" className="block text-ds-sm font-medium">
                 Quantity
               </label>
               <QuantityInput

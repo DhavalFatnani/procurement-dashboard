@@ -1,9 +1,14 @@
 "use client";
 
+import { CatalogItemStatus } from "@prisma/client";
 import * as React from "react";
 import { toast } from "sonner";
 
-import { createCatalogItem, updateCatalogItemDetails } from "@/app/actions/catalog";
+import {
+  createCatalogItem,
+  updateCatalogItemDetails,
+  updatePendingCatalogItem,
+} from "@/app/actions/catalog";
 import { FormDrawer } from "@/components/shared/Drawer";
 import { Field } from "@/components/shared/Field";
 import { Button } from "@/components/ui/button";
@@ -56,10 +61,16 @@ export function CatalogItemFormDrawer({
     setSubmitting(true);
     try {
       const res = isEdit
-        ? await updateCatalogItemDetails(mode.item.id, {
-            sku: sku.trim() || null,
-            unit,
-          })
+        ? mode.item.status === CatalogItemStatus.PENDING_APPROVAL
+          ? await updatePendingCatalogItem(mode.item.id, {
+              name,
+              sku: sku.trim() || null,
+              unit,
+            })
+          : await updateCatalogItemDetails(mode.item.id, {
+              sku: sku.trim() || null,
+              unit,
+            })
         : await createCatalogItem({
             subcategoryId,
             name,
@@ -114,8 +125,17 @@ export function CatalogItemFormDrawer({
     >
       <form ref={formRef} onSubmit={(e) => void handleSubmit(e)} className="space-y-4">
         {isEdit ? (
-          <Field label="Item name">
-            <Input value={mode.item.name} disabled className="h-8" />
+          <Field label="Item name" required={mode.item.status === CatalogItemStatus.PENDING_APPROVAL}>
+            {mode.item.status === CatalogItemStatus.PENDING_APPROVAL ? (
+              <Input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                required
+                className="h-8"
+              />
+            ) : (
+              <Input value={mode.item.name} disabled className="h-8" />
+            )}
           </Field>
         ) : (
           <>

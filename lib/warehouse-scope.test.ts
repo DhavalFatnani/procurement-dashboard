@@ -4,7 +4,12 @@ import { describe, expect, it } from "vitest";
 import type { SessionUser } from "@/lib/session";
 import {
   assignedWarehouseIds,
+  goodsReceiptViaPoWarehouseWhere,
+  invoiceViaPoWarehouseWhere,
+  purchaseOrderViaPrWarehouseWhere,
+  purchaseRequestWarehouseWhere,
   roleUsesMultiWarehouseAssignment,
+  UNASSIGNED_WAREHOUSE_SCOPE_ID,
   userCanActForWarehouse,
   warehouseIdsFromMetadata,
   warehouseScopeForUser,
@@ -63,10 +68,44 @@ describe("warehouseScopeForUser", () => {
     ).toEqual({ warehouseId: { in: ["w1", "w2"] } });
   });
 
-  it("returns empty scope when unassigned", () => {
+  it("fail-closed when unassigned", () => {
     expect(
       warehouseScopeForUser(session({ role: Role.OPS_HEAD, warehouseIds: [] })),
-    ).toEqual({});
+    ).toEqual({ warehouseId: UNASSIGNED_WAREHOUSE_SCOPE_ID });
+  });
+});
+
+describe("purchaseOrderViaPrWarehouseWhere", () => {
+  it("scopes PO queries via PR warehouse for multiple assignments", () => {
+    expect(
+      purchaseOrderViaPrWarehouseWhere(
+        session({ role: Role.OPS_HEAD, warehouseIds: ["w1", "w2", "w3"] }),
+      ),
+    ).toEqual({
+      purchaseRequest: { warehouseId: { in: ["w1", "w2", "w3"] } },
+    });
+  });
+
+  it("fail-closed nested scope when unassigned", () => {
+    expect(
+      purchaseRequestWarehouseWhere(
+        session({ role: Role.FINANCE, warehouseIds: [] }),
+      ),
+    ).toEqual({ warehouseId: UNASSIGNED_WAREHOUSE_SCOPE_ID });
+    expect(
+      goodsReceiptViaPoWarehouseWhere(
+        session({ role: Role.FINANCE, warehouseIds: [] }),
+      ),
+    ).toEqual({
+      purchaseOrder: { purchaseRequest: { warehouseId: UNASSIGNED_WAREHOUSE_SCOPE_ID } },
+    });
+    expect(
+      invoiceViaPoWarehouseWhere(
+        session({ role: Role.FINANCE, warehouseIds: [] }),
+      ),
+    ).toEqual({
+      purchaseOrder: { purchaseRequest: { warehouseId: UNASSIGNED_WAREHOUSE_SCOPE_ID } },
+    });
   });
 });
 
@@ -91,8 +130,8 @@ describe("userCanActForWarehouse", () => {
     expect(userCanActForWarehouse(user, "w3")).toBe(false);
   });
 
-  it("allows any warehouse when user has no assignment scope", () => {
+  it("denies all warehouses when user has no assignment scope", () => {
     const user = session({ role: Role.OPS_HEAD, warehouseIds: [] });
-    expect(userCanActForWarehouse(user, "any-wh")).toBe(true);
+    expect(userCanActForWarehouse(user, "any-wh")).toBe(false);
   });
 });

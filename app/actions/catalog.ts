@@ -78,6 +78,47 @@ export async function createCatalogItem(data: {
   }
 }
 
+export async function updatePendingCatalogItem(
+  id: string,
+  data: { name: string; sku?: string | null; unit: string },
+): Promise<MutationResult> {
+  await requireRoles([Role.OPS_HEAD]);
+
+  const item = await prisma.catalogItem.findUnique({ where: { id } });
+  if (!item) {
+    return { ok: false, message: "Catalog item not found." };
+  }
+  if (item.status !== CatalogItemStatus.PENDING_APPROVAL) {
+    return {
+      ok: false,
+      message: "Only pending catalog items can be edited before approval.",
+    };
+  }
+
+  const name = normalizeCatalogItemName(data.name);
+  if (name.length < 2) {
+    return { ok: false, message: "Item name must be at least 2 characters." };
+  }
+
+  const unit = data.unit.trim() || "pcs";
+  const sku = data.sku?.trim() || null;
+
+  try {
+    await prisma.catalogItem.update({
+      where: { id },
+      data: { name, sku, unit },
+    });
+  } catch {
+    return {
+      ok: false,
+      message: "An item with this name already exists under that subcategory.",
+    };
+  }
+
+  revalidateCatalogCache();
+  return { ok: true };
+}
+
 export async function updateCatalogItemDetails(
   id: string,
   data: { sku?: string | null; unit: string },

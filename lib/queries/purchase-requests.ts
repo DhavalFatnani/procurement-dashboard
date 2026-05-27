@@ -25,7 +25,7 @@ import {
   type PRLineRow,
 } from "@/lib/purchase-lines";
 import type { SessionUser } from "@/lib/session";
-import { warehouseScopeForUser } from "@/lib/warehouse-scope";
+import { userCanActForWarehouse, warehouseScopeForUser } from "@/lib/warehouse-scope";
 
 export type { PRLineRow };
 
@@ -209,9 +209,9 @@ async function fetchPurchaseRequests(
   const clauses: object[] = [];
 
   const assignedScope = warehouseScopeForUser(user);
-  if (assignedScope.warehouseId) {
-    clauses.push(assignedScope);
-  } else if (filters.warehouseId) {
+  clauses.push(assignedScope);
+
+  if (filters.warehouseId) {
     clauses.push({ warehouseId: filters.warehouseId });
   }
 
@@ -401,6 +401,10 @@ async function fetchPRById(user: SessionUser, id: string): Promise<PRDetail | nu
   }
 
   if (user.role === Role.SM && pr.createdById !== user.id) {
+    return null;
+  }
+
+  if (user.role === Role.OPS_HEAD && !userCanActForWarehouse(user, pr.warehouseId)) {
     return null;
   }
 

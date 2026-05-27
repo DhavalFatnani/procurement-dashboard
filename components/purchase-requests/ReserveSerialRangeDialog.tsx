@@ -10,7 +10,7 @@ import {
   AlertDialogFooter,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { BarcodeLabelConfigSection } from "@/components/purchase-requests/BarcodeLabelConfigSection";
+import { BarcodeLabelSetupPanel } from "@/components/purchase-requests/BarcodeLabelSetupPanel";
 import { ReserveSerialBatchPanel } from "@/components/purchase-requests/ReserveSerialBatchPanel";
 import type { BarcodeLabelConfig } from "@/lib/barcode-label-config";
 import { formatSerialBatchLabel } from "@/lib/display-ref";
@@ -69,9 +69,8 @@ export function ReserveSerialRangeDialog({
     <AlertDialog open={open} onOpenChange={(next) => !reserving && onOpenChange(next)}>
       <AlertDialogContent
         size="wide"
-        className="flex max-h-[min(94vh,920px)] min-w-0 flex-col gap-0 overflow-hidden p-0"
+        className="flex max-h-[min(94vh,920px)] min-h-0 min-w-0 flex-col gap-0 overflow-hidden p-0"
       >
-        {/* Header */}
         <header className="shrink-0 border-b border-border-subtle bg-gradient-to-br from-card via-card to-muted/30 px-5 py-5 sm:px-6">
           <div className="flex items-start gap-4">
             <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary shadow-ds">
@@ -89,31 +88,30 @@ export function ReserveSerialRangeDialog({
           </div>
         </header>
 
-        {/* Body — side-by-side only when the modal is wide enough */}
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="grid gap-0 lg:grid-cols-[minmax(300px,22rem)_minmax(0,1fr)] lg:divide-x lg:divide-border-subtle">
-            <div className="min-w-0 bg-muted/15 px-6 py-6 lg:px-7">
-              <ReserveSerialBatchPanel
-                batchLabel={batchLabel}
-                rangeStart={rangeStart}
-                rangeEnd={rangeEnd}
-                quantity={quantity}
-                seriesPrefix={seriesPrefix}
-                seriesName={seriesName}
-                categoryName={categoryName}
-                warehouseLabel={warehouseLabel}
-              />
-            </div>
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain lg:flex-row lg:overflow-hidden">
+          <div className="shrink-0 border-b border-border-subtle bg-muted/15 px-5 py-5 lg:max-h-full lg:w-[min(100%,22rem)] lg:shrink-0 lg:overflow-y-auto lg:border-b-0 lg:border-r lg:px-6 lg:py-6">
+            <ReserveSerialBatchPanel
+              batchLabel={batchLabel}
+              rangeStart={rangeStart}
+              rangeEnd={rangeEnd}
+              quantity={quantity}
+              seriesPrefix={seriesPrefix}
+              seriesName={seriesName}
+              categoryName={categoryName}
+              warehouseLabel={warehouseLabel}
+            />
+          </div>
 
-            <div className="min-w-0 border-t border-border-subtle px-6 py-6 lg:border-t-0 lg:px-7">
-              <BarcodeLabelConfigSection
-                embedded
+          <div className="min-h-0 min-w-0 flex-1 lg:overflow-y-auto lg:overscroll-contain">
+            <div className="px-5 py-5 lg:px-6 lg:py-6">
+              <BarcodeLabelSetupPanel
                 config={labelConfig}
                 onChange={onLabelConfigChange}
                 disabled={reserving}
                 layoutLocked={layoutLocked}
                 onLockLayout={onLockLayout}
                 onUnlockLayout={onUnlockLayout}
+                series={series}
                 seriesName={seriesName}
                 sampleSerial={rangeStart}
               />
@@ -121,7 +119,6 @@ export function ReserveSerialRangeDialog({
           </div>
         </div>
 
-        {/* Status */}
         <div className="shrink-0 border-t border-border-subtle px-5 py-3 sm:px-6">
           {waitMessage ? (
             <div
@@ -145,7 +142,6 @@ export function ReserveSerialRangeDialog({
           )}
         </div>
 
-        {/* Footer */}
         <AlertDialogFooter className="mx-0 mb-0 shrink-0 flex-col gap-2 border-t border-border-subtle bg-card px-5 py-4 sm:flex-row sm:justify-between sm:px-6">
           <p className="hidden text-ds-xs text-muted-foreground sm:block sm:max-w-[240px] sm:self-center">
             {quantity} {quantity === 1 ? "page" : "pages"} will print after reserve.

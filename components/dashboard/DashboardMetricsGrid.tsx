@@ -81,7 +81,7 @@ export function DashboardMetricsGrid({
         <MetricTile
           label="Draft requests"
           value={metrics.draftPurchaseRequests}
-          hint="Your warehouse"
+          hint="Assigned warehouses"
           icon={FileText}
           iconTone="neutral"
           href="/purchase-requests?status=DRAFT"

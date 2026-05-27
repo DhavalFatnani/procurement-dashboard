@@ -13,6 +13,7 @@ import {
 } from "@/lib/queries/serial";
 import { ACCESS } from "@/lib/route-access";
 import { assertRole, getRequestSession } from "@/lib/session";
+import { assignedWarehouseIds } from "@/lib/warehouse-scope";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
@@ -53,7 +54,7 @@ export default async function SerialGovernancePage({
     }
   } else if (tab === "warehouses") {
     warehouseSnapshots = await getWarehouseSeriesSnapshot({
-      ensureWarehouseIds: user.warehouseId ? [user.warehouseId] : [],
+      ensureWarehouseIds: assignedWarehouseIds(user),
     });
   }
 

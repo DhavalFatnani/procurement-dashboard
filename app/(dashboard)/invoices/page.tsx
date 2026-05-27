@@ -48,7 +48,7 @@ async function InvoicesTableLoader({
     paymentStatus: parsed.paymentStatus || undefined,
     vendorId: parsed.vendorId || undefined,
     poId: parsed.poId || undefined,
-    scopeWarehouseIds: scopeWarehouseIds.length > 0 ? scopeWarehouseIds : undefined,
+    scopeWarehouseIds,
     dateFrom: parsed.dateFrom || undefined,
     dateTo: parsed.dateTo || undefined,
     uploadedById: user.role === Role.SM ? user.id : undefined,

@@ -6,6 +6,7 @@ import { parseGRNPageParams } from "@/lib/list-search-params";
 import { getGRNFilterOptions, getGRNs } from "@/lib/queries/grn";
 import { ACCESS } from "@/lib/route-access";
 import { assertRole, getRequestSession } from "@/lib/session";
+import { assignedWarehouseIds } from "@/lib/warehouse-scope";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
@@ -33,6 +34,7 @@ async function GRNTableLoader({
 }: {
   parsed: ReturnType<typeof parseGRNPageParams>;
 }) {
+  const user = assertRole(await getRequestSession(), [...ACCESS.goodsReceipt]);
   const filterOptions = await getGRNFilterOptions();
   const rows = await getGRNs({
     poId: parsed.poId || undefined,
@@ -45,6 +47,7 @@ async function GRNTableLoader({
         : parsed.hasExceptions === "no"
           ? false
           : undefined,
+    scopeWarehouseIds: assignedWarehouseIds(user),
     page: parsed.page,
     includeExactCount: parsed.includeExactCount,
   });

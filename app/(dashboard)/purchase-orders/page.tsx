@@ -53,7 +53,7 @@ async function PurchaseOrdersTableLoader({
           status: parsed.status || undefined,
           vendorId: parsed.vendorId || undefined,
           warehouseId: parsed.warehouseId || undefined,
-          scopeWarehouseIds: scopeWarehouseIds.length > 0 ? scopeWarehouseIds : undefined,
+          scopeWarehouseIds,
           dateFrom: parsed.dateFrom || undefined,
           dateTo: parsed.dateTo || undefined,
           page: parsed.page,
@@ -64,7 +64,7 @@ async function PurchaseOrdersTableLoader({
 
   const awaitingPanel = showAwaitingPRPanel(user.role) ? (
     <Suspense fallback={null}>
-      <AwaitingPRPanelLoader fulfillPrId={fulfillPrId || undefined} />
+      <AwaitingPRPanelLoader user={user} fulfillPrId={fulfillPrId || undefined} />
     </Suspense>
   ) : null;
 

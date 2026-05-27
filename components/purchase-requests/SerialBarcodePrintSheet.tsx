@@ -8,6 +8,7 @@ import {
   DEFAULT_BARCODE_LABEL_CONFIG,
   jsBarcodeOptionsFromConfig,
 } from "@/lib/barcode-label-config";
+import { getBarcodePrintBarcodeHeight, printBarcodeLabelGrid } from "@/lib/barcode-print-document";
 import { listSerialNumbersInRange, serialPrintSessionKey } from "@/lib/serial-range";
 
 const LABEL_BATCH_SIZE = 24;
@@ -38,27 +39,45 @@ function createLabelElement(
   const article = document.createElement("article");
   article.className = "serial-label";
 
+  const content = document.createElement("div");
+  content.className = "serial-label-content";
+
   const brand = document.createElement("p");
   brand.className = "serial-label-brand";
   brand.textContent = "KNOT";
+
+  const stack = document.createElement("div");
+  stack.className = "serial-label-stack";
 
   const barcodeWrap = document.createElement("div");
   barcodeWrap.className = "serial-label-barcode";
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("role", "img");
   svg.setAttribute("aria-label", `Barcode ${serial}`);
-  JsBarcode(svg, serial, jsBarcodeOptionsFromConfig(config));
+  JsBarcode(svg, serial, {
+    ...jsBarcodeOptionsFromConfig(config),
+    height: getBarcodePrintBarcodeHeight(config),
+  });
   barcodeWrap.appendChild(svg);
+  stack.appendChild(barcodeWrap);
+
+  if (config.showBarcodeValue) {
+    const serialValue = document.createElement("p");
+    serialValue.className = "serial-label-value";
+    serialValue.textContent = serial;
+    stack.appendChild(serialValue);
+  }
 
   if (config.showSeriesName) {
     const series = document.createElement("p");
     series.className = "serial-label-series";
     series.textContent = seriesName;
-    article.append(brand, barcodeWrap, series);
-  } else {
-    article.append(brand, barcodeWrap);
+    stack.appendChild(series);
   }
 
+  content.append(brand, stack);
+
+  article.appendChild(content);
   return article;
 }
 
@@ -75,7 +94,7 @@ async function renderLabelsInBatches(
   config: BarcodeLabelConfig,
   JsBarcode: JsBarcodeFn,
   onProgress?: (completed: number, total: number) => void,
-): Promise<void> {
+): Promise<HTMLElement> {
   applyBarcodeLabelConfigToRoot(root, config);
   root.replaceChildren();
   const grid = document.createElement("div");
@@ -94,6 +113,8 @@ async function renderLabelsInBatches(
     onProgress?.(Math.min(index + batch.length, total), total);
     await waitForNextFrame();
   }
+
+  return grid;
 }
 
 export function SerialBarcodePrintSheet({
@@ -129,7 +150,7 @@ export function SerialBarcodePrintSheet({
         return;
       }
 
-      await renderLabelsInBatches(
+      const grid = await renderLabelsInBatches(
         rootRef.current,
         serials,
         seriesName,
@@ -155,7 +176,7 @@ export function SerialBarcodePrintSheet({
       await waitForNextFrame();
 
       if (!cancelled) {
-        window.print();
+        await printBarcodeLabelGrid(grid, labelConfigRef.current);
         onStatusChangeRef.current?.("done");
       }
     })();
@@ -165,7 +186,7 @@ export function SerialBarcodePrintSheet({
     };
   }, [autoPrint, reservationId, serials, seriesName, labelConfig]);
 
-  return (
-    <div id="serial-barcode-print-root" ref={rootRef} className="hidden print:block" aria-hidden />
-  );
+  return <div id="serial-barcode-print-root" ref={rootRef} aria-hidden />;
 }
+
+export default SerialBarcodePrintSheet;
