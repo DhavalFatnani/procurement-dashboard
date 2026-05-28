@@ -7,6 +7,7 @@ import { getDashboardMetricsForSession } from "@/lib/queries/dashboard";
 import { getPrCreationSparkline } from "@/lib/queries/dashboard-extras";
 import type { SessionUser } from "@/lib/session";
 import { assignedWarehouseIds } from "@/lib/warehouse-scope";
+import { timed } from "@/lib/server-timing";
 
 export async function DashboardOverviewSection({
   user,
@@ -16,8 +17,11 @@ export async function DashboardOverviewSection({
   displayName: string;
 }) {
   const [metrics, sparkline] = await dbParallel(
-    () => getDashboardMetricsForSession(user),
-    () => getPrCreationSparkline({ warehouseIds: assignedWarehouseIds(user) }),
+    () => timed("dashboard.metrics", () => getDashboardMetricsForSession(user)),
+    () =>
+      timed("dashboard.sparkline", () =>
+        getPrCreationSparkline({ warehouseIds: assignedWarehouseIds(user) }),
+      ),
   );
 
   const isOps = user.role === Role.OPS_HEAD;

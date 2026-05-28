@@ -16,6 +16,7 @@ import {
 } from "@/lib/queries/dashboard-extras";
 import { assertRole, getRequestSession } from "@/lib/session";
 import { assignedWarehouseIds } from "@/lib/warehouse-scope";
+import { timed } from "@/lib/server-timing";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +26,7 @@ export default async function DashboardHomePage() {
     (typeof user.user_metadata?.name === "string" && user.user_metadata.name) ||
     user.email ||
     "User";
+  const scopeWarehouseIds = assignedWarehouseIds(user);
 
   return (
     <div className="page-stack">
@@ -56,10 +58,10 @@ export default async function DashboardHomePage() {
 
       <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr]">
         <Suspense fallback={<Skeleton className="h-52 rounded-2xl" />}>
-          <PODistributionSection />
+          <PODistributionSection scopeWarehouseIds={scopeWarehouseIds} />
         </Suspense>
         <Suspense fallback={<Skeleton className="h-52 rounded-2xl" />}>
-          <ActivitySection />
+          <ActivitySection scopeWarehouseIds={scopeWarehouseIds} />
         </Suspense>
       </div>
 
@@ -68,16 +70,24 @@ export default async function DashboardHomePage() {
   );
 }
 
-async function PODistributionSection() {
-  const user = assertRole(await getRequestSession(), [...ACCESS.dashboard]);
-  const scopeWarehouseIds = assignedWarehouseIds(user);
-  const stages = await getPOStageDistribution(scopeWarehouseIds);
+async function PODistributionSection({
+  scopeWarehouseIds,
+}: {
+  scopeWarehouseIds: string[];
+}) {
+  const stages = await timed("dashboard.poStages", () =>
+    getPOStageDistribution(scopeWarehouseIds),
+  );
   return <POStageDistributionCard stages={stages} />;
 }
 
-async function ActivitySection() {
-  const user = assertRole(await getRequestSession(), [...ACCESS.dashboard]);
-  const scopeWarehouseIds = assignedWarehouseIds(user);
-  const items = await getRecentActivity(scopeWarehouseIds, 8);
+async function ActivitySection({
+  scopeWarehouseIds,
+}: {
+  scopeWarehouseIds: string[];
+}) {
+  const items = await timed("dashboard.recentActivity", () =>
+    getRecentActivity(scopeWarehouseIds, 8),
+  );
   return <RecentActivityCard items={items} />;
 }

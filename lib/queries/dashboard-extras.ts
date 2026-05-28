@@ -1,6 +1,6 @@
 import { POStatus, Prisma } from "@prisma/client";
 
-import { dbSerial } from "@/lib/db-serial";
+import { dbParallel } from "@/lib/db-parallel";
 import { prisma } from "@/lib/prisma";
 import {
   goodsReceiptWhereFromScopeIds,
@@ -72,7 +72,7 @@ export async function getRecentActivity(
   const grnWhere = goodsReceiptWhereFromScopeIds(scopeWarehouseIds);
   const invoiceWhere = invoiceWhereFromScopeIds(scopeWarehouseIds);
 
-  const [prs, pos, grns, invoices, payments] = await dbSerial(
+  const [prs, pos, grns, invoices, payments] = await dbParallel(
     () =>
       prisma.purchaseRequest.findMany({
         where: prWhere,

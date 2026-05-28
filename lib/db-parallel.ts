@@ -1,6 +1,6 @@
 import { dbSerial } from "@/lib/db-serial";
 
-const LOCAL_PARALLEL_CAP = 3;
+const LOCAL_PARALLEL_CAP = 2;
 
 /**
  * True for Prisma Accelerate (`prisma://`) or explicit local opt-in.
