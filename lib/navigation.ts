@@ -1,4 +1,7 @@
-import { Role } from "@prisma/client";
+// See note in `types/index.ts`: import enums from the dependency-free `enums`
+// module, not the `@/lib/prisma-client` barrel, so this file stays Edge-safe
+// (middleware → `defaultLandingFor` pulls it into the Edge Runtime bundle).
+import { Role } from "@/lib/generated/prisma/enums";
 
 export type NavIconId =
   | "inbox"

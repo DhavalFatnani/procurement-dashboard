@@ -1,6 +1,6 @@
 "use client";
 
-import { Role } from "@prisma/client";
+import { Role } from "@/lib/prisma-enums";
 import {
   Building2,
   FilePlus,

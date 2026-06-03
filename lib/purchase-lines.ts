@@ -1,4 +1,4 @@
-import { SerialSeries, type GRNExceptionType } from "@prisma/client";
+import { SerialSeries, type GRNExceptionType } from "@/lib/prisma-enums";
 
 export type PRLineItemRow = {
   id: string;

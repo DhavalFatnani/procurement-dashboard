@@ -1,6 +1,6 @@
 "use client";
 
-import { ExecutionType } from "@prisma/client";
+import { ExecutionType } from "@/lib/prisma-enums";
 import { ClipboardList, Hash, Warehouse } from "lucide-react";
 
 import { ExecutionTypeBadge } from "@/components/shared/ExecutionTypeBadge";

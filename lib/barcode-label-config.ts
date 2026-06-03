@@ -1,5 +1,5 @@
 /** Page setup and label layout for internal-print barcode sheets. */
-import { SerialSeries } from "@prisma/client";
+import { SerialSeries } from "@/lib/prisma-enums";
 
 export type BarcodePageSize =
   | "a4"

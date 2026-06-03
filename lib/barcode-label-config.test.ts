@@ -1,4 +1,4 @@
-import { SerialSeries } from "@prisma/client";
+import { SerialSeries } from "@/lib/prisma-enums";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {

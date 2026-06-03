@@ -1,6 +1,6 @@
 "use server";
 
-import { GRNExceptionResolution, Role } from "@prisma/client";
+import { GRNExceptionResolution, Role } from "@/lib/prisma-enums";
 import { revalidatePath } from "next/cache";
 
 import type { MutationResult } from "@/lib/action-result";

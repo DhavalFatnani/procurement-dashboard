@@ -3,7 +3,7 @@ import {
   PaymentStatus,
   POStatus,
   type Prisma,
-} from "@prisma/client";
+} from "@/lib/prisma-client";
 
 import { sumOrderedQty } from "@/lib/purchase-lines";
 import { sumPaymentAmounts } from "@/lib/payment-totals";

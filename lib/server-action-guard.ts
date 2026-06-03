@@ -1,6 +1,6 @@
 import "server-only";
 
-import { Role } from "@prisma/client";
+import { Role } from "@/lib/prisma-enums";
 
 import { getRequestSession } from "@/lib/session";
 

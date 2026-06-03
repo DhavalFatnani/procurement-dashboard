@@ -1,6 +1,6 @@
 "use client";
 
-import { GRNExceptionType } from "@prisma/client";
+import { GRNExceptionType } from "@/lib/prisma-enums";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import * as React from "react";

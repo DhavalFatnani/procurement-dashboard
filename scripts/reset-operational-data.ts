@@ -4,12 +4,19 @@
  *
  * Usage: dotenv -e .env.local -- tsx scripts/reset-operational-data.ts
  */
-import { PrismaClient } from "@prisma/client";
+import { PrismaPg } from "@prisma/adapter-pg";
+import { PrismaClient } from "@/lib/prisma-client";
 import * as dotenv from "dotenv";
 
 dotenv.config({ path: ".env.local" });
 
-const prisma = new PrismaClient();
+// Prisma 7: connect to Supabase via the node-postgres driver adapter (matches
+// lib/prisma.ts).
+const adapter = new PrismaPg({
+  connectionString: process.env.DATABASE_URL ?? "",
+  ssl: { rejectUnauthorized: false },
+});
+const prisma = new PrismaClient({ adapter });
 
 const TRUNCATE_TABLES = [
   "Payment",

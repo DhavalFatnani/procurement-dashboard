@@ -1,4 +1,4 @@
-import { Role } from "@prisma/client";
+import { Role } from "@/lib/prisma-enums";
 import type { LucideIcon } from "lucide-react";
 import {
   BarChart3,

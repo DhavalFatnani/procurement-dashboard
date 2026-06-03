@@ -1,4 +1,4 @@
-import { Prisma, SerialSeries } from "@prisma/client";
+import { Prisma, SerialSeries } from "@/lib/prisma-client";
 
 import { getCachedSeriesConfigs, getCachedWarehouses } from "@/lib/cache";
 import { dbParallel } from "@/lib/db-parallel";
@@ -153,32 +153,32 @@ export async function getSeriesUsageSummary(): Promise<SeriesUsageSummary[]> {
     );
     const seriesStart = getSeriesStartNumber(series);
 
-    const [agg, warehouseGrouped, latest] = await dbParallel(
-      () =>
-        prisma.serialReservation.aggregate({
-          where: validWhere,
-          _count: { _all: true },
-          _max: { rangeEnd: true },
-        }),
-      () =>
-        prisma.serialReservation.groupBy({
-          by: ["warehouseId"],
-          where: validWhere,
-          _count: { _all: true },
-          _max: { rangeEnd: true },
-        }),
-      () =>
-        prisma.serialReservation.findFirst({
-          where: validWhere,
-          orderBy: { createdAt: "desc" },
-          select: {
-            createdAt: true,
-            poId: true,
-            prId: true,
-            createdBy: { select: { name: true } },
-          },
-        }),
-    );
+    // Native Promise.all here (not dbParallel): its built-in tuple overloads
+    // infer groupBy's heavy result type precisely, whereas dbParallel's variadic
+    // signature degrades `_count`/`_max` to a union. Same parallelism either way.
+    const [agg, warehouseGrouped, latest] = await Promise.all([
+      prisma.serialReservation.aggregate({
+        where: validWhere,
+        _count: { _all: true },
+        _max: { rangeEnd: true },
+      }),
+      prisma.serialReservation.groupBy({
+        by: ["warehouseId"],
+        where: validWhere,
+        _count: { _all: true },
+        _max: { rangeEnd: true },
+      }),
+      prisma.serialReservation.findFirst({
+        where: validWhere,
+        orderBy: { createdAt: "desc" },
+        select: {
+          createdAt: true,
+          poId: true,
+          prId: true,
+          createdBy: { select: { name: true } },
+        },
+      }),
+    ]);
 
     const lastEnd = agg._max.rangeEnd ?? null;
     const nextStart = computeNextRangeStart(series, lastEnd);

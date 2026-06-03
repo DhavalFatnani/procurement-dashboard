@@ -1,6 +1,6 @@
 "use server";
 
-import { InvoiceMatchStatus, PaymentStatus, Prisma, Role } from "@prisma/client";
+import { InvoiceMatchStatus, PaymentStatus, Prisma, Role } from "@/lib/prisma-client";
 
 import { applyPOClosureInTransaction, PO_CLOSURE_TX_OPTS } from "@/lib/poAutoClose";
 import type { Paginated } from "@/lib/pagination";

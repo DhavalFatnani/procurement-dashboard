@@ -1,4 +1,4 @@
-import type { SerialSeries } from "@prisma/client";
+import type { SerialSeries } from "@/lib/prisma-enums";
 
 import type { ReservationEventType } from "@/lib/serial-series";
 

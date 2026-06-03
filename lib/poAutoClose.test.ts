@@ -1,4 +1,4 @@
-import { InvoiceMatchStatus, PaymentStatus, POStatus, Prisma } from "@prisma/client";
+import { InvoiceMatchStatus, PaymentStatus, POStatus, Prisma } from "@/lib/prisma-client";
 import { describe, expect, it } from "vitest";
 
 import { buildClosureSnapshot, type POWithRelations } from "@/lib/po-closure-snapshot";

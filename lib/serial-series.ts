@@ -1,4 +1,5 @@
-import { ExecutionType, SerialSeries, type Prisma } from "@prisma/client";
+import { ExecutionType, SerialSeries } from "@/lib/prisma-enums";
+import type { Prisma } from "@/lib/prisma-client";
 
 /** Maximum serial numbers per internal print job. */
 export const MAX_INTERNAL_PRINT_QUANTITY = 1000;

@@ -1,4 +1,4 @@
-import { Role } from "@prisma/client";
+import { Role } from "@/lib/prisma-enums";
 import { notFound, redirect } from "next/navigation";
 
 import { getSerialReservationByPRId } from "@/app/actions/serial";

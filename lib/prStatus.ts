@@ -1,4 +1,4 @@
-import { PRStatus } from "@prisma/client";
+import { PRStatus } from "@/lib/prisma-enums";
 
 const ALLOWED: Partial<Record<PRStatus, readonly PRStatus[]>> = {
   [PRStatus.DRAFT]: [PRStatus.PENDING_APPROVAL, PRStatus.CANCELLED, PRStatus.EXECUTED_PRINT],

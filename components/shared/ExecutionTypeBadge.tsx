@@ -1,4 +1,4 @@
-import { ExecutionType } from "@prisma/client";
+import { ExecutionType } from "@/lib/prisma-enums";
 
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";

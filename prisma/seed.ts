@@ -6,8 +6,9 @@ import {
   PRStatus,
   VendorStatus,
   CatalogItemStatus,
-} from "@prisma/client";
+} from "@/lib/prisma-client";
 import { randomUUID } from "crypto";
+import { PrismaPg } from "@prisma/adapter-pg";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import * as dotenv from "dotenv";
 
@@ -15,7 +16,13 @@ import { getSeriesStartNumber } from "../lib/serial-series";
 
 dotenv.config({ path: ".env.local" });
 
-const prisma = new PrismaClient();
+// Prisma 7: connect to Supabase via the node-postgres driver adapter (matches
+// lib/prisma.ts).
+const adapter = new PrismaPg({
+  connectionString: process.env.DATABASE_URL ?? "",
+  ssl: { rejectUnauthorized: false },
+});
+const prisma = new PrismaClient({ adapter });
 
 const PASSWORD = process.env.SEED_AUTH_PASSWORD;
 if (!PASSWORD) {

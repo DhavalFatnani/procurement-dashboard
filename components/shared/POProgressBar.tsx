@@ -1,6 +1,6 @@
 "use client";
 
-import { POStatus } from "@prisma/client";
+import { POStatus } from "@/lib/prisma-enums";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import * as React from "react";
 

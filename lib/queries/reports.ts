@@ -1,4 +1,4 @@
-import { InvoiceMatchStatus, PaymentStatus, PRStatus } from "@prisma/client";
+import { InvoiceMatchStatus, PaymentStatus, PRStatus } from "@/lib/prisma-enums";
 
 import { dbSerial } from "@/lib/db-serial";
 import { prisma } from "@/lib/prisma";

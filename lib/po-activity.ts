@@ -1,4 +1,4 @@
-import { GRNExceptionResolution } from "@prisma/client";
+import { GRNExceptionResolution } from "@/lib/prisma-enums";
 
 import type { PODetail } from "@/lib/queries/purchase-orders";
 

@@ -1,7 +1,7 @@
 import { cache } from "react";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { Role } from "@prisma/client";
+import { Role } from "@/lib/prisma-enums";
 
 import { getVerifiedIdentity } from "@/lib/auth-claims";
 import { identityFromHeaders, warehouseIdFromMetadata } from "@/lib/auth-headers";

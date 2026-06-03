@@ -1,4 +1,4 @@
-import { Role } from "@prisma/client";
+import { Role } from "@/lib/prisma-enums";
 
 import { PageHeader } from "@/components/shared/PageHeader";
 import { listBreadcrumbs } from "@/lib/lineage";

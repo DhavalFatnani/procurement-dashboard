@@ -1,6 +1,6 @@
 "use client";
 
-import { ExecutionType, PRStatus, Role } from "@prisma/client";
+import { ExecutionType, PRStatus, Role } from "@/lib/prisma-enums";
 import { useRouter } from "next/navigation";
 import { useOptimistic } from "react";
 import * as React from "react";

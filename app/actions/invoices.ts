@@ -1,6 +1,6 @@
 "use server";
 
-import { Role } from "@prisma/client";
+import { Role } from "@/lib/prisma-enums";
 
 import type { MutationResult } from "@/lib/action-result";
 import { computeInvoiceMatchFromExpected } from "@/lib/invoiceMatch";

@@ -1,6 +1,6 @@
 "use client";
 
-import { SerialSeries } from "@prisma/client";
+import { SerialSeries } from "@/lib/prisma-enums";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useRouter } from "next/navigation";
 import * as React from "react";

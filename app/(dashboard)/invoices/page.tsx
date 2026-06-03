@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import { Role } from "@prisma/client";
+import { Role } from "@/lib/prisma-enums";
 import { redirect } from "next/navigation";
 
 import { InvoicesView } from "@/components/invoices/InvoicesView";

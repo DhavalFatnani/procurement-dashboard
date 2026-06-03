@@ -1,6 +1,6 @@
 "use client";
 
-import { Role, VendorStatus } from "@prisma/client";
+import { Role, VendorStatus } from "@/lib/prisma-enums";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import * as React from "react";

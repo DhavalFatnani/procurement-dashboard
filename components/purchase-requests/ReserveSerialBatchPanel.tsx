@@ -1,7 +1,7 @@
 "use client";
 
 import { ExecutionTypeBadge } from "@/components/shared/ExecutionTypeBadge";
-import { ExecutionType } from "@prisma/client";
+import { ExecutionType } from "@/lib/prisma-enums";
 import { ArrowRight, Hash, Tags, Warehouse } from "lucide-react";
 
 export function ReserveSerialBatchPanel({

@@ -1,6 +1,6 @@
 "use client";
 
-import { SerialSeries } from "@prisma/client";
+import { SerialSeries } from "@/lib/prisma-enums";
 import * as React from "react";
 
 import { DateRangeFilter } from "@/components/shared/DateRangeFilter";

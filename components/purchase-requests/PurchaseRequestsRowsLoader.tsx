@@ -1,4 +1,4 @@
-import { ExecutionType, PRStatus } from "@prisma/client";
+import { ExecutionType, PRStatus } from "@/lib/prisma-enums";
 
 import { PurchaseRequestsTable } from "@/components/purchase-requests/PurchaseRequestsTable";
 import { dbParallel } from "@/lib/db-parallel";

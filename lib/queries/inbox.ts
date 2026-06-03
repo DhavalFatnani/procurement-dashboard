@@ -4,7 +4,7 @@ import {
   POStatus,
   PRStatus,
   Role,
-} from "@prisma/client";
+} from "@/lib/prisma-enums";
 
 import { dbSerial } from "@/lib/db-serial";
 import { cachedQuery, LIST_CACHE_TAGS, stableFilterKey } from "@/lib/list-cache";

@@ -1,6 +1,6 @@
 "use client";
 
-import { InvoiceMatchStatus, PaymentStatus, Role } from "@prisma/client";
+import { InvoiceMatchStatus, PaymentStatus, Role } from "@/lib/prisma-enums";
 import { useSearchParams } from "next/navigation";
 import { AlertTriangle, FileText } from "lucide-react";
 import * as React from "react";

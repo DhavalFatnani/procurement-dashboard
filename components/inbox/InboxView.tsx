@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Role } from "@prisma/client";
+import { Role } from "@/lib/prisma-enums";
 import {
   AlertTriangle,
   ArrowRight,

@@ -1,4 +1,4 @@
-import { InvoiceMatchStatus } from "@prisma/client";
+import { InvoiceMatchStatus } from "@/lib/prisma-enums";
 
 export type InvoiceMatchResult = {
   expectedAmount: number | null;

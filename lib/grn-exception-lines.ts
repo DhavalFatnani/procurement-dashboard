@@ -1,4 +1,4 @@
-import type { GRNExceptionResolution, GRNExceptionType } from "@prisma/client";
+import type { GRNExceptionResolution, GRNExceptionType } from "@/lib/prisma-enums";
 
 export type GrnExceptionSnapshot = {
   id: string;

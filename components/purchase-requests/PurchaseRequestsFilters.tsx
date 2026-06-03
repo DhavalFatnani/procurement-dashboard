@@ -1,6 +1,6 @@
 "use client";
 
-import { ExecutionType, PRStatus, Role } from "@prisma/client";
+import { ExecutionType, PRStatus, Role } from "@/lib/prisma-enums";
 import * as React from "react";
 
 import type {

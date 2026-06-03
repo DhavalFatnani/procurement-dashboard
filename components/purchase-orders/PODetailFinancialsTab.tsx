@@ -1,6 +1,6 @@
 "use client";
 
-import { InvoiceMatchStatus, Role } from "@prisma/client";
+import { InvoiceMatchStatus, Role } from "@/lib/prisma-enums";
 import Link from "next/link";
 import * as React from "react";
 import { toast } from "sonner";

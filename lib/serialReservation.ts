@@ -4,7 +4,7 @@ import {
   Prisma,
   SerialSeries,
   type SerialReservation,
-} from "@prisma/client";
+} from "@/lib/prisma-client";
 
 import { logger } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";

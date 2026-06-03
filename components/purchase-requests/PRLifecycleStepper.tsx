@@ -1,6 +1,6 @@
 "use client";
 
-import { ExecutionType, PRStatus } from "@prisma/client";
+import { ExecutionType, PRStatus } from "@/lib/prisma-enums";
 
 import { HorizontalStepper, type StepperStep } from "@/components/shared/Stepper";
 

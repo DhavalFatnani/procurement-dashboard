@@ -1,6 +1,6 @@
 "use client";
 
-import { CatalogItemStatus } from "@prisma/client";
+import { CatalogItemStatus } from "@/lib/prisma-enums";
 import { Package, Plus } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import * as React from "react";

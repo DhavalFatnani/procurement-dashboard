@@ -1,4 +1,4 @@
-import { ExecutionType, PRStatus, Prisma, SerialSeries } from "@prisma/client";
+import { ExecutionType, PRStatus, Prisma, SerialSeries } from "@/lib/prisma-client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock the prisma singleton before importing the module under test.

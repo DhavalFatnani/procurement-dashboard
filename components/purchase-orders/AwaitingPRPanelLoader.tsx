@@ -1,4 +1,4 @@
-import { Role } from "@prisma/client";
+import { Role } from "@/lib/prisma-enums";
 
 import { ApprovedPRsAwaitingPO } from "@/components/purchase-orders/ApprovedPRsAwaitingPO";
 import {

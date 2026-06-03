@@ -7,7 +7,7 @@ import {
   POStatus,
   PRStatus,
   type Prisma,
-} from "@prisma/client";
+} from "@/lib/prisma-client";
 
 import { getCachedActiveVendorOptions, getCachedWarehouses } from "@/lib/cache";
 import { dbParallel } from "@/lib/db-parallel";
@@ -229,19 +229,19 @@ async function fetchPurchaseOrders(
     return { ...paginated, items: [] };
   }
 
-  const [grnAgg, invoiceRows] = await dbParallel(
-    () =>
-      prisma.goodsReceipt.groupBy({
-        by: ["poId"],
-        where: { poId: { in: poIds } },
-        _sum: { acceptedQty: true },
-      }),
-    () =>
-      prisma.invoice.findMany({
-        where: { poId: { in: poIds } },
-        select: { poId: true, matchStatus: true, paymentStatus: true },
-      }),
-  );
+  // Native Promise.all (not dbParallel): its tuple overloads infer groupBy's
+  // `_sum` precisely; dbParallel's variadic signature degrades it to optional.
+  const [grnAgg, invoiceRows] = await Promise.all([
+    prisma.goodsReceipt.groupBy({
+      by: ["poId"],
+      where: { poId: { in: poIds } },
+      _sum: { acceptedQty: true },
+    }),
+    prisma.invoice.findMany({
+      where: { poId: { in: poIds } },
+      select: { poId: true, matchStatus: true, paymentStatus: true },
+    }),
+  ]);
 
   const receivedByPo = new Map(
     grnAgg.map((row) => [row.poId, row._sum.acceptedQty ?? 0]),

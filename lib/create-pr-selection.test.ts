@@ -1,4 +1,4 @@
-import { ExecutionType } from "@prisma/client";
+import { ExecutionType } from "@/lib/prisma-enums";
 import { describe, expect, it } from "vitest";
 
 import {

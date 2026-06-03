@@ -1,4 +1,4 @@
-import { ExecutionType, PRStatus } from "@prisma/client";
+import { ExecutionType, PRStatus } from "@/lib/prisma-enums";
 import { describe, expect, it } from "vitest";
 
 import {

@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import * as React from "react";
-import { SerialSeries } from "@prisma/client";
+import { SerialSeries } from "@/lib/prisma-enums";
 
 import { BarcodeFontSizeStepper } from "@/components/purchase-requests/BarcodeFontSizeStepper";
 import { BarcodeLabelPreview } from "@/components/purchase-requests/BarcodeLabelPreview";

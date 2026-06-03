@@ -1,7 +1,7 @@
 "use client";
 
-import type { VendorStatus } from "@prisma/client";
-import { Role } from "@prisma/client";
+import type { VendorStatus } from "@/lib/prisma-enums";
+import { Role } from "@/lib/prisma-enums";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 

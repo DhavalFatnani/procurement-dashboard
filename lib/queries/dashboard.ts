@@ -1,5 +1,5 @@
 import { unstable_cache } from "next/cache";
-import { Prisma, Role } from "@prisma/client";
+import { Prisma, Role } from "@/lib/prisma-client";
 
 import { prisma } from "@/lib/prisma";
 import type { SessionUser } from "@/lib/session";

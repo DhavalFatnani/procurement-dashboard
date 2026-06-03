@@ -1,11 +1,12 @@
 generator client {
-  provider = "prisma-client-js"
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  provider = "postgresql"
+  // Prisma 7: connection URLs live in prisma.config.ts (CLI/migrations) and are
+  // passed to PrismaClient via `accelerateUrl` at runtime (see lib/prisma.ts).
 }
 
 // --- ENUMS ---
@@ -328,6 +329,8 @@ model PurchaseRequest {
   @@index([categoryId])
   @@index([subcategoryId])
   @@index([vendorId])
+  // Awaiting-PO panel and inbox "recent" group order approved PRs by updatedAt desc.
+  @@index([updatedAt])
 }
 
 model PurchaseRequestLine {
@@ -414,6 +417,8 @@ model PurchaseOrder {
   @@index([vendorId])
   @@index([createdAt])
   @@index([status, createdAt])
+  // Inbox ("POs to receive"/"at risk") and dashboard recent-activity order by updatedAt desc.
+  @@index([updatedAt])
 }
 
 model PurchaseOrderLine {
@@ -483,6 +488,8 @@ model GoodsReceipt {
 
   @@index([poId])
   @@index([receivedAt])
+  // FK used by receivedBy joins and "received by me" filters; Postgres does not auto-index FKs.
+  @@index([receivedById])
 }
 
 model GoodsReceiptLineItem {
@@ -540,6 +547,8 @@ model GRNException {
   @@index([grnId])
   @@index([poLineItemId])
   @@index([poLineId])
+  // Inbox "open exceptions" filters `exceptions: { some: { resolutionStatus: null } }`.
+  @@index([resolutionStatus])
 }
 
 model Invoice {
@@ -569,6 +578,11 @@ model Invoice {
   @@unique([poId, invoiceNumber])
   @@index([createdAt])
   @@index([paymentStatus])
+  // Finance inbox orders invoices by updatedAt desc and filters by matchStatus;
+  // invoice list also filters by uploadedById. None were covered before.
+  @@index([updatedAt])
+  @@index([matchStatus])
+  @@index([uploadedById])
 }
 
 model InvoiceGRNLink {
@@ -600,6 +614,10 @@ model Payment {
   paidBy  User?   @relation(fields: [paidById], references: [id])
 
   @@index([invoiceId])
+  // Recent-activity and finance-recent feeds order payments by createdAt desc;
+  // paidById is an unindexed FK used by paidBy joins.
+  @@index([createdAt])
+  @@index([paidById])
 }
 
 model SerialReservation {

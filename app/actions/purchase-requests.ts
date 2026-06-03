@@ -8,7 +8,7 @@ import {
   Prisma,
   Role,
   VendorStatus,
-} from "@prisma/client";
+} from "@/lib/prisma-client";
 
 import type { MutationResult } from "@/lib/action-result";
 import { newPurchaseOrderId, newPurchaseRequestId } from "@/lib/ids";

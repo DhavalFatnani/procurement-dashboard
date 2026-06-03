@@ -1,6 +1,6 @@
 "use client";
 
-import { SerialSeries } from "@prisma/client";
+import { SerialSeries } from "@/lib/prisma-enums";
 
 import { BarcodeLabelSetupPanel } from "@/components/purchase-requests/BarcodeLabelSetupPanel";
 import type { BarcodeLabelConfig } from "@/lib/barcode-label-config";

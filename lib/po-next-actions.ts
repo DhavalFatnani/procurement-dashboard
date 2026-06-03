@@ -1,4 +1,4 @@
-import { PaymentStatus, POStatus, Role } from "@prisma/client";
+import { PaymentStatus, POStatus, Role } from "@/lib/prisma-enums";
 
 import type { PODetail } from "@/lib/queries/purchase-orders";
 

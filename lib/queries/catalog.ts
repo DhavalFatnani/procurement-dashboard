@@ -1,6 +1,6 @@
 import { cache } from "react";
 
-import { CatalogItemStatus, ExecutionType, type Prisma } from "@prisma/client";
+import { CatalogItemStatus, ExecutionType, type Prisma } from "@/lib/prisma-client";
 
 import { getCachedCategories } from "@/lib/cache";
 import { catalogItemAtomicityCategoryNames } from "@/lib/catalog-atomicity";

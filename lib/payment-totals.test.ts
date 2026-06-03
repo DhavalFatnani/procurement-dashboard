@@ -1,4 +1,4 @@
-import { PaymentStatus } from "@prisma/client";
+import { PaymentStatus } from "@/lib/prisma-enums";
 import { describe, expect, it } from "vitest";
 
 import {

@@ -1,6 +1,6 @@
 "use client";
 
-import { SerialSeries } from "@prisma/client";
+import { SerialSeries } from "@/lib/prisma-enums";
 import {
   AlertDialog,
   AlertDialogAction,

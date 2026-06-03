@@ -1,4 +1,4 @@
-import { InvoiceMatchStatus } from "@prisma/client";
+import { InvoiceMatchStatus } from "@/lib/prisma-enums";
 import { describe, expect, it } from "vitest";
 
 import { computeInvoiceMatch, computeInvoiceMatchFromExpected } from "@/lib/invoiceMatch";

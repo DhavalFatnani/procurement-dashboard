@@ -1,6 +1,6 @@
 "use client";
 
-import { PRStatus, Role } from "@prisma/client";
+import { PRStatus, Role } from "@/lib/prisma-enums";
 import { useRouter, useSearchParams } from "next/navigation";
 import * as React from "react";
 

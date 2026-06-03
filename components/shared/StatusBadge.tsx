@@ -4,7 +4,7 @@ import {
   POStatus,
   PRStatus,
   VendorStatus,
-} from "@prisma/client";
+} from "@/lib/prisma-enums";
 import { memo } from "react";
 
 import { Chip, type ChipTone } from "@/components/shared/Chip";

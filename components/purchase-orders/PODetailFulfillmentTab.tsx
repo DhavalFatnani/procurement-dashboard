@@ -1,6 +1,6 @@
 "use client";
 
-import { GRNExceptionResolution, POStatus, Role } from "@prisma/client";
+import { GRNExceptionResolution, POStatus, Role } from "@/lib/prisma-enums";
 import { ChevronDown, ChevronUp, PackagePlus } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";

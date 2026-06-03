@@ -1,6 +1,6 @@
 "use server";
 
-import { PRStatus, Role, SerialSeries } from "@prisma/client";
+import { PRStatus, Role, SerialSeries } from "@/lib/prisma-enums";
 import { revalidatePath, revalidateTag } from "next/cache";
 import { after } from "next/server";
 

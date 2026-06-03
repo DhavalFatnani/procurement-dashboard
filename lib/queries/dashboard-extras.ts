@@ -1,4 +1,4 @@
-import { POStatus, Prisma } from "@prisma/client";
+import { POStatus, Prisma } from "@/lib/prisma-client";
 
 import { dbParallel } from "@/lib/db-parallel";
 import { prisma } from "@/lib/prisma";

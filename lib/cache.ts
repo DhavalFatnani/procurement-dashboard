@@ -1,5 +1,5 @@
 import { unstable_cache } from "next/cache";
-import { CatalogItemStatus, Role, type SerialSeries } from "@prisma/client";
+import { CatalogItemStatus, Role, type SerialSeries } from "@/lib/prisma-enums";
 
 import { prisma } from "@/lib/prisma";
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { CatalogItemStatus } from "@prisma/client";
+import { CatalogItemStatus } from "@/lib/prisma-enums";
 import * as React from "react";
 import { toast } from "sonner";
 

@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath, revalidateTag } from "next/cache";
-import { Prisma, Role, VendorStatus } from "@prisma/client";
+import { Prisma, Role, VendorStatus } from "@/lib/prisma-client";
 
 import type { MutationResult } from "@/lib/action-result";
 import { dbParallel } from "@/lib/db-parallel";

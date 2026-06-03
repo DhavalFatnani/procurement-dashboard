@@ -1,5 +1,5 @@
 import { cache } from "react";
-import { ExecutionType, POStatus, PRStatus, Role } from "@prisma/client";
+import { ExecutionType, POStatus, PRStatus, Role } from "@/lib/prisma-enums";
 
 import {
   getCachedActiveCatalogItems,

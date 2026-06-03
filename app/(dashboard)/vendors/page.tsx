@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import { Role, type VendorStatus } from "@prisma/client";
+import { Role, type VendorStatus } from "@/lib/prisma-enums";
 
 import { VendorsPageHeader } from "@/components/vendors/VendorsPageHeader";
 import { VendorsTableSection } from "@/components/vendors/VendorsTableSection";

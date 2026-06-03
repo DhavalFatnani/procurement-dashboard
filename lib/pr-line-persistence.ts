@@ -1,8 +1,5 @@
-import {
-  CatalogItemStatus,
-  ExecutionType,
-  type Prisma,
-} from "@prisma/client";
+import { CatalogItemStatus, ExecutionType } from "@/lib/prisma-enums";
+import type { Prisma } from "@/lib/prisma-client";
 
 import {
   catalogItemAtomicityCategoryNames,

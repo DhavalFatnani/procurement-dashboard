@@ -1,4 +1,4 @@
-import { Role } from "@prisma/client";
+import { Role } from "@/lib/prisma-enums";
 
 /** Route-level guards aligned with KNOT_Procurement prompt 8.2 */
 export const ACCESS = {

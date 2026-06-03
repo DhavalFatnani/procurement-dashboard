@@ -1,4 +1,4 @@
-import { POStatus, VendorStatus } from "@prisma/client";
+import { POStatus, VendorStatus } from "@/lib/prisma-enums";
 
 import { paginatedQuery } from "@/lib/db-serial";
 import { maskLogValue } from "@/lib/mask-log-value";

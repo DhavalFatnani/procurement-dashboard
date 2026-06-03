@@ -1,6 +1,6 @@
 "use client";
 
-import { ExecutionType } from "@prisma/client";
+import { ExecutionType } from "@/lib/prisma-enums";
 import { Plus, Trash2 } from "lucide-react";
 import * as React from "react";
 

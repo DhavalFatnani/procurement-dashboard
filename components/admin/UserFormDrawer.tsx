@@ -1,6 +1,6 @@
 "use client";
 
-import { Role } from "@prisma/client";
+import { Role } from "@/lib/prisma-enums";
 import * as React from "react";
 import { toast } from "sonner";
 

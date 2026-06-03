@@ -1,4 +1,4 @@
-import { Role } from "@prisma/client";
+import { Role } from "@/lib/prisma-enums";
 
 import { WarehousesView } from "@/components/admin/WarehousesView";
 import { getWarehouses } from "@/lib/queries/warehouses";

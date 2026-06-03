@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import * as React from "react";
 
 import { useKeyboardShortcut } from "@/lib/keyboard";
-import { Role } from "@prisma/client";
+import { Role } from "@/lib/prisma-enums";
 
 const CommandPalette = dynamic(
   () =>

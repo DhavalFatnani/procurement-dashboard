@@ -1,6 +1,6 @@
 "use server";
 
-import { CatalogItemStatus, ExecutionType, PRStatus, Role } from "@prisma/client";
+import { CatalogItemStatus, ExecutionType, PRStatus, Role } from "@/lib/prisma-enums";
 
 import type { MutationResult } from "@/lib/action-result";
 import { usesCatalogItemAtomicity } from "@/lib/catalog-atomicity";

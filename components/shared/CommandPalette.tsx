@@ -18,7 +18,7 @@ import type { FinderResult } from "@/lib/queries/finder";
 import { getCommandGroups } from "@/lib/command-palette";
 import { useKeyboardShortcut } from "@/lib/keyboard";
 import { useFinderRecents } from "@/lib/use-finder-recents";
-import { Role } from "@prisma/client";
+import { Role } from "@/lib/prisma-enums";
 import { cn } from "@/lib/utils";
 
 const KIND_ICONS = {

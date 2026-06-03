@@ -1,4 +1,4 @@
-import { POStatus } from "@prisma/client";
+import { POStatus } from "@/lib/prisma-enums";
 
 import { formatDateMedium } from "@/lib/format-datetime";
 import type { PODetail } from "@/lib/queries/purchase-orders";

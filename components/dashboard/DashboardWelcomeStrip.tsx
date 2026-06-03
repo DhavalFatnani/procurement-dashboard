@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Role } from "@prisma/client";
+import { Role } from "@/lib/prisma-enums";
 
 import { SurfaceCard } from "@/components/shared/SurfaceCard";
 import { Button } from "@/components/ui/button";

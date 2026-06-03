@@ -1,4 +1,4 @@
-import { PRStatus } from "@prisma/client";
+import { PRStatus } from "@/lib/prisma-enums";
 import { describe, expect, it } from "vitest";
 
 import {

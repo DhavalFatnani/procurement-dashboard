@@ -1,6 +1,6 @@
 "use client";
 
-import { InvoiceMatchStatus, PaymentStatus, Role } from "@prisma/client";
+import { InvoiceMatchStatus, PaymentStatus, Role } from "@/lib/prisma-enums";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import * as React from "react";

@@ -1,4 +1,4 @@
-import { ExecutionType, PRStatus, Role, type SerialSeries } from "@prisma/client";
+import { ExecutionType, PRStatus, Role, type SerialSeries } from "@/lib/prisma-enums";
 import Link from "next/link";
 
 import type { PRDetail } from "@/lib/queries/purchase-requests";

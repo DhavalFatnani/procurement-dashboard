@@ -1,7 +1,7 @@
 "use server";
 
-import type { GRNExceptionType } from "@prisma/client";
-import { Role } from "@prisma/client";
+import type { GRNExceptionType } from "@/lib/prisma-enums";
+import { Role } from "@/lib/prisma-enums";
 
 import { applyPOClosureInTransaction, PO_CLOSURE_TX_OPTS } from "@/lib/poAutoClose";
 import type { Paginated } from "@/lib/pagination";

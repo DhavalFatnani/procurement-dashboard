@@ -3,7 +3,7 @@ import "server-only";
 import { unstable_cache } from "next/cache";
 
 /** Default TTL for list/detail reads — short enough to feel fresh, long enough to skip repeat round-trips. */
-export const LIST_CACHE_SECONDS = 60;
+export const LIST_CACHE_SECONDS = 300;
 
 /** Stable JSON key for filter objects passed to unstable_cache. */
 export function stableFilterKey(filters: Record<string, unknown>): string {

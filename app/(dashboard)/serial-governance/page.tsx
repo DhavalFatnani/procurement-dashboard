@@ -1,4 +1,4 @@
-import { Role } from "@prisma/client";
+import { Role } from "@/lib/prisma-enums";
 
 import { SerialGovernanceView } from "@/components/serial-governance/SerialGovernanceView";
 import { parseSerialGovernancePageParams } from "@/lib/list-search-params";

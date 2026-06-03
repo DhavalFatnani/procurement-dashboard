@@ -1,4 +1,4 @@
-import { InvoiceMatchStatus, PaymentStatus, type Prisma } from "@prisma/client";
+import { InvoiceMatchStatus, PaymentStatus, type Prisma } from "@/lib/prisma-client";
 
 import { getCachedActiveVendorOptions } from "@/lib/cache";
 import { cachedQuery, LIST_CACHE_TAGS, stableFilterKey } from "@/lib/list-cache";

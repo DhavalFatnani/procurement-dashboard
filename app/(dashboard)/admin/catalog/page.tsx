@@ -1,4 +1,4 @@
-import { CatalogItemStatus, Role } from "@prisma/client";
+import { CatalogItemStatus, Role } from "@/lib/prisma-enums";
 
 import { CatalogView } from "@/components/admin/CatalogView";
 import { dbParallel } from "@/lib/db-parallel";

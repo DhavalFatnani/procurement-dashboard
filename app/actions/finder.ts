@@ -1,6 +1,6 @@
 "use server";
 
-import { Role } from "@prisma/client";
+import { Role } from "@/lib/prisma-enums";
 
 import { findEntities } from "@/lib/queries/finder";
 import { requireRoles } from "@/lib/server-action-guard";

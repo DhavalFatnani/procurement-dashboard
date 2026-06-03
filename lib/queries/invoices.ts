@@ -3,7 +3,7 @@ import {
   PaymentStatus,
   POStatus,
   type Prisma,
-} from "@prisma/client";
+} from "@/lib/prisma-client";
 
 import { getCachedActiveVendorOptions } from "@/lib/cache";
 import { formatProcurementRef } from "@/lib/display-ref";

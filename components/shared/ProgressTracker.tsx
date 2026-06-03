@@ -1,6 +1,6 @@
 "use client";
 
-import { ExecutionType, POStatus, PRStatus } from "@prisma/client";
+import { ExecutionType, POStatus, PRStatus } from "@/lib/prisma-enums";
 
 import {
   PRLifecycleStepper,

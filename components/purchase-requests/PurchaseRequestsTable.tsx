@@ -1,7 +1,7 @@
 "use client";
 
 import { Download } from "lucide-react";
-import { Role } from "@prisma/client";
+import { Role } from "@/lib/prisma-enums";
 import { useSearchParams } from "next/navigation";
 import * as React from "react";
 

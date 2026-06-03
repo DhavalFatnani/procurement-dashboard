@@ -1,5 +1,5 @@
-import type { PRStatus } from "@prisma/client";
-import type { VendorStatus } from "@prisma/client";
+import type { PRStatus } from "@/lib/prisma-enums";
+import type { VendorStatus } from "@/lib/prisma-enums";
 
 export function buildPurchaseRequestParams(filters: {
   statuses: PRStatus[];

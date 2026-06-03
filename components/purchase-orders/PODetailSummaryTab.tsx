@@ -1,6 +1,6 @@
 "use client";
 
-import { POStatus, Role } from "@prisma/client";
+import { POStatus, Role } from "@/lib/prisma-enums";
 import { useRouter } from "next/navigation";
 import * as React from "react";
 import { toast } from "sonner";

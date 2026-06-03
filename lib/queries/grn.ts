@@ -1,4 +1,4 @@
-import type { GRNExceptionType, POStatus, Prisma } from "@prisma/client";
+import type { GRNExceptionType, POStatus, Prisma } from "@/lib/prisma-client";
 
 import { getCachedActiveVendorOptions } from "@/lib/cache";
 import { formatProcurementRef } from "@/lib/display-ref";

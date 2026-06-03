@@ -1,4 +1,4 @@
-import { Role } from "@prisma/client";
+import { Role } from "@/lib/prisma-enums";
 
 import { SidebarFinderTrigger } from "@/components/dashboard/SidebarFinderTrigger";
 import { SidebarBrand } from "@/components/dashboard/sidebar/SidebarBrand";

@@ -6,7 +6,7 @@ import {
   PRStatus,
   SerialSeries,
   VendorStatus,
-} from "@prisma/client";
+} from "@/lib/prisma-enums";
 import type { ReservationEventType } from "@/lib/serial-series";
 
 export function parsePurchaseRequestSearchParams(

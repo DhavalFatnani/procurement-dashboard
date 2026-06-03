@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Role } from "@prisma/client";
+import { Role } from "@/lib/prisma-enums";
 import { ChevronRight } from "lucide-react";
 
 import { Avatar } from "@/components/shared/Avatar";

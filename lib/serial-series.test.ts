@@ -1,4 +1,4 @@
-import { ExecutionType, SerialSeries } from "@prisma/client";
+import { ExecutionType, SerialSeries } from "@/lib/prisma-enums";
 import { describe, expect, it } from "vitest";
 
 import {

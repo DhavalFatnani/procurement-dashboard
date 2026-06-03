@@ -1,4 +1,4 @@
-import { Role } from "@prisma/client";
+import { Role } from "@/lib/prisma-enums";
 
 import { UsersView } from "@/components/admin/UsersView";
 import { dbParallel } from "@/lib/db-parallel";

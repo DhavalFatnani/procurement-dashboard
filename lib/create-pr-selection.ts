@@ -1,4 +1,4 @@
-import { ExecutionType } from "@prisma/client";
+import { ExecutionType } from "@/lib/prisma-enums";
 
 export type CategoryOption = { id: string; name: string };
 export type SubcategoryOption = {

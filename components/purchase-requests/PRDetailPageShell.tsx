@@ -1,6 +1,6 @@
 "use client";
 
-import { ExecutionType, PRStatus, Role } from "@prisma/client";
+import { ExecutionType, PRStatus, Role } from "@/lib/prisma-enums";
 import Link from "next/link";
 
 import type {

@@ -1,5 +1,5 @@
-import type { Prisma } from "@prisma/client";
-import { Role } from "@prisma/client";
+import type { Prisma } from "@/lib/prisma-client";
+import { Role } from "@/lib/prisma-enums";
 
 import type { SessionUser } from "@/lib/session";
 

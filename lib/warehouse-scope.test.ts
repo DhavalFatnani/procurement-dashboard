@@ -1,4 +1,4 @@
-import { Role } from "@prisma/client";
+import { Role } from "@/lib/prisma-enums";
 import { describe, expect, it } from "vitest";
 
 import type { SessionUser } from "@/lib/session";

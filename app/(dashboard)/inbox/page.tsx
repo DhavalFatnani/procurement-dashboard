@@ -1,4 +1,4 @@
-import { Role } from "@prisma/client";
+import { Role } from "@/lib/prisma-enums";
 
 import { InboxView } from "@/components/inbox/InboxView";
 import { getInboxForSession } from "@/lib/queries/inbox";

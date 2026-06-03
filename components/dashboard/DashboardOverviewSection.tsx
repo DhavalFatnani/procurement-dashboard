@@ -1,4 +1,4 @@
-import { Role } from "@prisma/client";
+import { Role } from "@/lib/prisma-enums";
 
 import { DashboardMetricsGrid } from "@/components/dashboard/DashboardMetricsGrid";
 import { DashboardWelcomeStrip } from "@/components/dashboard/DashboardWelcomeStrip";
