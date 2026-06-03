@@ -9,7 +9,7 @@ import type { Paginated } from "@/lib/pagination";
 import { prisma } from "@/lib/prisma";
 import {
   getApprovedPRsAwaitingPO as getApprovedPRsAwaitingPOQuery,
-  getPOById as getPOByIdQuery,
+  getPOByIdForPage as getPOByIdForPageQuery,
   getPOFilterOptions as getPOFilterOptionsQuery,
   getPurchaseOrders as getPurchaseOrdersQuery,
 } from "@/lib/queries/purchase-orders";
@@ -46,11 +46,7 @@ export async function getPurchaseOrders(
 
 export async function getPOById(id: string): Promise<PODetail | null> {
   const user = await requireRoles([Role.SM, Role.OPS_HEAD, Role.FINANCE]);
-  const access = await assertSessionPurchaseOrderAccess(user, id);
-  if (!access.ok) {
-    return null;
-  }
-  return getPOByIdQuery(id);
+  return getPOByIdForPageQuery(user, id);
 }
 
 export async function getPOFilterOptions() {
@@ -176,7 +172,20 @@ export async function resolveGRNException(
     },
   });
 
-  await evaluatePOClosure(exception.grn.poId);
+  try {
+    await evaluatePOClosure(exception.grn.poId);
+  } catch (e) {
+    revalidateProcurementLists(undefined, exception.grn.poId);
+    revalidatePath("/goods-receipt");
+    return {
+      ok: false,
+      message:
+        e instanceof Error
+          ? e.message
+          : "Exception saved but PO status could not be updated. Retry from the PO page.",
+    };
+  }
+
   revalidateProcurementLists(undefined, exception.grn.poId);
   revalidatePath("/goods-receipt");
   return { ok: true };

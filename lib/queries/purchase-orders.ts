@@ -2,7 +2,6 @@ import { cache } from "react";
 
 import {
   ExecutionType,
-  GRNExceptionResolution,
   InvoiceMatchStatus,
   PaymentStatus,
   POStatus,
@@ -15,6 +14,7 @@ import { dbParallel } from "@/lib/db-parallel";
 import {
   resolveExceptionForLegacyLine,
   resolveExceptionForLineItem,
+  toGrnExceptionSnapshot,
   type GrnExceptionSnapshot,
 } from "@/lib/grn-exception-lines";
 import { formatWarehouseLabel, warehouseOptionsFromRows } from "@/lib/format-warehouse";
@@ -29,6 +29,8 @@ import {
 import { paginatedListQuery, type Paginated } from "@/lib/pagination";
 import { prisma } from "@/lib/prisma";
 import { timed } from "@/lib/server-timing";
+import type { SessionUser } from "@/lib/session";
+import { assertSessionCanAccessWarehouse } from "@/lib/warehouse-scope";
 import {
   purchaseOrderWhereFromScopeIds,
   warehouseIdFilter,
@@ -90,6 +92,8 @@ export type POGRNRow = {
   receivedByName: string;
   receivedAt: string;
   hasOpenDispute: boolean;
+  /** Unresolved exceptions (including receipt-level) for GRN-level resolve UI. */
+  openExceptions: GrnExceptionSnapshot[];
   lines: POGRNLineRow[];
 };
 
@@ -289,6 +293,28 @@ export const getPOById = cache(async (id: string): Promise<PODetail | null> => {
   );
 });
 
+/** One lightweight access check, then cached PO detail (avoids extra pooler round-trips). */
+export async function getPOByIdForPage(
+  user: SessionUser,
+  id: string,
+): Promise<PODetail | null> {
+  const scopeRow = await prisma.purchaseOrder.findUnique({
+    where: { id },
+    select: { purchaseRequest: { select: { warehouseId: true } } },
+  });
+  if (!scopeRow) {
+    return null;
+  }
+  const access = assertSessionCanAccessWarehouse(
+    user,
+    scopeRow.purchaseRequest.warehouseId,
+  );
+  if (!access.ok) {
+    return null;
+  }
+  return getPOById(id);
+}
+
 async function fetchPOById(id: string): Promise<PODetail | null> {
   return timed("query.fetchPOById", async () => {
   const po = await prisma.purchaseOrder.findUnique({
@@ -304,10 +330,6 @@ async function fetchPOById(id: string): Promise<PODetail | null> {
         },
       },
       lineItems: {
-        orderBy: [
-          { prLineItem: { prLine: { lineNumber: "asc" } } },
-          { prLineItem: { lineItemNumber: "asc" } },
-        ],
         include: {
           category: { select: { name: true } },
           subcategory: { select: { name: true } },
@@ -341,10 +363,6 @@ async function fetchPOById(id: string): Promise<PODetail | null> {
           receivedBy: { select: { name: true } },
           exceptions: true,
           lineItems: {
-            orderBy: [
-              { purchaseOrderLineItem: { prLineItem: { prLine: { lineNumber: "asc" } } } },
-              { purchaseOrderLineItem: { prLineItem: { lineItemNumber: "asc" } } },
-            ],
             include: {
               purchaseOrderLineItem: {
                 select: {
@@ -359,7 +377,6 @@ async function fetchPOById(id: string): Promise<PODetail | null> {
             },
           },
           lines: {
-            orderBy: { purchaseOrderLine: { prLine: { lineNumber: "asc" } } },
             include: {
               purchaseOrderLine: {
                 select: {
@@ -431,22 +448,32 @@ async function fetchPOById(id: string): Promise<PODetail | null> {
     },
   ];
 
-  const lineItemRows: POLineItemRow[] = po.lineItems.map((line) => ({
-    id: line.id,
-    prLineItemId: line.prLineItemId,
-    lineNumber: line.prLineItem.prLine.lineNumber,
-    lineItemNumber: line.prLineItem.lineItemNumber,
-    categoryId: line.categoryId,
-    categoryName: line.category.name,
-    subcategoryId: line.subcategoryId,
-    subcategoryName: line.subcategory.name,
-    itemName: line.catalogItem.name,
-    sku: line.catalogItem.sku,
-    unit: line.catalogItem.unit,
-    orderedQty: line.orderedQty,
-    unitPrice: line.unitPrice.toString(),
-    receivedQty: line.goodsReceiptLineItems.reduce((s, grl) => s + grl.acceptedQty, 0),
-  }));
+  const sortedLineItems = sortPoLineItems(po.lineItems);
+
+  const lineItemRows: POLineItemRow[] = sortedLineItems.flatMap((line) => {
+    const prLine = line.prLineItem?.prLine;
+    if (!prLine || !line.category || !line.subcategory || !line.catalogItem) {
+      return [];
+    }
+    return [
+      {
+        id: line.id,
+        prLineItemId: line.prLineItemId,
+        lineNumber: prLine.lineNumber,
+        lineItemNumber: line.prLineItem.lineItemNumber,
+        categoryId: line.categoryId,
+        categoryName: line.category.name,
+        subcategoryId: line.subcategoryId,
+        subcategoryName: line.subcategory.name,
+        itemName: line.catalogItem.name,
+        sku: line.catalogItem.sku,
+        unit: line.catalogItem.unit,
+        orderedQty: line.orderedQty,
+        unitPrice: line.unitPrice.toString(),
+        receivedQty: line.goodsReceiptLineItems.reduce((s, grl) => s + grl.acceptedQty, 0),
+      },
+    ];
+  });
 
   const lineRows: POLineRow[] = legacyLines.map((line) => ({
     id: line.id,
@@ -521,42 +548,57 @@ async function fetchPOById(id: string): Promise<PODetail | null> {
     grns: po.grns.map((g) => {
       const grnLines: POGRNLineRow[] =
         g.lineItems.length > 0
-          ? g.lineItems.map((line) => {
+          ? sortGrnLineItems(g.lineItems).flatMap((line) => {
               const poLine = line.purchaseOrderLineItem;
+              const prLine = poLine?.prLineItem?.prLine;
+              if (!poLine || !prLine || !poLine.category || !poLine.subcategory || !poLine.catalogItem) {
+                return [];
+              }
               const exception = resolveExceptionForLineItem(
                 g.exceptions,
                 line.poLineItemId,
                 line.disputedQty,
               );
-              return {
-                poLineItemId: line.poLineItemId,
-                lineNumber: poLine.prLineItem.prLine.lineNumber,
-                lineItemNumber: poLine.prLineItem.lineItemNumber,
-                label: `${poLine.category.name} / ${poLine.subcategory.name} · ${poLine.catalogItem.name}`,
-                receivedQty: line.receivedQty,
-                acceptedQty: line.acceptedQty,
-                disputedQty: line.disputedQty,
-                exception,
-              };
+              return [
+                {
+                  poLineItemId: line.poLineItemId,
+                  lineNumber: prLine.lineNumber,
+                  lineItemNumber: poLine.prLineItem.lineItemNumber,
+                  label: `${poLine.category.name} / ${poLine.subcategory.name} · ${poLine.catalogItem.name}`,
+                  receivedQty: line.receivedQty,
+                  acceptedQty: line.acceptedQty,
+                  disputedQty: line.disputedQty,
+                  exception,
+                },
+              ];
             })
-          : g.lines.map((line) => {
+          : sortGrnLegacyLines(g.lines).flatMap((line) => {
               const poLine = line.purchaseOrderLine;
+              if (!poLine?.prLine || !poLine.category || !poLine.subcategory) {
+                return [];
+              }
               const exception = resolveExceptionForLegacyLine(
                 g.exceptions,
                 line.poLineId,
                 line.disputedQty,
               );
-              return {
-                poLineItemId: line.poLineId,
-                lineNumber: poLine.prLine.lineNumber,
-                lineItemNumber: 1,
-                label: `${poLine.category.name} / ${poLine.subcategory.name}`,
-                receivedQty: line.receivedQty,
-                acceptedQty: line.acceptedQty,
-                disputedQty: line.disputedQty,
-                exception,
-              };
+              return [
+                {
+                  poLineItemId: line.poLineId,
+                  lineNumber: poLine.prLine.lineNumber,
+                  lineItemNumber: 1,
+                  label: `${poLine.category.name} / ${poLine.subcategory.name}`,
+                  receivedQty: line.receivedQty,
+                  acceptedQty: line.acceptedQty,
+                  disputedQty: line.disputedQty,
+                  exception,
+                },
+              ];
             });
+
+      const openExceptions = g.exceptions
+        .filter((e) => e.resolutionStatus == null)
+        .map(toGrnExceptionSnapshot);
 
       return {
         id: g.id,
@@ -565,8 +607,8 @@ async function fetchPOById(id: string): Promise<PODetail | null> {
         disputedQty: g.disputedQty,
         receivedByName: g.receivedBy.name,
         receivedAt: g.receivedAt.toISOString(),
-        hasOpenDispute:
-          g.disputedQty > 0 && g.exceptions.some((e) => e.resolutionStatus == null),
+        hasOpenDispute: openExceptions.length > 0,
+        openExceptions,
         lines: grnLines,
       };
     }),
@@ -583,6 +625,41 @@ async function fetchPOById(id: string): Promise<PODetail | null> {
     })),
   };
   });
+}
+
+function sortPoLineItems<
+  T extends {
+    prLineItem: { prLine: { lineNumber: number }; lineItemNumber: number };
+  },
+>(items: T[]): T[] {
+  return [...items].sort((a, b) => {
+    const byLine = a.prLineItem.prLine.lineNumber - b.prLineItem.prLine.lineNumber;
+    return byLine !== 0 ? byLine : a.prLineItem.lineItemNumber - b.prLineItem.lineItemNumber;
+  });
+}
+
+function sortGrnLineItems<
+  T extends {
+    purchaseOrderLineItem: {
+      prLineItem: { prLine: { lineNumber: number }; lineItemNumber: number };
+    };
+  },
+>(items: T[]): T[] {
+  return [...items].sort((a, b) => {
+    const aLine = a.purchaseOrderLineItem.prLineItem;
+    const bLine = b.purchaseOrderLineItem.prLineItem;
+    const byLine = aLine.prLine.lineNumber - bLine.prLine.lineNumber;
+    return byLine !== 0 ? byLine : aLine.lineItemNumber - bLine.lineItemNumber;
+  });
+}
+
+function sortGrnLegacyLines<
+  T extends { purchaseOrderLine: { prLine: { lineNumber: number } } },
+>(items: T[]): T[] {
+  return [...items].sort(
+    (a, b) =>
+      a.purchaseOrderLine.prLine.lineNumber - b.purchaseOrderLine.prLine.lineNumber,
+  );
 }
 
 function displayLinesForSummary(

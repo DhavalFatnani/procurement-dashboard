@@ -174,7 +174,7 @@ export function CreateGRNForm({
       return;
     }
     toast.success("Goods receipt recorded.");
-    router.push(`/purchase-orders/${poId}`);
+    router.push(`/purchase-orders/${poId}?tab=fulfillment`);
   }
 
   return (

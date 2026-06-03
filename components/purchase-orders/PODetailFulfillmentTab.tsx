@@ -19,6 +19,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { GrnLineExceptionSummary } from "@/components/goods-receipt/GrnReceiptLineList";
 import { formatGrnReceiptLabel } from "@/lib/display-ref";
 import { formatDateTimeMedium } from "@/lib/format-datetime";
+import type { GrnExceptionSnapshot } from "@/lib/grn-exception-lines";
 import type { PODetail } from "@/lib/queries/purchase-orders";
 import { cn } from "@/lib/utils";
 
@@ -111,6 +112,12 @@ export function PODetailFulfillmentTab({
           <div className="divide-y divide-border-subtle">
             {po.grns.map((g) => {
               const expanded = expandedGrn === g.id;
+              const lineExceptionIds = new Set(
+                g.lines.map((line) => line.exception?.id).filter(Boolean),
+              );
+              const grnLevelOpenExceptions = g.openExceptions.filter(
+                (ex) => !lineExceptionIds.has(ex.id),
+              );
               return (
                 <div key={g.id}>
                   <button
@@ -174,11 +181,36 @@ export function PODetailFulfillmentTab({
 
                   {expanded ? (
                     <div className="space-y-3 border-t border-border-subtle bg-secondary/20 px-2 py-3">
-                      {g.lines.length === 0 ? (
+                      {g.lines.length === 0 && grnLevelOpenExceptions.length === 0 ? (
                         <p className="text-ds-sm text-muted-foreground">
                           No line detail recorded for this receipt.
                         </p>
-                      ) : (
+                      ) : null}
+                      {grnLevelOpenExceptions.map((ex) => (
+                        <div
+                          key={ex.id}
+                          className="space-y-2 rounded-xl bg-card px-3 py-3 text-ds-sm shadow-ds"
+                        >
+                          <p className="font-medium">Receipt-level exception</p>
+                          <GrnLineExceptionSummary exception={ex} />
+                          {ex.resolutionStatus ? null : isOps ? (
+                            <ResolveExceptionPanel
+                              exception={ex}
+                              resolution={resolution}
+                              resolutionNote={resolutionNote}
+                              resolvingId={resolvingId}
+                              onResolutionChange={setResolution}
+                              onNoteChange={setResolutionNote}
+                              onConfirm={() => void handleResolveException(ex.id)}
+                            />
+                          ) : (
+                            <p className="text-ds-xs text-muted-foreground">
+                              Awaiting resolution by Ops Head.
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                      {g.lines.length > 0 ? (
                         g.lines.map((line) => (
                           <div
                             key={line.poLineItemId}
@@ -204,70 +236,17 @@ export function PODetailFulfillmentTab({
                               <>
                                 <GrnLineExceptionSummary exception={line.exception} />
                                 {line.exception.resolutionStatus ? null : isOps ? (
-                                  <div className="space-y-2.5 rounded-lg border border-border-subtle bg-background p-3">
-                                    <p className="text-ds-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                                      Resolve exception
-                                    </p>
-                                    <div className="space-y-1.5">
-                                      {(
-                                        [
-                                          [
-                                            GRNExceptionResolution.ACCEPTED,
-                                            "Accept dispute",
-                                          ],
-                                          [
-                                            GRNExceptionResolution.RETURNED_TO_VENDOR,
-                                            "Return to vendor",
-                                          ],
-                                          [
-                                            GRNExceptionResolution.OVERRIDE_ACCEPTED,
-                                            "Override and accept",
-                                          ],
-                                        ] as const
-                                      ).map(([val, label]) => (
-                                        <label
-                                          key={val}
-                                          className="flex items-center gap-2 text-ds-sm"
-                                        >
-                                          <input
-                                            type="radio"
-                                            name={`res-${line.exception!.id}`}
-                                            checked={resolution === val}
-                                            onChange={() => setResolution(val)}
-                                          />
-                                          {label}
-                                        </label>
-                                      ))}
-                                    </div>
-                                    {resolution ===
-                                    GRNExceptionResolution.OVERRIDE_ACCEPTED ? (
-                                      <div className="space-y-1">
-                                        <label
-                                          htmlFor={`note-${line.exception.id}`}
-                                          className="text-ds-xs font-medium text-foreground"
-                                        >
-                                          Override reason (required)
-                                        </label>
-                                        <Textarea
-                                          id={`note-${line.exception.id}`}
-                                          value={resolutionNote}
-                                          onChange={(e) =>
-                                            setResolutionNote(e.target.value)
-                                          }
-                                          className="min-h-[72px]"
-                                        />
-                                      </div>
-                                    ) : null}
-                                    <Button
-                                      size="sm"
-                                      disabled={resolvingId === line.exception.id}
-                                      onClick={() =>
-                                        void handleResolveException(line.exception!.id)
-                                      }
-                                    >
-                                      Confirm resolution
-                                    </Button>
-                                  </div>
+                                  <ResolveExceptionPanel
+                                    exception={line.exception}
+                                    resolution={resolution}
+                                    resolutionNote={resolutionNote}
+                                    resolvingId={resolvingId}
+                                    onResolutionChange={setResolution}
+                                    onNoteChange={setResolutionNote}
+                                    onConfirm={() =>
+                                      void handleResolveException(line.exception!.id)
+                                    }
+                                  />
                                 ) : (
                                   <p className="text-ds-xs text-muted-foreground">
                                     Awaiting resolution by Ops Head.
@@ -277,7 +256,7 @@ export function PODetailFulfillmentTab({
                             ) : null}
                           </div>
                         ))
-                      )}
+                      ) : null}
                     </div>
                   ) : null}
                 </div>
@@ -311,6 +290,70 @@ export function PODetailFulfillmentTab({
           </div>
         </SurfaceCard>
       ) : null}
+    </div>
+  );
+}
+
+function ResolveExceptionPanel({
+  exception,
+  resolution,
+  resolutionNote,
+  resolvingId,
+  onResolutionChange,
+  onNoteChange,
+  onConfirm,
+}: {
+  exception: GrnExceptionSnapshot;
+  resolution: GRNExceptionResolution;
+  resolutionNote: string;
+  resolvingId: string | null;
+  onResolutionChange: (value: GRNExceptionResolution) => void;
+  onNoteChange: (value: string) => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="space-y-2.5 rounded-lg border border-border-subtle bg-background p-3">
+      <p className="text-ds-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        Resolve exception
+      </p>
+      <div className="space-y-1.5">
+        {(
+          [
+            [GRNExceptionResolution.ACCEPTED, "Accept dispute"],
+            [GRNExceptionResolution.RETURNED_TO_VENDOR, "Return to vendor"],
+            [GRNExceptionResolution.OVERRIDE_ACCEPTED, "Override and accept"],
+          ] as const
+        ).map(([val, label]) => (
+          <label key={val} className="flex items-center gap-2 text-ds-sm">
+            <input
+              type="radio"
+              name={`res-${exception.id}`}
+              checked={resolution === val}
+              onChange={() => onResolutionChange(val)}
+            />
+            {label}
+          </label>
+        ))}
+      </div>
+      {resolution === GRNExceptionResolution.OVERRIDE_ACCEPTED ? (
+        <div className="space-y-1">
+          <label
+            htmlFor={`note-${exception.id}`}
+            className="text-ds-xs font-medium text-foreground"
+          >
+            Override reason (required)
+          </label>
+          <Textarea
+            id={`note-${exception.id}`}
+            value={resolutionNote}
+            onChange={(e) => onNoteChange(e.target.value)}
+            className="min-h-[72px]"
+          />
+        </div>
+      ) : null}
+      <Button size="sm" disabled={resolvingId === exception.id} onClick={onConfirm}>
+        Confirm resolution
+      </Button>
     </div>
   );
 }
