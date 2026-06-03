@@ -16,8 +16,9 @@ import { withDbMutex } from "@/lib/db-mutex";
  * - Locally / with a direct `postgresql://` URL, Accelerate is a no-op pass-through
  *   and queries go straight to the database via the query engine.
  *
- * With Supabase PgBouncer (session pooler), Prisma uses `connection_limit=1` and a
- * process-wide query mutex so Suspense boundaries cannot exhaust the shared pool.
+ * With Supabase PgBouncer (session pooler), Prisma caps pool slots and uses a
+ * concurrency guard so Suspense boundaries cannot exhaust the shared pool.
+ * Set `ALLOW_LOCAL_DB_PARALLEL=true` locally to match `connection_limit` in `.env`.
  */
 function createPrismaClient() {
   const base = new PrismaClient({

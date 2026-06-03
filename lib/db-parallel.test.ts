@@ -38,11 +38,11 @@ describe("canParallelizeQueries", () => {
     expect(canParallelizeQueries()).toBe(true);
   });
 
-  it("ignores ALLOW_LOCAL_DB_PARALLEL on Supabase pooler URLs", () => {
+  it("honors ALLOW_LOCAL_DB_PARALLEL on Supabase pooler URLs", () => {
     process.env.DATABASE_URL =
       "postgresql://user:pass@host/postgres?pgbouncer=true&connection_limit=5";
     process.env.ALLOW_LOCAL_DB_PARALLEL = "true";
-    expect(canParallelizeQueries()).toBe(false);
+    expect(canParallelizeQueries()).toBe(true);
   });
 
   it("allows local opt-in on direct Postgres URLs", () => {

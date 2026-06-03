@@ -1,21 +1,45 @@
+import { getDbConcurrency } from "@/lib/database-url";
 import { usesSharedDbPooler } from "@/lib/db-parallel";
 
-let chain: Promise<unknown> = Promise.resolve();
+let active = 0;
+const waiters: Array<() => void> = [];
 
-/** Serialize Prisma queries when the DB URL uses a shared session pooler. */
+function acquire(): Promise<void> {
+  const limit = getDbConcurrency();
+  if (active < limit) {
+    active++;
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    waiters.push(() => {
+      active++;
+      resolve();
+    });
+  });
+}
+
+function release(): void {
+  active = Math.max(0, active - 1);
+  const next = waiters.shift();
+  if (next) {
+    next();
+  }
+}
+
+/** Limit concurrent Prisma queries when the DB URL uses a shared session pooler. */
 export function withDbMutex<T>(fn: () => Promise<T>): Promise<T> {
   if (!usesSharedDbPooler()) {
     return fn();
   }
-  const next = chain.then(fn, fn);
-  chain = next.then(
-    () => undefined,
-    () => undefined,
+  return acquire().then(() =>
+    fn().finally(() => {
+      release();
+    }),
   );
-  return next;
 }
 
 /** @internal Test helper */
 export function resetDbMutexForTests() {
-  chain = Promise.resolve();
+  active = 0;
+  waiters.length = 0;
 }

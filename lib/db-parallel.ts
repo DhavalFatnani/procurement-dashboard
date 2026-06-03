@@ -1,6 +1,5 @@
+import { getDbConcurrency } from "@/lib/database-url";
 import { dbSerial } from "@/lib/db-serial";
-
-const LOCAL_PARALLEL_CAP = 2;
 
 /** Supabase pooler URLs share a small global session pool — never fan out locally. */
 export function usesSharedDbPooler(databaseUrl = process.env.DATABASE_URL ?? ""): boolean {
@@ -21,7 +20,7 @@ export function canParallelizeQueries(): boolean {
     return true;
   }
   if (usesSharedDbPooler(url)) {
-    return false;
+    return process.env.ALLOW_LOCAL_DB_PARALLEL === "true";
   }
   return process.env.ALLOW_LOCAL_DB_PARALLEL === "true";
 }
@@ -31,10 +30,11 @@ export async function dbParallel<T extends readonly unknown[]>(
   ...tasks: { [K in keyof T]: () => Promise<T[K]> }
 ): Promise<T> {
   if (canParallelizeQueries()) {
+    const poolCap = getDbConcurrency();
     const capped =
       process.env.ALLOW_LOCAL_DB_PARALLEL === "true" &&
       !(process.env.DATABASE_URL ?? "").startsWith("prisma://")
-        ? tasks.slice(0, LOCAL_PARALLEL_CAP)
+        ? tasks.slice(0, poolCap)
         : tasks;
     const results = await Promise.all(capped.map((task) => task()));
     if (capped.length < tasks.length) {

@@ -692,7 +692,7 @@ When you deploy to Vercel + Supabase in the same region, these numbers will roug
 **Options for faster local reads:**
 
 1. Point `DATABASE_URL` at a Prisma Accelerate `prisma://` URL for dev (same code path as production Accelerate).
-2. Opt in to capped local parallelism: set `ALLOW_LOCAL_DB_PARALLEL=true` in `.env.local`. At most **3** queries run concurrently; any additional tasks in the same `dbParallel()` call still run serially. Use only if your pool tolerates it (avoid with `connection_limit=1` transaction pooler URLs).
+2. Opt in to capped local parallelism: set `ALLOW_LOCAL_DB_PARALLEL=true` in `.env.local` and keep `connection_limit=5` (or similar) on the pooler URL. `dbParallel()` and the Prisma mutex then allow up to that many concurrent queries. Without the flag, pooler URLs stay strictly serial (`connection_limit=1`).
 
 ### Dev timing labels
 
