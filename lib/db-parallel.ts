@@ -2,14 +2,26 @@ import { dbSerial } from "@/lib/db-serial";
 
 const LOCAL_PARALLEL_CAP = 2;
 
+/** Supabase pooler URLs share a small global session pool — never fan out locally. */
+export function usesSharedDbPooler(databaseUrl = process.env.DATABASE_URL ?? ""): boolean {
+  return (
+    /pgbouncer=true/i.test(databaseUrl) ||
+    /pooler\.supabase\.com/i.test(databaseUrl) ||
+    /:6543\//.test(databaseUrl)
+  );
+}
+
 /**
- * True for Prisma Accelerate (`prisma://`) or explicit local opt-in.
- * Direct Supabase session pooler URLs stay serial by default — small global pool.
+ * True for Prisma Accelerate (`prisma://`) or explicit local opt-in on a direct Postgres URL.
+ * Supabase pooler URLs stay serial regardless of `ALLOW_LOCAL_DB_PARALLEL`.
  */
 export function canParallelizeQueries(): boolean {
   const url = process.env.DATABASE_URL ?? "";
   if (url.startsWith("prisma://")) {
     return true;
+  }
+  if (usesSharedDbPooler(url)) {
+    return false;
   }
   return process.env.ALLOW_LOCAL_DB_PARALLEL === "true";
 }

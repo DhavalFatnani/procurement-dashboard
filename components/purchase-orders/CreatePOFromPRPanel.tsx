@@ -16,7 +16,7 @@ import type { ApprovedPRAwaitingPO } from "@/lib/queries/purchase-orders";
 import { Button } from "@/components/ui/button";
 import { Combobox } from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";
-import { formatDateMedium } from "@/lib/format-datetime";
+import { formatDateMedium, formatInr } from "@/lib/format-datetime";
 
 type ActiveVendor = { id: string; businessName: string };
 
@@ -178,6 +178,7 @@ export function CreatePOFromPRPanel({
               <th className="px-3 py-2 font-medium">Line</th>
               <th className="px-3 py-2 font-medium">Item</th>
               <th className="px-3 py-2 font-medium text-right">Qty</th>
+              <th className="px-3 py-2 font-medium text-right">Previous rate (INR)</th>
               <th className="px-3 py-2 font-medium text-right">Unit price (INR)</th>
             </tr>
           </thead>
@@ -195,6 +196,9 @@ export function CreatePOFromPRPanel({
                   </span>
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums">{item.quantity}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
+                  {formatInr(item.previousUnitPrice)}
+                </td>
                 <td className="px-3 py-2">
                   <Input
                     id={`fulfill-price-${item.prLineItemId}`}

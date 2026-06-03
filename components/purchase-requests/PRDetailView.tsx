@@ -14,6 +14,7 @@ import {
   resubmitPR,
   sendForRevision,
   submitPR,
+  submitPRForApproval,
   updatePR,
 } from "@/app/actions/purchase-requests";
 import type {
@@ -459,14 +460,12 @@ export function PRDetailView({
                   void run(
                     async () => {
                       if (draftEditMode && selection) {
-                        const u = await updatePR(pr.id, payload());
-                        if (!u.ok) {
-                          return u;
-                        }
+                        return submitPRForApproval(payload(), pr.id);
                       }
                       return submitPR(pr.id);
                     },
                     {
+                      refresh: false,
                       onSuccess: () => {
                         setOptimisticStatus(PRStatus.PENDING_APPROVAL);
                         toast.success("Submitted for approval.");

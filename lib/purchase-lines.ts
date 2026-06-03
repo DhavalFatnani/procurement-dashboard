@@ -107,33 +107,56 @@ export function sumLineValue(
   }, 0);
 }
 
+function catalogItemsOnLine(line: {
+  items?: { quantity: number }[];
+  catalogItemCount?: number;
+}): number {
+  if (line.items && line.items.length > 0) {
+    return line.items.length;
+  }
+  if (line.catalogItemCount !== undefined) {
+    return line.catalogItemCount;
+  }
+  return 0;
+}
+
 /** e.g. "3 lines · 12 items" or single subcategory name */
 export function formatLineSummary(
   lines: {
     subcategoryName: string;
     categoryName?: string;
     items?: { quantity: number }[];
+    catalogItemCount?: number;
   }[],
-): { lineCount: number; summary: string; primarySubcategory: string; totalQty: number } {
+): {
+  lineCount: number;
+  itemCount: number;
+  summary: string;
+  primarySubcategory: string;
+  totalQty: number;
+} {
   if (lines.length === 0) {
-    return { lineCount: 0, summary: "—", primarySubcategory: "—", totalQty: 0 };
+    return {
+      lineCount: 0,
+      itemCount: 0,
+      summary: "—",
+      primarySubcategory: "—",
+      totalQty: 0,
+    };
   }
 
   const sorted = [...lines];
   const primary = sorted[0]!.subcategoryName;
   const lineCount = sorted.length;
-  const itemCount = sorted.reduce(
-    (sum, line) => sum + (line.items?.length ?? 1),
-    0,
-  );
+  const itemCount = sorted.reduce((sum, line) => sum + catalogItemsOnLine(line), 0);
 
   if (lineCount === 1) {
+    const catalogItems = catalogItemsOnLine(sorted[0]!);
     const itemSuffix =
-      sorted[0]!.items && sorted[0]!.items.length > 1
-        ? ` · ${sorted[0]!.items.length} items`
-        : "";
+      catalogItems > 1 ? ` · ${catalogItems} items` : "";
     return {
       lineCount: 1,
+      itemCount: catalogItems,
       summary: `${primary}${itemSuffix}`,
       primarySubcategory: primary,
       totalQty: 0,
@@ -141,9 +164,14 @@ export function formatLineSummary(
   }
 
   const categoryLabel = sorted[0]!.categoryName ?? sorted[0]!.subcategoryName;
+  const counts =
+    itemCount > 0
+      ? `${lineCount} lines · ${itemCount} items`
+      : `${lineCount} lines`;
   return {
     lineCount,
-    summary: `${lineCount} lines · ${itemCount} items · ${categoryLabel} + ${lineCount - 1} more`,
+    itemCount,
+    summary: `${counts} · ${categoryLabel} + ${lineCount - 1} more`,
     primarySubcategory: primary,
     totalQty: 0,
   };

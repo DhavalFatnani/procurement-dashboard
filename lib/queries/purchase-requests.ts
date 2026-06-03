@@ -35,6 +35,7 @@ export type PurchaseRequestListRow = {
   subcategoryName: string;
   lineSummary: string;
   lineCount: number;
+  itemCount: number;
   warehouseName: string;
   quantity: number;
   vendorName: string | null;
@@ -180,6 +181,31 @@ export const getListFilterOptions = cache(async (): Promise<{
   };
 });
 
+/** Empty filter payload when PR detail does not need line-editing catalogs. */
+export const EMPTY_PR_FILTER_OPTIONS = {
+  categories: [],
+  subcategories: [],
+  catalogItems: [],
+  warehouses: [],
+  creators: [],
+} as const satisfies {
+  categories: CategoryOption[];
+  subcategories: SubcategoryOption[];
+  catalogItems: CatalogItemOption[];
+  warehouses: WarehouseOption[];
+  creators: UserOption[];
+};
+
+export function prDetailNeedsFilterOptions(
+  role: SessionUser["role"],
+  status: PRStatus,
+): boolean {
+  return (
+    role === Role.SM &&
+    (status === PRStatus.DRAFT || status === PRStatus.REVISION_REQUIRED)
+  );
+}
+
 export const getFilterOptions = cache(async (): Promise<{
   categories: CategoryOption[];
   subcategories: SubcategoryOption[];
@@ -288,6 +314,7 @@ async function fetchPurchaseRequests(
               quantity: true,
               category: { select: { name: true } },
               subcategory: { select: { name: true } },
+              _count: { select: { items: true } },
             },
           },
           warehouse: { select: { name: true, location: true } },
@@ -305,6 +332,7 @@ async function fetchPurchaseRequests(
         subcategoryName: l.subcategory.name,
         categoryName: l.category.name,
         quantity: l.quantity ?? 0,
+        catalogItemCount: l._count.items,
       }));
       const summary = formatLineSummary(lineRows);
       const totalQty =
@@ -317,6 +345,7 @@ async function fetchPurchaseRequests(
         subcategoryName: primaryLine?.subcategory.name ?? pr.subcategory?.name ?? "—",
         lineSummary: summary.summary,
         lineCount: summary.lineCount || pr.lines.length,
+        itemCount: summary.itemCount,
         warehouseName: formatWarehouseLabel(
           pr.warehouse.name,
           pr.warehouse.location,
@@ -471,7 +500,7 @@ async function fetchPRById(user: SessionUser, id: string): Promise<PRDetail | nu
     vendorId: pr.vendorId,
     vendorName:
       pr.vendor?.businessName ??
-      po?.vendor.businessName ??
+      po?.vendor?.businessName ??
       pr.vendorRequest?.businessName ??
       null,
     executionType: pr.executionType,

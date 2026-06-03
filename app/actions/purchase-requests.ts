@@ -52,6 +52,7 @@ import {
   assertSessionPurchaseRequestAccess,
   assertUserWarehouseAccess,
 } from "@/lib/warehouse-access";
+import { assertSessionCanAccessWarehouse } from "@/lib/warehouse-scope";
 import { getWarehousesAssignedToUser } from "@/lib/queries/warehouses";
 
 function vendorFieldsForUser(
@@ -131,9 +132,9 @@ export async function createPR(data: PRFormData): Promise<{ ok: boolean; prId?: 
         },
       });
       await replacePRLines(tx, prId, data.lines, user.id, header.executionType);
-      if (data.vendorRequestId) {
+      if (vendors.vendorRequestId) {
         await tx.vendorRequest.update({
-          where: { id: data.vendorRequestId },
+          where: { id: vendors.vendorRequestId },
           data: { linkedPRId: prId },
         });
       }
@@ -185,6 +186,12 @@ export async function updatePR(
         },
       });
       await replacePRLines(tx, prId, data.lines, user.id, header.executionType);
+      if (vendors.vendorRequestId) {
+        await tx.vendorRequest.update({
+          where: { id: vendors.vendorRequestId },
+          data: { linkedPRId: prId },
+        });
+      }
     },
     PR_LINE_MUTATION_TX_OPTIONS,
   );
@@ -193,16 +200,156 @@ export async function updatePR(
   return { ok: true };
 }
 
+export type SubmitPRForApprovalResult = {
+  ok: boolean;
+  prId?: string;
+  message?: string;
+};
+
+/** Persist line items and move to PENDING_APPROVAL in one round trip. */
+export async function submitPRForApproval(
+  data: PRFormData,
+  existingPrId?: string | null,
+): Promise<SubmitPRForApprovalResult> {
+  const user = await requireRoles([Role.SM, Role.OPS_HEAD]);
+  const validated = await validatePRLines(data.lines);
+  if (!validated.ok) {
+    return { ok: false, message: validated.message };
+  }
+
+  const header = headerFromFirstLine(data.lines, validated.subs);
+  const vendors = vendorFieldsForUser(user.role, data);
+
+  if (existingPrId) {
+    const pr = await prisma.purchaseRequest.findUnique({
+      where: { id: existingPrId },
+      select: { status: true, warehouseId: true, createdById: true },
+    });
+    if (!pr || pr.status !== PRStatus.DRAFT) {
+      return { ok: false, message: "PR cannot be submitted in its current status." };
+    }
+    if (user.role === Role.SM && pr.createdById !== user.id) {
+      return { ok: false, message: "You can only submit your own purchase requests." };
+    }
+    const access = assertSessionCanAccessWarehouse(user, pr.warehouseId);
+    if (!access.ok) {
+      return { ok: false, message: access.message };
+    }
+
+    try {
+      evaluatePRStatus(pr, PRStatus.PENDING_APPROVAL);
+    } catch (e) {
+      return { ok: false, message: e instanceof Error ? e.message : "Cannot submit." };
+    }
+
+    await prisma.$transaction(
+      async (tx) => {
+        await tx.purchaseRequest.update({
+          where: { id: existingPrId },
+          data: {
+            ...header,
+            vendorId: vendors.vendorId,
+            vendorRequestId: vendors.vendorRequestId,
+            status: PRStatus.PENDING_APPROVAL,
+          },
+        });
+        await replacePRLines(tx, existingPrId, data.lines, user.id, header.executionType);
+        if (vendors.vendorRequestId) {
+          await tx.vendorRequest.update({
+            where: { id: vendors.vendorRequestId },
+            data: { linkedPRId: existingPrId },
+          });
+        }
+        await tx.pRVersion.create({
+          data: {
+            prId: existingPrId,
+            versionNumber: 1,
+            changedById: user.id,
+            revisionComment: "Submitted for approval",
+            diffSnapshot: { action: "SUBMIT" },
+          },
+        });
+      },
+      PR_LINE_MUTATION_TX_OPTIONS,
+    );
+
+    revalidatePRStatusChange(existingPrId);
+    return { ok: true, prId: existingPrId };
+  }
+
+  const assigned = await getWarehousesAssignedToUser(user.id);
+  const warehouseId =
+    data.warehouseId ?? (assigned.length === 1 ? assigned[0]!.id : null);
+  if (!warehouseId) {
+    return {
+      ok: false,
+      message:
+        assigned.length === 0
+          ? "Your profile has no warehouse assigned."
+          : "Select a warehouse for this purchase request.",
+    };
+  }
+
+  const warehouseAccess = await assertUserWarehouseAccess(user.id, warehouseId);
+  if (!warehouseAccess.ok) {
+    return { ok: false, message: warehouseAccess.message };
+  }
+
+  const prId = newPurchaseRequestId();
+
+  await prisma.$transaction(
+    async (tx) => {
+      await tx.purchaseRequest.create({
+        data: {
+          id: prId,
+          ...header,
+          warehouseId,
+          vendorId: vendors.vendorId,
+          vendorRequestId: vendors.vendorRequestId,
+          status: PRStatus.PENDING_APPROVAL,
+          createdById: user.id,
+        },
+      });
+      await replacePRLines(tx, prId, data.lines, user.id, header.executionType);
+      if (vendors.vendorRequestId) {
+        await tx.vendorRequest.update({
+          where: { id: vendors.vendorRequestId },
+          data: { linkedPRId: prId },
+        });
+      }
+      await tx.pRVersion.create({
+        data: {
+          prId,
+          versionNumber: 1,
+          changedById: user.id,
+          revisionComment: "Submitted for approval",
+          diffSnapshot: { action: "SUBMIT" },
+        },
+      });
+    },
+    PR_LINE_MUTATION_TX_OPTIONS,
+  );
+
+  revalidatePRStatusChange(prId);
+  return { ok: true, prId };
+}
+
 export async function submitPR(prId: string): Promise<MutationResult> {
   const user = await requireRoles([Role.SM, Role.OPS_HEAD]);
-  const pr = await prisma.purchaseRequest.findUnique({ where: { id: prId } });
+  const pr = await prisma.purchaseRequest.findUnique({
+    where: { id: prId },
+    select: { status: true, warehouseId: true, createdById: true },
+  });
   if (!pr) {
     return { ok: false, message: "PR not found." };
   }
+  if (user.role === Role.SM && pr.createdById !== user.id) {
+    return { ok: false, message: "You can only submit your own purchase requests." };
+  }
 
-  const warehouseAccess = await assertSessionPurchaseRequestAccess(user, prId);
-  if (!warehouseAccess.ok) {
-    return { ok: false, message: warehouseAccess.message };
+  const access = assertSessionCanAccessWarehouse(user, pr.warehouseId);
+  if (!access.ok) {
+    return { ok: false, message: access.message };
   }
 
   try {
@@ -427,7 +574,6 @@ export async function resubmitPR(
 
 export async function createVendorRequest(
   data: { businessName: string; pocName: string; phone: string; email: string },
-  prId?: string,
 ): Promise<{ ok: boolean; requestId?: string; message?: string }> {
   const user = await requireRoles([Role.SM, Role.OPS_HEAD]);
 
@@ -438,20 +584,11 @@ export async function createVendorRequest(
       phone: data.phone.trim(),
       email: data.email.trim().toLowerCase(),
       requestedById: user.id,
-      linkedPRId: prId ?? null,
       status: "PENDING",
     },
   });
 
-  if (prId) {
-    await prisma.purchaseRequest.update({
-      where: { id: prId },
-      data: { vendorRequestId: request.id, vendorId: null },
-    });
-  }
-
   revalidatePath("/vendors");
-  revalidatePurchaseRequestMutation(prId);
   return { ok: true, requestId: request.id };
 }
 

@@ -49,6 +49,39 @@ function rowStatus(
   return overrides[row.id] ?? row.status;
 }
 
+function PRItemsSummaryCell({ row }: { row: PurchaseRequestListRow }) {
+  const { lineCount, itemCount, subcategoryName } = row;
+
+  if (lineCount <= 1 && itemCount <= 1) {
+    return <span className="text-ds-sm text-foreground">{subcategoryName}</span>;
+  }
+
+  const lineLabel = lineCount === 1 ? "line" : "lines";
+  const itemLabel = itemCount === 1 ? "item" : "items";
+
+  return (
+    <div className="flex min-w-0 flex-col gap-0.5">
+      <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-ds-xs">
+        <span className="tabular-nums font-medium text-foreground">
+          {lineCount} {lineLabel}
+        </span>
+        {itemCount > 0 ? (
+          <span className="tabular-nums text-muted-foreground">
+            · {itemCount} {itemLabel}
+          </span>
+        ) : null}
+      </div>
+      {lineCount > 1 ? (
+        <span className="truncate text-ds-2xs text-muted-foreground">
+          {subcategoryName} + {lineCount - 1} more
+        </span>
+      ) : itemCount > 1 ? (
+        <span className="truncate text-ds-2xs text-muted-foreground">{subcategoryName}</span>
+      ) : null}
+    </div>
+  );
+}
+
 export function PRListTable({
   role,
   rows,
@@ -93,8 +126,11 @@ export function PRListTable({
         variant: "id",
         cell: (r) => <ProcurementRefLink id={r.id} />,
       },
-      { id: "cat", header: "Items", cell: (r) => r.lineSummary },
-      { id: "sub", header: "Primary item", cell: (r) => r.subcategoryName },
+      {
+        id: "cat",
+        header: "Items",
+        cell: (r) => <PRItemsSummaryCell row={r} />,
+      },
       { id: "wh", header: "Warehouse", cell: (r) => r.warehouseName },
       { id: "qty", header: "Qty", variant: "numeric", cell: (r) => r.quantity },
       {

@@ -612,6 +612,7 @@ export const getPOFilterOptions = cache(async () => {
 export type ApprovedPRLineItemRow = {
   id: string;
   prLineItemId: string;
+  catalogItemId: string;
   lineNumber: number;
   lineItemNumber: number;
   categoryName: string;
@@ -620,6 +621,8 @@ export type ApprovedPRLineItemRow = {
   sku: string | null;
   unit: string;
   quantity: number;
+  /** Unit price from the most recent PO for this catalog item, if any. */
+  previousUnitPrice: string | null;
 };
 
 export type ApprovedPRAwaitingPO = {
@@ -646,6 +649,27 @@ export async function getApprovedPRsAwaitingPO(
     () => fetchApprovedPRsAwaitingPO(limit, filters.scopeWarehouseIds),
     { tags: [LIST_CACHE_TAGS.awaitingPo, LIST_CACHE_TAGS.purchaseOrders] },
   );
+}
+
+async function fetchLastPoUnitPricesByCatalogItem(
+  catalogItemIds: string[],
+): Promise<Map<string, string>> {
+  const uniqueIds = [...new Set(catalogItemIds)];
+  if (uniqueIds.length === 0) {
+    return new Map();
+  }
+
+  const rows = await prisma.purchaseOrderLineItem.findMany({
+    where: { catalogItemId: { in: uniqueIds } },
+    orderBy: { purchaseOrder: { createdAt: "desc" } },
+    distinct: ["catalogItemId"],
+    select: {
+      catalogItemId: true,
+      unitPrice: true,
+    },
+  });
+
+  return new Map(rows.map((row) => [row.catalogItemId, row.unitPrice.toString()]));
 }
 
 async function fetchApprovedPRsAwaitingPO(
@@ -676,12 +700,18 @@ async function fetchApprovedPRsAwaitingPO(
     },
   });
 
+  const catalogItemIds = rows.flatMap((pr) =>
+    pr.lines.flatMap((line) => line.items.map((item) => item.catalogItemId)),
+  );
+  const previousRatesByCatalogItem = await fetchLastPoUnitPricesByCatalogItem(catalogItemIds);
+
   return rows.map((pr) => {
     const lines = mapPrLinesFromDb(pr.lines);
     const lineItems: ApprovedPRLineItemRow[] = lines.flatMap((line) =>
       line.items.map((item) => ({
         id: item.id,
         prLineItemId: item.id,
+        catalogItemId: item.catalogItemId,
         lineNumber: line.lineNumber,
         lineItemNumber: item.lineItemNumber,
         categoryName: line.categoryName,
@@ -690,6 +720,7 @@ async function fetchApprovedPRsAwaitingPO(
         sku: item.sku,
         unit: item.unit,
         quantity: item.quantity,
+        previousUnitPrice: previousRatesByCatalogItem.get(item.catalogItemId) ?? null,
       })),
     );
     const summary = formatLineSummary(lines);

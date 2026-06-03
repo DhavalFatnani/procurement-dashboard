@@ -22,6 +22,7 @@ import {
   createPR,
   createVendorRequest,
   submitPR,
+  submitPRForApproval,
   updatePR,
 } from "@/app/actions/purchase-requests";
 import type {
@@ -65,6 +66,7 @@ import {
   resolveCreatePRSelection,
 } from "@/lib/create-pr-selection";
 import type { WarehouseOption } from "@/lib/format-warehouse";
+import { useServerMutation } from "@/lib/use-server-mutation";
 import { cn } from "@/lib/utils";
 
 type SerialHint = NonNullable<Awaited<ReturnType<typeof getSerialSeriesHint>>>;
@@ -90,6 +92,7 @@ export function CreatePRForm({
   defaultWarehouseId: string;
 }) {
   const router = useRouter();
+  const { isPending: submitPending, run: runSubmit } = useServerMutation();
   const [warehouseId, setWarehouseId] = React.useState(defaultWarehouseId);
   const selectedWarehouse = React.useMemo(
     () => warehouses.find((w) => w.id === warehouseId) ?? warehouses[0],
@@ -410,31 +413,23 @@ export function CreatePRForm({
     if (executionType !== ExecutionType.VENDOR_PURCHASE) {
       return;
     }
-    startTransition(async () => {
-      let id = prId;
-      if (!id) {
-        const created = await createPR(formPayload());
-        if (!created.ok || !created.prId) {
-          toast.error(created.message ?? "Could not create PR.");
-          return;
-        }
-        id = created.prId;
-        setPrId(id);
-      } else {
-        const updated = await updatePR(id, formPayload());
-        if (!updated.ok) {
-          toast.error(updated.message ?? "Could not update PR.");
-          return;
-        }
-      }
-      const submitted = await submitPR(id);
-      if (submitted.ok) {
-        toast.success("Submitted for approval.");
-        router.push(`/purchase-requests/${id}`);
-      } else {
-        toast.error(submitted.message ?? "Submit failed.");
-      }
-    });
+    void runSubmit(
+      () => submitPRForApproval(formPayload(), prId),
+      {
+        refresh: false,
+        onSuccess: (result) => {
+          const id =
+            result && typeof result === "object" && "prId" in result && result.prId
+              ? result.prId
+              : prId;
+          toast.success("Submitted for approval.");
+          if (id) {
+            router.push(`/purchase-requests/${id}`);
+          }
+        },
+        onError: (message) => toast.error(message),
+      },
+    );
   }
 
   function confirmPrint() {
@@ -720,13 +715,14 @@ export function CreatePRForm({
         >
           <h2 className="text-ds-sm font-semibold">3. Vendor request (optional)</h2>
           <p className="text-ds-xs text-muted-foreground">
-            Ops Head will assign the fulfilling vendor when creating the purchase order. Request a
-            new vendor here if none exists yet.
+            Suggest a new vendor for Ops Head to review. This is separate from saving or
+            submitting the purchase request — save or submit the PR when line items are ready.
           </p>
           {pendingVendorLabel ? (
             <PageAlert variant="info">
               Vendor request submitted for <strong>{pendingVendorLabel}</strong>. Ops Head will
-              review before fulfillment.
+              review on the Vendors page. Save or submit this purchase request separately when
+              ready.
             </PageAlert>
           ) : null}
           <Sheet open={vendorSheetOpen} onOpenChange={setVendorSheetOpen}>
@@ -742,16 +738,6 @@ export function CreatePRForm({
             />
             <VendorRequestSheetContent
               key={flowKey}
-              ensureDraft={async () => {
-                if (prId) {
-                  return prId;
-                }
-                if (!section2Done) {
-                  toast.error("Complete line items before requesting a vendor.");
-                  return null;
-                }
-                return persistDraft();
-              }}
               onCreated={(requestId, label) => {
                 setVendorRequestId(requestId);
                 setPendingVendorLabel(label);
@@ -813,7 +799,8 @@ export function CreatePRForm({
           {showVendorPurchaseActions ? (
             <Button
               type="button"
-              disabled={pending}
+              disabled={pending || submitPending}
+              loading={submitPending}
               onClick={() => submitForApproval()}
             >
               Submit for approval
@@ -875,10 +862,8 @@ export function CreatePRForm({
 }
 
 function VendorRequestSheetContent({
-  ensureDraft,
   onCreated,
 }: {
-  ensureDraft: () => Promise<string | null>;
   onCreated: (requestId: string, businessName: string) => void;
 }) {
   const [businessName, setBusinessName] = React.useState("");
@@ -897,15 +882,11 @@ function VendorRequestSheetContent({
         onSubmit={(e) => {
           e.preventDefault();
           startTransition(async () => {
-            const linkedPrId = await ensureDraft();
-            const r = await createVendorRequest(
-              { businessName, pocName, phone, email },
-              linkedPrId ?? undefined,
-            );
+            const r = await createVendorRequest({ businessName, pocName, phone, email });
             if (r.ok && r.requestId) {
               onCreated(r.requestId, businessName);
               toast.success(
-                "Vendor request submitted. Ops Head will review when creating the purchase order.",
+                "Vendor request submitted. Save or submit this purchase request when ready.",
               );
             } else {
               toast.error(r.message ?? "Could not submit vendor request.");

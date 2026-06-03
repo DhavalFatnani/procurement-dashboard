@@ -33,7 +33,9 @@ export function useServerMutation(options?: { onRefresh?: () => void }) {
           handlers?.onError?.(result.message ?? "Request failed.");
           return result;
         }
-        handlers?.onSuccess?.(result ?? { ok: true });
+        startTransition(() => {
+          handlers?.onSuccess?.(result ?? { ok: true });
+        });
         if (handlers?.refresh !== false) {
           startTransition(() => {
             if (options?.onRefresh) {

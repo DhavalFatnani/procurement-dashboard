@@ -8,8 +8,12 @@ import {
   PRDetailVersionHistory,
 } from "@/components/purchase-requests/PRDetailSections";
 import { PRDetailPageShell } from "@/components/purchase-requests/PRDetailPageShell";
-import { dbParallel } from "@/lib/db-parallel";
-import { getFilterOptions, getPRById } from "@/lib/queries/purchase-requests";
+import {
+  EMPTY_PR_FILTER_OPTIONS,
+  getFilterOptions,
+  getPRById,
+  prDetailNeedsFilterOptions,
+} from "@/lib/queries/purchase-requests";
 import { ACCESS } from "@/lib/route-access";
 import { assertRole, getRequestSession } from "@/lib/session";
 
@@ -19,14 +23,14 @@ export default async function PurchaseRequestDetailPage({ params }: { params: Pa
   const user = assertRole(await getRequestSession(), [...ACCESS.purchaseRequests]);
   const { id } = await params;
 
-  const [pr, filterOptions] = await dbParallel(
-    () => getPRById(user, id),
-    () => getFilterOptions(),
-  );
-
+  const pr = await getPRById(user, id);
   if (!pr) {
     notFound();
   }
+
+  const filterOptions = prDetailNeedsFilterOptions(user.role, pr.status)
+    ? await getFilterOptions()
+    : EMPTY_PR_FILTER_OPTIONS;
 
   const isInternalPrint = pr.executionType === ExecutionType.INTERNAL_PRINT;
 

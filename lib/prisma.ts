@@ -3,6 +3,10 @@ import "server-only";
 import { PrismaClient } from "@prisma/client";
 import { withAccelerate } from "@prisma/extension-accelerate";
 
+import { usesSharedDbPooler } from "@/lib/db-parallel";
+import { resolveDatabaseUrl } from "@/lib/database-url";
+import { withDbMutex } from "@/lib/db-mutex";
+
 /**
  * Singleton Prisma client extended with Accelerate.
  *
@@ -12,13 +16,32 @@ import { withAccelerate } from "@prisma/extension-accelerate";
  * - Locally / with a direct `postgresql://` URL, Accelerate is a no-op pass-through
  *   and queries go straight to the database via the query engine.
  *
- * With Supabase PgBouncer (`connection_limit=1`), run queries sequentially —
- * see lib/db-serial.ts. Do not Promise.all multiple prisma calls.
+ * With Supabase PgBouncer (session pooler), Prisma uses `connection_limit=1` and a
+ * process-wide query mutex so Suspense boundaries cannot exhaust the shared pool.
  */
 function createPrismaClient() {
-  return new PrismaClient({
+  const base = new PrismaClient({
+    datasources: {
+      db: {
+        url: resolveDatabaseUrl(),
+      },
+    },
     log: process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
-  }).$extends(withAccelerate());
+  });
+
+  const withPoolerGuard = usesSharedDbPooler()
+    ? base.$extends({
+        query: {
+          $allModels: {
+            async $allOperations({ args, query }) {
+              return withDbMutex(() => query(args));
+            },
+          },
+        },
+      })
+    : base;
+
+  return withPoolerGuard.$extends(withAccelerate());
 }
 
 type ExtendedPrismaClient = ReturnType<typeof createPrismaClient>;
