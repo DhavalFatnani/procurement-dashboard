@@ -1,7 +1,6 @@
 "use client";
 
 import { Role } from "@/lib/prisma-enums";
-import { useRouter, useSearchParams } from "next/navigation";
 import * as React from "react";
 
 import { Breadcrumbs } from "@/components/shared/Breadcrumbs";
@@ -11,7 +10,6 @@ import {
 } from "@/components/shared/DetailPageShell";
 import {
   Tabs,
-  TabsContent,
   TabsList,
   TabsTrigger,
 } from "@/components/shared/Tabs";
@@ -40,36 +38,50 @@ const TABS: { id: TabId; label: string }[] = [
   { id: "activity", label: "Activity" },
 ];
 
-function parseTab(value: string | null): TabId {
+function parseTab(value: string | null | undefined): TabId {
   if (value === "summary" || value === "fulfillment" || value === "financials" || value === "activity") {
     return value;
   }
   return "summary";
 }
 
+function poDetailTabUrl(poId: string, tab: TabId): string {
+  if (tab === "summary") {
+    return `/purchase-orders/${poId}`;
+  }
+  return `/purchase-orders/${poId}?tab=${tab}`;
+}
+
 export function PODetailPageShell({
   po,
   role,
+  initialTab,
 }: {
   po: PODetail;
   role: Role;
+  initialTab?: string | null;
 }) {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const activeTab = parseTab(searchParams.get("tab"));
+  const [activeTab, setActiveTab] = React.useState<TabId>(() => parseTab(initialTab));
+  const [visitedTabs, setVisitedTabs] = React.useState<Set<TabId>>(
+    () => new Set([parseTab(initialTab)]),
+  );
+
+  React.useEffect(() => {
+    function onPopState() {
+      const params = new URLSearchParams(window.location.search);
+      const tab = parseTab(params.get("tab"));
+      setActiveTab(tab);
+      setVisitedTabs((prev) => new Set(prev).add(tab));
+    }
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
 
   function setTab(next: string) {
-    const params = new URLSearchParams(searchParams.toString());
-    if (next === "summary") {
-      params.delete("tab");
-    } else {
-      params.set("tab", next);
-    }
-    const qs = params.toString();
-    router.replace(
-      qs ? `/purchase-orders/${po.id}?${qs}` : `/purchase-orders/${po.id}`,
-      { scroll: false },
-    );
+    const tab = parseTab(next);
+    setActiveTab(tab);
+    setVisitedTabs((prev) => new Set(prev).add(tab));
+    window.history.replaceState(null, "", poDetailTabUrl(po.id, tab));
   }
 
   const breadcrumbs = poDetailBreadcrumbs({ poId: po.id, prId: po.prId });
@@ -84,6 +96,31 @@ export function PODetailPageShell({
   const runMutateActionRef = React.useRef<(id: PONextActionId) => void>(() => {
     /* set by action bar mount */
   });
+
+  const tabPanel = (
+    <div className="mt-4 outline-none" role="tabpanel">
+      {visitedTabs.has("summary") ? (
+        <div hidden={activeTab !== "summary"}>
+          <PODetailSummaryTab po={po} role={role} />
+        </div>
+      ) : null}
+      {visitedTabs.has("fulfillment") ? (
+        <div hidden={activeTab !== "fulfillment"}>
+          <PODetailFulfillmentTab po={po} role={role} />
+        </div>
+      ) : null}
+      {visitedTabs.has("financials") ? (
+        <div hidden={activeTab !== "financials"}>
+          <PODetailFinancialsTab po={po} role={role} />
+        </div>
+      ) : null}
+      {visitedTabs.has("activity") ? (
+        <div hidden={activeTab !== "activity"}>
+          <PODetailActivityTab po={po} />
+        </div>
+      ) : null}
+    </div>
+  );
 
   return (
     <Tabs value={activeTab} onValueChange={setTab}>
@@ -103,22 +140,7 @@ export function PODetailPageShell({
             ))}
           </TabsList>
         }
-        body={
-          <>
-            <TabsContent value="summary">
-              <PODetailSummaryTab po={po} role={role} />
-            </TabsContent>
-            <TabsContent value="fulfillment">
-              <PODetailFulfillmentTab po={po} role={role} />
-            </TabsContent>
-            <TabsContent value="financials">
-              <PODetailFinancialsTab po={po} role={role} />
-            </TabsContent>
-            <TabsContent value="activity">
-              <PODetailActivityTab po={po} />
-            </TabsContent>
-          </>
-        }
+        body={tabPanel}
         side={
           <>
             <DetailSideCard title="Progress">

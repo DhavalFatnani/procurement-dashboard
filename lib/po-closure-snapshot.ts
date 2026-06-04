@@ -5,8 +5,9 @@ import {
   type Prisma,
 } from "@/lib/prisma-client";
 
-import { sumOrderedQty } from "@/lib/purchase-lines";
+import { applyGstToSubtotal } from "@/lib/po-gst";
 import { sumPaymentAmounts } from "@/lib/payment-totals";
+import { sumOrderedQty } from "@/lib/purchase-lines";
 
 export type POClosureSnapshot = {
   poId: string;
@@ -70,7 +71,7 @@ function acceptedQtyByPoLine(po: POWithRelations): Map<string, number> {
   return map;
 }
 
-function computeExpectedInvoicedAmount(po: POWithRelations): number | null {
+function computeExpectedInvoicedSubtotal(po: POWithRelations): number | null {
   const lineItems = po.lineItems ?? [];
   const lines = po.lines ?? [];
   if (lineItems.length > 0) {
@@ -100,6 +101,19 @@ function computeExpectedInvoicedAmount(po: POWithRelations): number | null {
     total += accepted * Number(line.unitPrice);
   }
   return total;
+}
+
+function computeExpectedInvoicedAmount(po: POWithRelations): number | null {
+  const subtotal = computeExpectedInvoicedSubtotal(po);
+  if (subtotal == null) {
+    return null;
+  }
+  const billing = applyGstToSubtotal(
+    subtotal,
+    po.gstApplicable,
+    po.gstRatePercent != null ? Number(po.gstRatePercent) : null,
+  );
+  return billing.total;
 }
 
 function sumInvoicedAmount(invoices: POWithRelations["invoices"]): number {

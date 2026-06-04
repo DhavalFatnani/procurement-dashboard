@@ -46,6 +46,8 @@ export type POForInvoiceOption = {
   label: string;
   vendorName: string;
   unitPrice: string | null;
+  gstApplicable: boolean;
+  gstRatePercent: string | null;
   linePrices: { poLineId: string; label: string; unitPrice: string }[];
   grns: InvoiceGRNOption[];
 };
@@ -314,6 +316,8 @@ async function computePOForInvoiceById(poId: string): Promise<POForInvoiceOption
     select: {
       id: true,
       unitPrice: true,
+      gstApplicable: true,
+      gstRatePercent: true,
       vendor: { select: { businessName: true } },
       lineItems: {
         orderBy: [{ categoryId: "asc" }, { subcategoryId: "asc" }],
@@ -379,6 +383,8 @@ async function computePOForInvoiceById(poId: string): Promise<POForInvoiceOption
       linePrices.length === 1
         ? linePrices[0]!.unitPrice
         : (po.unitPrice?.toString() ?? null),
+    gstApplicable: po.gstApplicable,
+    gstRatePercent: po.gstRatePercent?.toString() ?? null,
     linePrices,
     grns: po.grns.map((g) => ({
       id: g.id,

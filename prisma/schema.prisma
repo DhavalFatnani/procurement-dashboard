@@ -100,6 +100,11 @@ enum CatalogItemStatus {
   INACTIVE
 }
 
+enum VendorItemPriceSource {
+  PO
+  CONFIGURE
+}
+
 /// Reserved for operational/UI state around serial ceilings (not yet on `SeriesConfig` per domain spec).
 enum SeriesConfigStatus {
   ACTIVE
@@ -137,6 +142,8 @@ model User {
   seriesConfigsConfigured   SeriesConfig[]
   catalogItemsCreated       CatalogItem[]       @relation("CatalogItemCreatedBy")
   catalogItemsApproved      CatalogItem[]       @relation("CatalogItemApprovedBy")
+  catalogItemVendorsLinked  CatalogItemVendor[] @relation("CatalogItemVendorLinkedBy")
+  vendorCatalogItemPrices   VendorCatalogItemPrice[] @relation("VendorCatalogItemPriceRecordedBy")
 
   @@index([role])
 }
@@ -191,6 +198,8 @@ model Vendor {
   vendorChangeLogs        VendorChangeLog[]
   vendorRequestsActivated VendorRequest[]   @relation("VendorRequestActivatedVendor")
   purchaseRequests        PurchaseRequest[]
+  catalogItemLinks        CatalogItemVendor[]
+  catalogItemPrices       VendorCatalogItemPrice[]
 
   @@index([status])
   @@index([updatedAt])
@@ -283,10 +292,50 @@ model CatalogItem {
   approvedBy   User?                     @relation("CatalogItemApprovedBy", fields: [approvedById], references: [id])
   prLineItems  PurchaseRequestLineItem[]
   poLineItems  PurchaseOrderLineItem[]
+  vendorLinks  CatalogItemVendor[]
+  vendorPrices VendorCatalogItemPrice[]
 
   @@unique([subcategoryId, name])
   @@index([subcategoryId, status])
   @@index([createdById])
+}
+
+model CatalogItemVendor {
+  catalogItemId String
+  vendorId      String
+  firstLinkedAt DateTime @default(now())
+  lastLinkedAt  DateTime @updatedAt
+  linkedById    String?
+
+  catalogItem CatalogItem @relation(fields: [catalogItemId], references: [id], onDelete: Cascade)
+  vendor      Vendor      @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  linkedBy    User?       @relation("CatalogItemVendorLinkedBy", fields: [linkedById], references: [id])
+
+  @@id([catalogItemId, vendorId])
+  @@index([vendorId])
+}
+
+model VendorCatalogItemPrice {
+  id            String                @id @default(cuid())
+  catalogItemId String
+  vendorId      String
+  unitPrice     Decimal               @db.Decimal(18, 4)
+  source        VendorItemPriceSource
+  poId          String?
+  prId          String?
+  recordedById  String
+  recordedAt    DateTime              @default(now())
+  notes         String?
+
+  catalogItem CatalogItem    @relation(fields: [catalogItemId], references: [id], onDelete: Cascade)
+  vendor      Vendor         @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  purchaseOrder PurchaseOrder? @relation(fields: [poId], references: [id], onDelete: SetNull)
+  purchaseRequest PurchaseRequest? @relation(fields: [prId], references: [id], onDelete: SetNull)
+  recordedBy  User           @relation("VendorCatalogItemPriceRecordedBy", fields: [recordedById], references: [id])
+
+  @@index([catalogItemId, vendorId, recordedAt(sort: Desc)])
+  @@index([vendorId])
+  @@index([poId])
 }
 
 /// Human-facing id: use prefix `PR-` in application (e.g. `PR-${cuid()}`) when creating rows.
@@ -317,8 +366,9 @@ model PurchaseRequest {
   lines                PurchaseRequestLine[]
   linkedVendorRequests VendorRequest[]       @relation("VendorRequestLinkedPR")
   versions             PRVersion[]
-  purchaseOrder        PurchaseOrder?
+  purchaseOrders       PurchaseOrder[]
   serialReservation    SerialReservation?
+  vendorCatalogItemPrices VendorCatalogItemPrice[]
 
   @@index([status])
   @@index([warehouseId, status])
@@ -390,7 +440,7 @@ model PRVersion {
 /// Human-facing id: use prefix `PO-` when creating rows.
 model PurchaseOrder {
   id               String    @id
-  prId             String    @unique
+  prId             String
   vendorId         String
   /// Legacy totals — prefer summing `lines`. Kept for list queries during transition.
   orderedQty       Int?
@@ -398,6 +448,9 @@ model PurchaseOrder {
   status           POStatus  @default(OPEN)
   expectedDelivery DateTime?
   deliveryComplete Boolean   @default(false)
+  /// When true, unit prices are exclusive of GST and gstRatePercent applies.
+  gstApplicable    Boolean   @default(false)
+  gstRatePercent   Decimal?  @db.Decimal(5, 2)
   forceClosedById  String?
   forceCloseReason String?
   createdAt        DateTime  @default(now())
@@ -412,7 +465,9 @@ model PurchaseOrder {
   grns              GoodsReceipt[]
   invoices          Invoice[]
   serialReservation SerialReservation?
+  catalogItemPrices VendorCatalogItemPrice[]
 
+  @@index([prId])
   @@index([status])
   @@index([vendorId])
   @@index([createdAt])

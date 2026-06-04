@@ -84,7 +84,7 @@ export const getCachedActiveVendorOptions = unstable_cache(
     prisma.vendor.findMany({
       where: { status: "ACTIVE" },
       orderBy: { businessName: "asc" },
-      select: { id: true, businessName: true },
+      select: { id: true, businessName: true, gst: true },
     }),
   ["active-vendor-options"],
   { revalidate: 3600, tags: ["vendor-options"] },

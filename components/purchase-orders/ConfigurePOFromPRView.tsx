@@ -9,7 +9,7 @@ import { configurePOBreadcrumbs } from "@/lib/lineage";
 import type { ApprovedPRAwaitingPO } from "@/lib/queries/purchase-orders";
 import { cn } from "@/lib/utils";
 
-type ActiveVendor = { id: string; businessName: string };
+type ActiveVendor = { id: string; businessName: string; gst: string | null };
 
 export function ConfigurePOFromPRView({
   pr,

@@ -65,6 +65,29 @@ export function PendingConfigurePOListView({
       variant: "date",
     },
     {
+      id: "progress",
+      header: "PO progress",
+      cell: (pr) => {
+        const { assigned, total } = pr.poProgress;
+        if (assigned === 0) {
+          return <span className="text-muted-foreground">Not started</span>;
+        }
+        if (assigned < total) {
+          return (
+            <span className="text-status-warning">
+              Partial ({assigned}/{total})
+            </span>
+          );
+        }
+        return (
+          <span className="text-muted-foreground">
+            {assigned}/{total}
+          </span>
+        );
+      },
+      variant: "numeric",
+    },
+    {
       id: "vendorRequest",
       header: "Vendor request",
       cell: (pr) =>

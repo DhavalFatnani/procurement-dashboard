@@ -44,6 +44,8 @@ export type PurchaseRequestListRow = {
   versionLabel: string;
   createdByName: string;
   createdAt: string;
+  /** Line items already on a PO vs total catalog line items (vendor purchase only) */
+  poProgress?: { assigned: number; total: number };
 };
 
 export type CategoryOption = { id: string; name: string };
@@ -120,7 +122,16 @@ export type PRDetail = {
     changedAt: string;
     revisionComment: string | null;
   }[];
+  purchaseOrders: {
+    id: string;
+    status: POStatus;
+    vendorName: string;
+    createdAt: string;
+    itemCount: number;
+  }[];
+  /** First PO when any exist — convenience for legacy callers */
   purchaseOrder: { id: string; status: POStatus; createdAt: string } | null;
+  poProgress: { assigned: number; total: number };
   serialReservation: {
     id: string;
     series: string;
@@ -315,6 +326,11 @@ async function fetchPurchaseRequests(
               category: { select: { name: true } },
               subcategory: { select: { name: true } },
               _count: { select: { items: true } },
+              items: {
+                select: {
+                  poLineItem: { select: { id: true } },
+                },
+              },
             },
           },
           warehouse: { select: { name: true, location: true } },
@@ -338,6 +354,14 @@ async function fetchPurchaseRequests(
       const totalQty =
         lineRows.length > 0 ? sumLineQuantities(lineRows) : (pr.quantity ?? 0);
       const primaryLine = pr.lines[0];
+      const allItems = pr.lines.flatMap((l) => l.items);
+      const poProgress =
+        pr.executionType === ExecutionType.VENDOR_PURCHASE && allItems.length > 0
+          ? {
+              assigned: allItems.filter((i) => i.poLineItem).length,
+              total: allItems.length,
+            }
+          : undefined;
 
       return {
         id: pr.id,
@@ -364,6 +388,7 @@ async function fetchPurchaseRequests(
         versionLabel: `V${pr.currentVersion}`,
         createdByName: pr.createdBy.name,
         createdAt: pr.createdAt.toISOString(),
+        poProgress,
       };
     }),
   };
@@ -404,12 +429,13 @@ async function fetchPRById(user: SessionUser, id: string): Promise<PRDetail | nu
           changedBy: { select: { name: true } },
         },
       },
-      purchaseOrder: {
+      purchaseOrders: {
         select: {
           id: true,
           status: true,
           createdAt: true,
           vendor: { select: { businessName: true } },
+          lineItems: { select: { id: true } },
           grns: {
             select: { receivedAt: true },
             orderBy: { receivedAt: "asc" },
@@ -423,6 +449,7 @@ async function fetchPRById(user: SessionUser, id: string): Promise<PRDetail | nu
             orderBy: { createdAt: "asc" },
           },
         },
+        orderBy: { createdAt: "asc" },
       },
       serialReservation: {
         select: {
@@ -464,23 +491,37 @@ async function fetchPRById(user: SessionUser, id: string): Promise<PRDetail | nu
     return snap?.action === "REVISION_REQUIRED" || Boolean(v.revisionComment);
   });
 
-  const po = pr.purchaseOrder;
-  const grnCount = po?.grns.length ?? 0;
-  const invoiceCount = po?.invoices.length ?? 0;
-  const paidCount =
-    po?.invoices.filter((i) => i.paymentStatus === "PAID").length ?? 0;
+  const pos = pr.purchaseOrders;
+  const allLineItems = pr.lines.flatMap((l) => l.items);
+  const poProgress = {
+    assigned: allLineItems.filter((i) => i.poLineItem).length,
+    total: allLineItems.length,
+  };
+  const firstPo = pos[0] ?? null;
+  const grnCount = pos.reduce((n, po) => n + po.grns.length, 0);
+  const allInvoices = pos.flatMap((po) => po.invoices);
+  const invoiceCount = allInvoices.length;
+  const paidCount = allInvoices.filter((i) => i.paymentStatus === "PAID").length;
 
   const approvedVersion = pr.versions.find((v) => {
     const snap = v.diffSnapshot as { action?: string } | null;
     return snap?.action === "APPROVED";
   });
 
-  const firstGrnAt = po?.grns[0]?.receivedAt ?? null;
-  const firstInvoiceAt = po?.invoices[0]?.createdAt ?? null;
+  const firstGrnAt =
+    pos
+      .flatMap((po) => po.grns)
+      .map((g) => g.receivedAt)
+      .sort((a, b) => a.getTime() - b.getTime())[0] ?? null;
+  const firstInvoiceAt =
+    allInvoices
+      .map((i) => i.createdAt)
+      .sort((a, b) => a.getTime() - b.getTime())[0] ?? null;
   const allPaid =
     invoiceCount > 0 && paidCount === invoiceCount
-      ? po?.invoices
-          .map((i) => i.payments[0]?.paidAt)
+      ? allInvoices
+          .flatMap((i) => i.payments)
+          .map((p) => p.paidAt)
           .filter((d): d is Date => d != null)
           .sort((a, b) => b.getTime() - a.getTime())[0] ?? null
       : null;
@@ -500,7 +541,7 @@ async function fetchPRById(user: SessionUser, id: string): Promise<PRDetail | nu
     vendorId: pr.vendorId,
     vendorName:
       pr.vendor?.businessName ??
-      po?.vendor?.businessName ??
+      firstPo?.vendor?.businessName ??
       pr.vendorRequest?.businessName ??
       null,
     executionType: pr.executionType,
@@ -521,9 +562,17 @@ async function fetchPRById(user: SessionUser, id: string): Promise<PRDetail | nu
       changedAt: v.changedAt.toISOString(),
       revisionComment: v.revisionComment,
     })),
-    purchaseOrder: po
-      ? { id: po.id, status: po.status, createdAt: po.createdAt.toISOString() }
+    purchaseOrders: pos.map((po) => ({
+      id: po.id,
+      status: po.status,
+      vendorName: po.vendor.businessName,
+      createdAt: po.createdAt.toISOString(),
+      itemCount: po.lineItems.length,
+    })),
+    purchaseOrder: firstPo
+      ? { id: firstPo.id, status: firstPo.status, createdAt: firstPo.createdAt.toISOString() }
       : null,
+    poProgress,
     serialReservation: pr.serialReservation
       ? {
           id: pr.serialReservation.id,
@@ -549,8 +598,8 @@ async function fetchPRById(user: SessionUser, id: string): Promise<PRDetail | nu
         pr.status === PRStatus.CONVERTED_TO_PO ||
         pr.status === PRStatus.EXECUTED_PRINT,
       prApprovedAt: approvedVersion?.changedAt.toISOString() ?? null,
-      poCreated: !!po,
-      poCreatedAt: po?.createdAt.toISOString() ?? null,
+      poCreated: pos.length > 0,
+      poCreatedAt: firstPo?.createdAt.toISOString() ?? null,
       grnRecorded: grnCount > 0,
       grnRecordedAt: firstGrnAt?.toISOString() ?? null,
       invoiceUploaded: invoiceCount > 0,

@@ -93,6 +93,7 @@ export function revalidateCreatePOFromPR(prId: string, poId: string) {
   revalidateTag(LIST_CACHE_TAGS.purchaseRequests);
   revalidateTag(LIST_CACHE_TAGS.purchaseOrders);
   revalidateTag(LIST_CACHE_TAGS.awaitingPo);
+  revalidateTag(LIST_CACHE_TAGS.vendorItems);
   revalidatePath(`/purchase-requests/${prId}`);
   revalidatePath(`/purchase-orders/${poId}`);
   revalidatePath("/purchase-orders");

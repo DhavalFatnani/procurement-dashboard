@@ -15,6 +15,7 @@ import { PageHeader } from "@/components/shared/PageHeader";
 import { formatGrnReceiptLabel } from "@/lib/display-ref";
 import { formatDateMedium, formatInr } from "@/lib/format-datetime";
 import { computeInvoiceMatchFromExpected } from "@/lib/invoiceMatch";
+import { applyGstToSubtotal } from "@/lib/po-gst";
 import { Combobox } from "@/components/ui/combobox";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -98,9 +99,9 @@ export function CreateInvoiceForm() {
     (selectedPo?.linePrices ?? []).map((line) => [line.poLineId, Number(line.unitPrice)]),
   );
 
-  let expectedAmount: number | null = null;
+  let subtotal: number | null = null;
   if (selectedGrns.length > 0 && priceByLine.size > 0) {
-    expectedAmount = selectedGrns.reduce((sum, grn) => {
+    subtotal = selectedGrns.reduce((sum, grn) => {
       return (
         sum +
         grn.lineAccepted.reduce((lineSum, la) => {
@@ -110,8 +111,17 @@ export function CreateInvoiceForm() {
       );
     }, 0);
   } else if (selectedPo?.unitPrice != null && acceptedQty > 0) {
-    expectedAmount = acceptedQty * Number(selectedPo.unitPrice);
+    subtotal = acceptedQty * Number(selectedPo.unitPrice);
   }
+
+  const expectedAmount =
+    subtotal == null || !selectedPo
+      ? null
+      : applyGstToSubtotal(
+          subtotal,
+          selectedPo.gstApplicable,
+          selectedPo.gstRatePercent != null ? Number(selectedPo.gstRatePercent) : null,
+        ).total;
 
   const amountNum = Number(amount) || 0;
   const match =
@@ -339,6 +349,12 @@ export function CreateInvoiceForm() {
                     : "Not set"}
                 </p>
               )}
+              {selectedPo?.gstApplicable && selectedPo.gstRatePercent ? (
+                <p className="text-muted-foreground">
+                  PO is on GST basis ({selectedPo.gstRatePercent}% on taxable
+                  value).
+                </p>
+              ) : null}
               <p>
                 Expected invoice amount:{" "}
                 {match.expectedAmount != null

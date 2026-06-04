@@ -16,6 +16,7 @@
     "db:migrate:deploy": "dotenv -e .env.local -- prisma migrate deploy",
     "db:push": "dotenv -e .env.local -- prisma db push",
     "db:seed": "dotenv -e .env.local -- prisma db seed",
+    "db:sync-auth-users": "dotenv -e .env.local -- tsx scripts/sync-auth-users.ts",
     "db:reset-fresh": "dotenv -e .env.local -- tsx scripts/reset-operational-data.ts",
     "db:generate": "prisma generate",
     "storage:setup": "dotenv -e .env.local -- tsx scripts/ensure-storage-buckets.ts",

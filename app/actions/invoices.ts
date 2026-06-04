@@ -4,6 +4,7 @@ import { Role } from "@/lib/prisma-enums";
 
 import type { MutationResult } from "@/lib/action-result";
 import { computeInvoiceMatchFromExpected } from "@/lib/invoiceMatch";
+import { applyGstToSubtotal } from "@/lib/po-gst";
 import { applyPOClosureInTransaction, PO_CLOSURE_TX_OPTS } from "@/lib/poAutoClose";
 import type { Paginated } from "@/lib/pagination";
 import {
@@ -174,9 +175,9 @@ export async function createInvoice(
 
   const acceptedQty = po.grns.reduce((s, g) => s + g.acceptedQty, 0);
 
-  let expectedAmount: number | null = null;
+  let subtotal: number | null = null;
   if (po.lineItems.length > 0) {
-    expectedAmount = po.lineItems.reduce((sum, line) => {
+    subtotal = po.lineItems.reduce((sum, line) => {
       const lineAccepted = line.goodsReceiptLineItems.reduce(
         (s, grl) => s + grl.acceptedQty,
         0,
@@ -184,13 +185,22 @@ export async function createInvoice(
       return sum + lineAccepted * Number(line.unitPrice);
     }, 0);
   } else if (po.lines.length > 0) {
-    expectedAmount = po.lines.reduce((sum, line) => {
+    subtotal = po.lines.reduce((sum, line) => {
       const lineAccepted = line.goodsReceiptLines.reduce((s, grl) => s + grl.acceptedQty, 0);
       return sum + lineAccepted * Number(line.unitPrice);
     }, 0);
   } else if (po.unitPrice != null) {
-    expectedAmount = acceptedQty * Number(po.unitPrice);
+    subtotal = acceptedQty * Number(po.unitPrice);
   }
+
+  const expectedAmount =
+    subtotal == null
+      ? null
+      : applyGstToSubtotal(
+          subtotal,
+          po.gstApplicable,
+          po.gstRatePercent != null ? Number(po.gstRatePercent) : null,
+        ).total;
 
   const match = computeInvoiceMatchFromExpected(expectedAmount, amount);
 

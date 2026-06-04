@@ -66,7 +66,7 @@ export function PRDetailPageShell({
               : ({
                   executionType: ExecutionType.VENDOR_PURCHASE,
                   status: pr.status,
-                  hasPO: !!pr.purchaseOrder,
+                  hasPO: pr.purchaseOrders.length > 0,
                   hasGRN: pr.progress.grnRecorded,
                   hasInvoice: pr.progress.invoiceUploaded,
                   isPaid: pr.progress.paymentReceived,

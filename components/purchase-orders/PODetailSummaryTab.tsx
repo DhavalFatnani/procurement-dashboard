@@ -15,6 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatDateMedium, formatInr } from "@/lib/format-datetime";
+import { computePoOrderBilling } from "@/lib/po-gst";
 import type { PODetail } from "@/lib/queries/purchase-orders";
 import { cn } from "@/lib/utils";
 
@@ -33,9 +34,10 @@ export function PODetailSummaryTab({
 }) {
   const billingLines =
     po.lineItems.length > 0 ? po.lineItems : po.lines;
-  const totalValue = billingLines.reduce(
-    (sum, line) => sum + line.orderedQty * Number(line.unitPrice),
-    0,
+  const billing = computePoOrderBilling(
+    billingLines,
+    po.gstApplicable,
+    po.gstRatePercent,
   );
   const canEditDelivery =
     role === Role.OPS_HEAD && !NON_EDITABLE.includes(po.status);
@@ -51,8 +53,30 @@ export function PODetailSummaryTab({
           <MetaCell label="Ordered qty">
             <span className="font-tabular">{po.orderedQty}</span>
           </MetaCell>
-          <MetaCell label="Order value">
-            <span className="font-tabular">{formatInr(String(totalValue))}</span>
+          <MetaCell label="Tax basis">
+            {po.gstApplicable && po.gstRatePercent ? (
+              <span>
+                GST @ {po.gstRatePercent}%
+                {po.vendor.gst ? (
+                  <span className="block font-mono text-ds-xs text-muted-foreground">
+                    {po.vendor.gst}
+                  </span>
+                ) : null}
+              </span>
+            ) : (
+              <span>Non-GST / no tax on PO</span>
+            )}
+          </MetaCell>
+          <MetaCell label="Subtotal (excl. GST)">
+            <span className="font-tabular">{formatInr(String(billing.subtotal))}</span>
+          </MetaCell>
+          {billing.gstApplicable ? (
+            <MetaCell label="GST amount">
+              <span className="font-tabular">{formatInr(String(billing.gstAmount))}</span>
+            </MetaCell>
+          ) : null}
+          <MetaCell label="Order total">
+            <span className="font-tabular">{formatInr(String(billing.total))}</span>
           </MetaCell>
           <MetaCell label="Delivery state">
             {po.deliveryComplete ? "Delivery complete" : "In progress"}

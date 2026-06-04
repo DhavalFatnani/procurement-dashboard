@@ -76,6 +76,7 @@ export const prLinesAwaitingPoSelect = {
         catalogItem: {
           select: { name: true, sku: true, unit: true, status: true },
         },
+        poLineItem: { select: { poId: true } },
       },
     },
   },
@@ -92,6 +93,7 @@ export const prLinesInclude = {
         catalogItem: {
           select: { name: true, sku: true, unit: true, status: true },
         },
+        poLineItem: { select: { id: true } },
       },
     },
   },

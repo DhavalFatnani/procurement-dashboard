@@ -51,7 +51,12 @@ const vendorTone: Record<VendorStatus, ChipTone> = {
 };
 
 export type StatusBadgeProps =
-  | { kind: "PRStatus"; status: PRStatus; awaitingPurchaseOrder?: boolean }
+  | {
+      kind: "PRStatus";
+      status: PRStatus;
+      awaitingPurchaseOrder?: boolean;
+      partiallyOnPo?: { assigned: number; total: number };
+    }
   | { kind: "POStatus"; status: POStatus }
   | { kind: "PaymentStatus"; status: PaymentStatus }
   | { kind: "InvoiceMatchStatus"; status: InvoiceMatchStatus }
@@ -65,9 +70,14 @@ export const StatusBadge = memo(function StatusBadge(props: StatusBadgeProps) {
   switch (props.kind) {
     case "PRStatus": {
       const label =
-        props.awaitingPurchaseOrder && props.status === PRStatus.APPROVED
-          ? "Approved — awaiting PO"
-          : formatStatus(props.status);
+        props.partiallyOnPo &&
+        props.status === PRStatus.APPROVED &&
+        props.partiallyOnPo.assigned > 0 &&
+        props.partiallyOnPo.assigned < props.partiallyOnPo.total
+          ? `Approved — partially on PO (${props.partiallyOnPo.assigned}/${props.partiallyOnPo.total})`
+          : props.awaitingPurchaseOrder && props.status === PRStatus.APPROVED
+            ? "Approved — awaiting PO"
+            : formatStatus(props.status);
       return (
         <Chip tone={prTone[props.status]} showDot>
           {label}

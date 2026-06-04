@@ -6,6 +6,7 @@ import { ProcurementRefText } from "@/components/shared/ProcurementRef";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { formatPoPageTitle } from "@/lib/display-ref";
 import { formatDateMedium, formatInr } from "@/lib/format-datetime";
+import { computePoOrderBilling } from "@/lib/po-gst";
 import type { PODetail } from "@/lib/queries/purchase-orders";
 
 /**
@@ -13,9 +14,11 @@ import type { PODetail } from "@/lib/queries/purchase-orders";
  * action bar), no progress bar (that lives in the side panel).
  */
 export function PODetailHero({ po }: { po: PODetail }) {
-  const totalValue = po.lines.reduce(
-    (sum, line) => sum + line.orderedQty * Number(line.unitPrice),
-    0,
+  const billingLines = po.lineItems.length > 0 ? po.lineItems : po.lines;
+  const billing = computePoOrderBilling(
+    billingLines,
+    po.gstApplicable,
+    po.gstRatePercent,
   );
 
   return (
@@ -45,8 +48,10 @@ export function PODetailHero({ po }: { po: PODetail }) {
           })}
         </h1>
         <p className="text-ds-sm text-muted-foreground">
-          {po.lineSummary} · {po.orderedQty} ordered · Value{" "}
-          {formatInr(String(totalValue))}
+          {po.lineSummary} · {po.orderedQty} ordered ·{" "}
+          {po.gstApplicable && po.gstRatePercent
+            ? `Total ${formatInr(String(billing.total))} (incl. ${po.gstRatePercent}% GST)`
+            : `Value ${formatInr(String(billing.total))}`}
         </p>
       </div>
 

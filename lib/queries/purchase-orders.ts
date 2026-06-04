@@ -121,6 +121,8 @@ export type PODetail = {
   lines: POLineRow[];
   lineItems: POLineItemRow[];
   expectedDelivery: string | null;
+  gstApplicable: boolean;
+  gstRatePercent: string | null;
   deliveryComplete: boolean;
   status: POStatus;
   forceCloseReason: string | null;
@@ -131,6 +133,7 @@ export type PODetail = {
     pocName: string;
     phone: string;
     email: string;
+    gst: string | null;
   };
   serialReservation: {
     series: string;
@@ -327,6 +330,7 @@ async function fetchPOById(id: string): Promise<PODetail | null> {
           pocName: true,
           phone: true,
           email: true,
+          gst: true,
         },
       },
       lineItems: {
@@ -525,6 +529,8 @@ async function fetchPOById(id: string): Promise<PODetail | null> {
     lines: lineRows,
     lineItems: lineItemRows,
     expectedDelivery: po.expectedDelivery?.toISOString() ?? null,
+    gstApplicable: po.gstApplicable,
+    gstRatePercent: po.gstRatePercent?.toString() ?? null,
     deliveryComplete: po.deliveryComplete,
     status: po.status,
     forceCloseReason: po.forceCloseReason,
@@ -700,6 +706,15 @@ export type ApprovedPRLineItemRow = {
   quantity: number;
   /** Unit price from the most recent PO for this catalog item, if any. */
   previousUnitPrice: string | null;
+  alreadyOnPo: boolean;
+  existingPoId: string | null;
+};
+
+export type ApprovedPRPurchaseOrderSummary = {
+  id: string;
+  vendorName: string;
+  itemCount: number;
+  createdAt: string;
 };
 
 export type ApprovedPRAwaitingPO = {
@@ -714,6 +729,8 @@ export type ApprovedPRAwaitingPO = {
   createdByName: string;
   createdAt: string;
   vendorRequestLabel: string | null;
+  poProgress: { assigned: number; total: number };
+  existingPurchaseOrders: ApprovedPRPurchaseOrderSummary[];
 };
 
 export async function getApprovedPRsAwaitingPO(
@@ -771,13 +788,30 @@ const awaitingPoPrSelect = {
   warehouse: { select: { name: true, location: true } },
   createdBy: { select: { name: true } },
   vendorRequest: { select: { businessName: true, status: true } },
+  purchaseOrders: {
+    select: {
+      id: true,
+      createdAt: true,
+      vendor: { select: { businessName: true } },
+      lineItems: { select: { id: true } },
+    },
+    orderBy: { createdAt: "asc" as const },
+  },
 } as const;
 
 function awaitingPoWhere(scopeWarehouseIds?: string[]) {
   return {
     status: PRStatus.APPROVED,
     executionType: ExecutionType.VENDOR_PURCHASE,
-    purchaseOrder: null,
+    lines: {
+      some: {
+        items: {
+          some: {
+            poLineItem: null,
+          },
+        },
+      },
+    },
     ...(scopeWarehouseIds !== undefined
       ? { warehouseId: warehouseIdFilter(scopeWarehouseIds) }
       : {}),
@@ -795,25 +829,38 @@ function mapAwaitingPoRow(
   previousRatesByCatalogItem: Map<string, string>,
 ): ApprovedPRAwaitingPO {
   const lines = mapPrLinesFromDb(pr.lines);
-  const lineItems: ApprovedPRLineItemRow[] = lines.flatMap((line) =>
+  const rawItems = pr.lines.flatMap((line) =>
     line.items.map((item) => ({
-      id: item.id,
-      prLineItemId: item.id,
-      catalogItemId: item.catalogItemId,
-      lineNumber: line.lineNumber,
-      lineItemNumber: item.lineItemNumber,
-      categoryName: line.categoryName,
-      subcategoryName: line.subcategoryName,
-      itemName: item.itemName,
-      sku: item.sku,
-      unit: item.unit,
-      quantity: item.quantity,
-      previousUnitPrice: previousRatesByCatalogItem.get(item.catalogItemId) ?? null,
+      line,
+      item,
     })),
+  );
+  const lineItems: ApprovedPRLineItemRow[] = lines.flatMap((line) =>
+    line.items.map((item) => {
+      const raw = rawItems.find((r) => r.item.id === item.id);
+      const poId = raw?.item.poLineItem?.poId ?? null;
+      return {
+        id: item.id,
+        prLineItemId: item.id,
+        catalogItemId: item.catalogItemId,
+        lineNumber: line.lineNumber,
+        lineItemNumber: item.lineItemNumber,
+        categoryName: line.categoryName,
+        subcategoryName: line.subcategoryName,
+        itemName: item.itemName,
+        sku: item.sku,
+        unit: item.unit,
+        quantity: item.quantity,
+        previousUnitPrice: previousRatesByCatalogItem.get(item.catalogItemId) ?? null,
+        alreadyOnPo: poId != null,
+        existingPoId: poId,
+      };
+    }),
   );
   const summary = formatLineSummary(lines);
   const totalQty = sumLineQuantities(lines) || (pr.quantity ?? 0);
   const primary = lines[0];
+  const assigned = lineItems.filter((item) => item.alreadyOnPo).length;
 
   return {
     id: pr.id,
@@ -832,6 +879,13 @@ function mapAwaitingPoRow(
         : pr.vendorRequest
           ? pr.vendorRequest.businessName
           : null,
+    poProgress: { assigned, total: lineItems.length },
+    existingPurchaseOrders: pr.purchaseOrders.map((po) => ({
+      id: po.id,
+      vendorName: po.vendor.businessName,
+      itemCount: po.lineItems.length,
+      createdAt: po.createdAt.toISOString(),
+    })),
   };
 }
 
@@ -858,12 +912,23 @@ async function fetchApprovedPRsAwaitingPO(
   return mapAwaitingPoRows(rows);
 }
 
+function configurePoPrWhere(prId: string, scopeWarehouseIds?: string[]) {
+  return {
+    id: prId,
+    status: PRStatus.APPROVED,
+    executionType: ExecutionType.VENDOR_PURCHASE,
+    ...(scopeWarehouseIds !== undefined
+      ? { warehouseId: warehouseIdFilter(scopeWarehouseIds) }
+      : {}),
+  };
+}
+
 async function fetchApprovedPRAwaitingPOById(
   prId: string,
   scopeWarehouseIds?: string[],
 ): Promise<ApprovedPRAwaitingPO | null> {
   const pr = await prisma.purchaseRequest.findFirst({
-    where: { id: prId, ...awaitingPoWhere(scopeWarehouseIds) },
+    where: configurePoPrWhere(prId, scopeWarehouseIds),
     select: awaitingPoPrSelect,
   });
   if (!pr) {

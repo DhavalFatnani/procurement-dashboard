@@ -19,7 +19,11 @@ export type CreatePOFromPRInput = {
   vendorId: string;
   itemPrices: CreatePOItemPriceInput[];
   expectedDelivery: string;
+  gstApplicable: boolean;
+  gstRatePercent?: number | null;
 };
+
+export type CreatePOFromPRGroupInput = CreatePOFromPRInput;
 
 export type ApprovePRInput = {
   approvedCatalogItemIds: string[];

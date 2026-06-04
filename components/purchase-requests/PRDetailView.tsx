@@ -109,7 +109,14 @@ export function PRDetailView({
   const awaitingPurchaseOrder =
     pr.executionType === ExecutionType.VENDOR_PURCHASE &&
     displayStatus === PRStatus.APPROVED &&
-    !pr.purchaseOrder;
+    pr.poProgress.assigned < pr.poProgress.total;
+  const partiallyOnPo =
+    pr.executionType === ExecutionType.VENDOR_PURCHASE &&
+    displayStatus === PRStatus.APPROVED &&
+    pr.poProgress.assigned > 0 &&
+    pr.poProgress.assigned < pr.poProgress.total
+      ? pr.poProgress
+      : undefined;
   const [approveOpen, setApproveOpen] = React.useState(false);
   const [rejectOpen, setRejectOpen] = React.useState(false);
   const [revisionOpen, setRevisionOpen] = React.useState(false);
@@ -403,6 +410,7 @@ export function PRDetailView({
                     kind="PRStatus"
                     status={displayStatus}
                     awaitingPurchaseOrder={awaitingPurchaseOrder}
+                    partiallyOnPo={partiallyOnPo}
                   />
                 </div>
               </div>
@@ -620,17 +628,33 @@ export function PRDetailView({
               href={`/purchase-orders/configure/${encodeURIComponent(pr.id)}`}
               className={cn(buttonVariants({ size: "sm" }), "w-full")}
             >
-              Create purchase order
+              {partiallyOnPo
+                ? `Configure remaining PO (${pr.poProgress.total - pr.poProgress.assigned} items)`
+                : "Create purchase order"}
             </Link>
           ) : null}
 
-          {pr.purchaseOrder ? (
-            <Link
-              href={`/purchase-orders/${pr.purchaseOrder.id}`}
-              className={cn(buttonVariants({ variant: "outline", size: "sm" }), "w-full")}
-            >
-              View PO <ProcurementRefText id={pr.purchaseOrder.id} />
-            </Link>
+          {pr.purchaseOrders.length > 0 ? (
+            <div className="space-y-2">
+              <p className="text-ds-xs font-medium text-muted-foreground">
+                Purchase orders ({pr.purchaseOrders.length})
+              </p>
+              {pr.purchaseOrders.map((po) => (
+                <Link
+                  key={po.id}
+                  href={`/purchase-orders/${po.id}`}
+                  className={cn(
+                    buttonVariants({ variant: "outline", size: "sm" }),
+                    "w-full justify-start",
+                  )}
+                >
+                  <span className="truncate">
+                    {po.vendorName} · {po.itemCount} item{po.itemCount === 1 ? "" : "s"}
+                  </span>
+                  <ProcurementRefText id={po.id} className="ml-auto shrink-0" />
+                </Link>
+              ))}
+            </div>
           ) : null}
         </aside>
       </div>

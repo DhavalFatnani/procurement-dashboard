@@ -148,14 +148,24 @@ export function PRListTable({
         header: "Status",
         cell: (r) => {
           const status = rowStatus(r, optimisticStatuses);
+          const progress = r.poProgress;
+          const awaitingPo =
+            r.executionType === ExecutionType.VENDOR_PURCHASE &&
+            status === PRStatus.APPROVED &&
+            progress !== undefined &&
+            progress.assigned < progress.total;
+          const partial =
+            progress &&
+            progress.assigned > 0 &&
+            progress.assigned < progress.total
+              ? progress
+              : undefined;
           return (
             <StatusBadge
               kind="PRStatus"
               status={status}
-              awaitingPurchaseOrder={
-                r.executionType === ExecutionType.VENDOR_PURCHASE &&
-                status === PRStatus.APPROVED
-              }
+              awaitingPurchaseOrder={awaitingPo && !partial}
+              partiallyOnPo={partial}
             />
           );
         },

@@ -1,12 +1,13 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import {
   ExecutionType,
   POStatus,
   PRStatus,
   Prisma,
   Role,
+  VendorItemPriceSource,
   VendorStatus,
 } from "@/lib/prisma-client";
 
@@ -21,6 +22,7 @@ import {
   validatePORateCsvAgainstPR,
   type PORateCsvExportRow,
 } from "@/lib/po-rate-csv";
+import { validatePoGstInput } from "@/lib/po-gst";
 import { hasLockTagsLines, LOCK_TAGS_SERIES, sumItemQuantities } from "@/lib/purchase-lines";
 import {
   approvePendingCatalogItems,
@@ -32,6 +34,7 @@ import {
 } from "@/lib/pr-line-persistence";
 import type {
   ApprovePRInput,
+  CreatePOFromPRGroupInput,
   CreatePOFromPRInput,
   CreatePOItemPriceInput,
   PRFormData,
@@ -45,6 +48,7 @@ import {
   revalidatePRStatusChange,
   revalidatePurchaseRequestMutation,
 } from "@/lib/revalidate-tags";
+import { LIST_CACHE_TAGS } from "@/lib/list-cache";
 import { timed } from "@/lib/server-timing";
 import { atomicReserveSerialRange } from "@/lib/serialReservation";
 import { requireRoles } from "@/lib/server-action-guard";
@@ -54,6 +58,10 @@ import {
 } from "@/lib/warehouse-access";
 import { assertSessionCanAccessWarehouse } from "@/lib/warehouse-scope";
 import { getWarehousesAssignedToUser } from "@/lib/queries/warehouses";
+import {
+  recordVendorCatalogItemPrices,
+  upsertCatalogItemVendorLinks,
+} from "@/lib/vendor-item-links";
 
 function vendorFieldsForUser(
   role: Role,
@@ -592,16 +600,40 @@ export async function createVendorRequest(
   return { ok: true, requestId: request.id };
 }
 
-export async function createPOFromPR(
+export async function linkCatalogItemVendor(
+  catalogItemId: string,
+  vendorId: string,
+): Promise<MutationResult> {
+  const user = await requireRoles([Role.OPS_HEAD]);
+  const vendor = await prisma.vendor.findUnique({
+    where: { id: vendorId },
+    select: { id: true, status: true },
+  });
+  if (!vendor || vendor.status !== VendorStatus.ACTIVE) {
+    return { ok: false, message: "Select an active vendor." };
+  }
+  await prisma.catalogItemVendor.upsert({
+    where: {
+      catalogItemId_vendorId: { catalogItemId, vendorId },
+    },
+    create: { catalogItemId, vendorId, linkedById: user.id },
+    update: { lastLinkedAt: new Date(), linkedById: user.id },
+  });
+  revalidateTag(LIST_CACHE_TAGS.vendorItems);
+  revalidateTag(`${LIST_CACHE_TAGS.vendorItems}:${catalogItemId}`);
+  return { ok: true };
+}
+
+export async function createPOFromPRGroup(
   prId: string,
-  input: CreatePOFromPRInput,
-): Promise<{ ok: boolean; poId?: string; message?: string }> {
+  input: CreatePOFromPRGroupInput,
+): Promise<{ ok: boolean; poId?: string; message?: string; fullyConverted?: boolean }> {
   const user = await requireRoles([Role.OPS_HEAD]);
 
   const pr = await prisma.purchaseRequest.findUnique({
     where: { id: prId },
     include: {
-      purchaseOrder: true,
+      purchaseOrders: { select: { id: true } },
       lines: {
         orderBy: { lineNumber: "asc" },
         include: {
@@ -611,6 +643,7 @@ export async function createPOFromPR(
             orderBy: { lineItemNumber: "asc" },
             include: {
               catalogItem: { select: { status: true } },
+              poLineItem: { select: { id: true } },
             },
           },
         },
@@ -633,9 +666,6 @@ export async function createPOFromPR(
   if (pr.status !== PRStatus.APPROVED) {
     return { ok: false, message: "PR must be approved before creating a purchase order." };
   }
-  if (pr.purchaseOrder) {
-    return { ok: false, message: "A purchase order already exists for this PR." };
-  }
   if (pr.lines.length === 0) {
     return { ok: false, message: "Purchase request has no line items." };
   }
@@ -647,29 +677,37 @@ export async function createPOFromPR(
 
   const vendor = await prisma.vendor.findUnique({
     where: { id: vendorId },
-    select: { id: true, status: true },
+    select: { id: true, status: true, gst: true },
   });
   if (!vendor || vendor.status !== VendorStatus.ACTIVE) {
     return { ok: false, message: "Select an active vendor." };
   }
 
-  const prLineItems = pr.lines.flatMap((line) => line.items);
-  if (prLineItems.length === 0) {
-    return { ok: false, message: "Purchase request has no catalog items." };
+  const allPrLineItems = pr.lines.flatMap((line) => line.items);
+  const submittedIds = new Set((input.itemPrices ?? []).map((row) => row.prLineItemId));
+  const selectedItems = allPrLineItems.filter((item) => submittedIds.has(item.id));
+
+  if (selectedItems.length === 0) {
+    return { ok: false, message: "Select at least one line item for this vendor group." };
   }
-  for (const item of prLineItems) {
+  if (selectedItems.length !== (input.itemPrices ?? []).length) {
+    return { ok: false, message: "One or more line items do not belong to this PR." };
+  }
+
+  for (const item of selectedItems) {
+    if (item.poLineItem) {
+      return { ok: false, message: "One or more items already have a purchase order." };
+    }
     if (item.catalogItem.status !== "ACTIVE") {
       return { ok: false, message: "All catalog items must be approved before creating a PO." };
     }
   }
 
-  const itemPrices = input.itemPrices ?? [];
-  if (itemPrices.length !== prLineItems.length) {
-    return { ok: false, message: "Enter a unit price for each catalog item." };
-  }
-
   const priceByItemId = new Map<string, number>();
-  for (const row of itemPrices) {
+  for (const row of input.itemPrices ?? []) {
+    if (!submittedIds.has(row.prLineItemId)) {
+      continue;
+    }
     const unitPrice = Number(row.unitPrice);
     if (!Number.isFinite(unitPrice) || unitPrice <= 0) {
       return { ok: false, message: "Each unit price must be greater than zero." };
@@ -677,7 +715,7 @@ export async function createPOFromPR(
     priceByItemId.set(row.prLineItemId, unitPrice);
   }
 
-  for (const item of prLineItems) {
+  for (const item of selectedItems) {
     if (!priceByItemId.has(item.id)) {
       return { ok: false, message: "Missing unit price for a catalog item." };
     }
@@ -688,14 +726,14 @@ export async function createPOFromPR(
     return { ok: false, message: "Expected delivery must be today or a future date." };
   }
 
-  try {
-    assertPRStatusTransition(pr.status, PRStatus.CONVERTED_TO_PO);
-  } catch (e) {
-    return { ok: false, message: e instanceof Error ? e.message : "Invalid status." };
+  const gstApplicable = Boolean(input.gstApplicable);
+  const gstValidated = validatePoGstInput(gstApplicable, input.gstRatePercent);
+  if (!gstValidated.ok) {
+    return { ok: false, message: gstValidated.message };
   }
 
-  const totalOrderedQty = sumItemQuantities(prLineItems);
-  const firstItemPrice = priceByItemId.get(prLineItems[0]!.id)!;
+  const totalOrderedQty = sumItemQuantities(selectedItems);
+  const firstItemPrice = priceByItemId.get(selectedItems[0]!.id)!;
   const poId = newPurchaseOrderId();
   const lockTagsQty = pr.lines
     .filter((l) => l.category.name === "Lock Tags")
@@ -711,9 +749,12 @@ export async function createPOFromPR(
           orderedQty: totalOrderedQty,
           unitPrice: new Prisma.Decimal(firstItemPrice),
           expectedDelivery,
+          gstApplicable,
+          gstRatePercent:
+            gstValidated.rate != null ? new Prisma.Decimal(gstValidated.rate) : null,
           status: POStatus.OPEN,
           lineItems: {
-            create: prLineItems.map((item) => {
+            create: selectedItems.map((item) => {
               const parentLine = pr.lines.find((l) =>
                 l.items.some((i) => i.id === item.id),
               )!;
@@ -729,30 +770,94 @@ export async function createPOFromPR(
           },
         },
       });
-      await tx.purchaseRequest.update({
-        where: { id: prId },
-        data: { status: PRStatus.CONVERTED_TO_PO, vendorId },
-      });
-      await tx.pRVersion.create({
-        data: {
-          prId,
-          versionNumber: pr.currentVersion,
-          changedById: user.id,
-          revisionComment: "Converted to purchase order",
-          diffSnapshot: {
-            action: "CONVERTED_TO_PO",
-            poId,
-            vendorId,
-            itemPrices: input.itemPrices,
-            expectedDelivery: expectedDelivery.toISOString(),
-          },
+
+      await upsertCatalogItemVendorLinks(
+        tx,
+        selectedItems.map((item) => ({
+          catalogItemId: item.catalogItemId,
+          vendorId,
+        })),
+        user.id,
+      );
+
+      await recordVendorCatalogItemPrices(
+        tx,
+        selectedItems.map((item) => ({
+          catalogItemId: item.catalogItemId,
+          vendorId,
+          unitPrice: priceByItemId.get(item.id)!,
+          source: VendorItemPriceSource.PO,
+          poId,
+          prId: pr.id,
+          recordedById: user.id,
+        })),
+      );
+
+      const remainingUnassigned = await tx.purchaseRequestLineItem.count({
+        where: {
+          prLine: { prId },
+          poLineItem: null,
         },
       });
+
+      const fullyConverted = remainingUnassigned === 0;
+
+      if (fullyConverted) {
+        try {
+          assertPRStatusTransition(pr.status, PRStatus.CONVERTED_TO_PO);
+        } catch (e) {
+          throw new Error(e instanceof Error ? e.message : "Invalid status.");
+        }
+        await tx.purchaseRequest.update({
+          where: { id: prId },
+          data: { status: PRStatus.CONVERTED_TO_PO },
+        });
+        await tx.pRVersion.create({
+          data: {
+            prId,
+            versionNumber: pr.currentVersion,
+            changedById: user.id,
+            revisionComment: "Converted to purchase order",
+            diffSnapshot: {
+              action: "CONVERTED_TO_PO",
+              poId,
+              vendorId,
+              itemPrices: input.itemPrices,
+              expectedDelivery: expectedDelivery.toISOString(),
+              gstApplicable,
+              gstRatePercent: gstValidated.rate,
+            },
+          },
+        });
+      } else {
+        await tx.pRVersion.create({
+          data: {
+            prId,
+            versionNumber: pr.currentVersion,
+            changedById: user.id,
+            revisionComment: `Partial PO created (${selectedItems.length} item(s))`,
+            diffSnapshot: {
+              action: "PARTIAL_PO_CREATED",
+              poId,
+              vendorId,
+              itemPrices: input.itemPrices,
+              expectedDelivery: expectedDelivery.toISOString(),
+              gstApplicable,
+              gstRatePercent: gstValidated.rate,
+            },
+          },
+        });
+      }
     },
     PR_LINE_MUTATION_TX_OPTIONS,
   );
 
-  if (lockTagsQty > 0 && hasLockTagsLines(pr.lines.map((l) => ({ categoryName: l.category.name })))) {
+  const remainingAfter = await prisma.purchaseRequestLineItem.count({
+    where: { prLine: { prId }, poLineItem: null },
+  });
+  const fullyConverted = remainingAfter === 0;
+
+  if (fullyConverted && lockTagsQty > 0 && hasLockTagsLines(pr.lines.map((l) => ({ categoryName: l.category.name })))) {
     const reservation = await atomicReserveSerialRange({
       series: LOCK_TAGS_SERIES,
       quantity: lockTagsQty,
@@ -770,7 +875,19 @@ export async function createPOFromPR(
   }
 
   revalidateCreatePOFromPR(prId, poId);
-  return { ok: true, poId };
+  revalidateTag(LIST_CACHE_TAGS.vendorItems);
+  for (const item of selectedItems) {
+    revalidateTag(`${LIST_CACHE_TAGS.vendorItems}:${item.catalogItemId}`);
+  }
+  return { ok: true, poId, fullyConverted };
+}
+
+export async function createPOFromPR(
+  prId: string,
+  input: CreatePOFromPRInput,
+): Promise<{ ok: boolean; poId?: string; message?: string }> {
+  const result = await createPOFromPRGroup(prId, input);
+  return result;
 }
 
 export async function fetchPendingCatalogItemsForPR(
@@ -796,6 +913,7 @@ export async function fetchPendingCatalogItemsForPR(
 
 export async function exportPORateCsvForPR(
   prId: string,
+  prLineItemIds?: string[],
 ): Promise<
   | { ok: true; csv: string; filename: string }
   | { ok: false; message: string }
@@ -823,8 +941,11 @@ export async function exportPORateCsvForPR(
   }
 
   const lines = mapPrLinesFromDb(pr.lines);
+  const allowedIds = prLineItemIds?.length ? new Set(prLineItemIds) : null;
   const rows: PORateCsvExportRow[] = lines.flatMap((line) =>
-    line.items.map((item) => ({
+    line.items
+      .filter((item) => !allowedIds || allowedIds.has(item.id))
+      .map((item) => ({
       prLineItemId: item.id,
       prId: pr.id,
       lineNumber: line.lineNumber,
@@ -853,6 +974,7 @@ export async function exportPORateCsvForPR(
 export async function validatePORateCsvForPR(
   prId: string,
   csvText: string,
+  prLineItemIds?: string[],
 ): Promise<
   | { ok: true; itemPrices: CreatePOItemPriceInput[] }
   | { ok: false; message: string }
@@ -885,8 +1007,11 @@ export async function validatePORateCsvForPR(
   }
 
   const lines = mapPrLinesFromDb(pr.lines);
+  const allowedIds = prLineItemIds?.length ? new Set(prLineItemIds) : null;
   const expectedItems = lines.flatMap((line) =>
-    line.items.map((item) => ({ id: item.id, quantity: item.quantity })),
+    line.items
+      .filter((item) => !allowedIds || allowedIds.has(item.id))
+      .map((item) => ({ id: item.id, quantity: item.quantity })),
   );
 
   const validated = validatePORateCsvAgainstPR(parsed.rows, {
