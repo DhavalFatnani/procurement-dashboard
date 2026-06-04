@@ -28,6 +28,7 @@ export function TextareaActionDialog({
   placeholder,
   confirmLabel,
   onConfirm,
+  pending = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -37,6 +38,8 @@ export function TextareaActionDialog({
   placeholder?: string;
   confirmLabel: string;
   onConfirm: (text: string) => void;
+  /** Async in progress: shows a spinner and blocks re-submit. Pair with caller-managed close. */
+  pending?: boolean;
 }) {
   const [text, setText] = React.useState("");
 
@@ -67,13 +70,16 @@ export function TextareaActionDialog({
           />
         </div>
         <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
           <Button
             type="button"
-            disabled={!text.trim()}
+            loading={pending}
+            disabled={!text.trim() || pending}
             onClick={() => {
               onConfirm(text.trim());
-              onOpenChange(false);
+              if (!pending) {
+                onOpenChange(false);
+              }
             }}
           >
             {confirmLabel}

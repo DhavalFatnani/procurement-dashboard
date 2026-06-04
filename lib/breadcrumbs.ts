@@ -4,6 +4,7 @@ export type BreadcrumbIconId =
   | "inbox"
   | "dashboard"
   | "purchaseRequests"
+  | "configurePO"
   | "purchaseOrders"
   | "goodsReceipt"
   | "invoices"

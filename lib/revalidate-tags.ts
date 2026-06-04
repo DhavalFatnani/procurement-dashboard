@@ -79,6 +79,7 @@ export function revalidatePRStatusChange(
   if (options?.affectsAwaitingPo) {
     revalidateTag(LIST_CACHE_TAGS.awaitingPo);
     revalidatePath("/purchase-orders");
+    revalidatePath("/purchase-orders/configure");
   }
   if (options?.affectsCatalog) {
     revalidateCatalogCache();
@@ -95,6 +96,7 @@ export function revalidateCreatePOFromPR(prId: string, poId: string) {
   revalidatePath(`/purchase-requests/${prId}`);
   revalidatePath(`/purchase-orders/${poId}`);
   revalidatePath("/purchase-orders");
+  revalidatePath("/purchase-orders/configure");
   revalidatePath("/purchase-requests");
   revalidateInboxCache();
   revalidateDashboardMetrics();

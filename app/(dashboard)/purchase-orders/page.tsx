@@ -1,12 +1,9 @@
+import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
 import { PurchaseOrdersView } from "@/components/purchase-orders/PurchaseOrdersView";
 import { PageTableLoading } from "@/components/shared/PageTableLoading";
 import { parsePurchaseOrderPageParams } from "@/lib/list-search-params";
-import {
-  AwaitingPRPanelLoader,
-  showAwaitingPRPanel,
-} from "@/components/purchase-orders/AwaitingPRPanelLoader";
 import { getPOFilterOptions, getPurchaseOrders } from "@/lib/queries/purchase-orders";
 import { ACCESS } from "@/lib/route-access";
 import { assertRole, getRequestSession, type SessionUser } from "@/lib/session";
@@ -25,12 +22,16 @@ export default async function PurchaseOrdersPage({
   const sp = await searchParams;
   const parsed = parsePurchaseOrderPageParams(sp);
 
+  if (parsed.fulfill) {
+    redirect(`/purchase-orders/configure/${encodeURIComponent(parsed.fulfill)}`);
+  }
+
   return (
     <Suspense
       fallback={<PageTableLoading columns={9} rows={10} />}
       key={`${parsed.status}-${parsed.vendorId}-${parsed.warehouseId}-${parsed.dateFrom}-${parsed.dateTo}-${parsed.page}`}
     >
-      <PurchaseOrdersTableLoader user={user} parsed={parsed} fulfillPrId={parsed.fulfill} />
+      <PurchaseOrdersTableLoader user={user} parsed={parsed} />
     </Suspense>
   );
 }
@@ -38,11 +39,9 @@ export default async function PurchaseOrdersPage({
 async function PurchaseOrdersTableLoader({
   user,
   parsed,
-  fulfillPrId,
 }: {
   user: SessionUser;
   parsed: ReturnType<typeof parsePurchaseOrderPageParams>;
-  fulfillPrId: string;
 }) {
   const scopeWarehouseIds = assignedWarehouseIds(user);
   const [filterOptions, rows] = await dbParallel(
@@ -62,18 +61,10 @@ async function PurchaseOrdersTableLoader({
       ),
   );
 
-  const awaitingPanel = showAwaitingPRPanel(user.role) ? (
-    <Suspense fallback={null}>
-      <AwaitingPRPanelLoader user={user} fulfillPrId={fulfillPrId || undefined} />
-    </Suspense>
-  ) : null;
-
   return (
     <PurchaseOrdersView
       role={user.role}
       initialRows={rows}
-      awaitingPanel={awaitingPanel}
-      fulfillPrId={fulfillPrId || undefined}
       filterOptions={filterOptions}
       filters={{
         status: parsed.status,

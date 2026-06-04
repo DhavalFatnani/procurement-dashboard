@@ -6,6 +6,7 @@ const MODULE_LABELS: Record<string, { label: string; icon: BreadcrumbIconId }> =
   "/dashboard": { label: "Dashboard", icon: "dashboard" },
   "/purchase-requests": { label: "Purchase Requests", icon: "purchaseRequests" },
   "/purchase-orders": { label: "Purchase Orders", icon: "purchaseOrders" },
+  "/purchase-orders/configure": { label: "Configure PO", icon: "configurePO" },
   "/goods-receipt": { label: "Goods Receipt", icon: "goodsReceipt" },
   "/invoices": { label: "Invoices", icon: "invoices" },
   "/payments": { label: "Payments", icon: "payments" },
@@ -89,4 +90,17 @@ export function grnDetailBreadcrumbs(input: {
 
 export function listBreadcrumbs(href: string): BreadcrumbItem[] {
   return [moduleCrumb(href)];
+}
+
+export function configurePOBreadcrumbs(prId?: string): BreadcrumbItem[] {
+  const items: BreadcrumbItem[] = [moduleCrumb("/purchase-orders/configure")];
+  if (prId) {
+    items.push({ label: formatProcurementRef(prId), mono: true });
+  }
+  return items;
+}
+
+/** @deprecated Use configurePOBreadcrumbs */
+export function createPOBreadcrumbs(prId?: string): BreadcrumbItem[] {
+  return configurePOBreadcrumbs(prId);
 }

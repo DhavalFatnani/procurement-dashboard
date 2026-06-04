@@ -36,27 +36,32 @@ export function PODetailActionBar({
   >;
 }) {
   const router = useRouter();
+  const [pending, startTransition] = React.useTransition();
   const [markDeliveryOpen, setMarkDeliveryOpen] = React.useState(false);
   const [forceCloseOpen, setForceCloseOpen] = React.useState(false);
 
-  async function handleMarkDeliveryComplete() {
-    const res = await markDeliveryComplete(poId);
-    if (!res.ok) {
-      toast.error(res.message ?? "Failed to mark delivery complete.");
-      return;
-    }
-    toast.success("Delivery marked complete.");
-    router.refresh();
+  function handleMarkDeliveryComplete() {
+    startTransition(async () => {
+      const res = await markDeliveryComplete(poId);
+      if (!res.ok) {
+        toast.error(res.message ?? "Failed to mark delivery complete.");
+        return;
+      }
+      toast.success("Delivery marked complete.");
+      router.refresh();
+    });
   }
 
-  async function handleForceClose(reason: string) {
-    const res = await forceClosePO(poId, reason);
-    if (!res.ok) {
-      toast.error(res.message ?? "Failed to force close.");
-      return;
-    }
-    toast.success("Purchase order force closed.");
-    router.refresh();
+  function handleForceClose(reason: string) {
+    startTransition(async () => {
+      const res = await forceClosePO(poId, reason);
+      if (!res.ok) {
+        toast.error(res.message ?? "Failed to force close.");
+        return;
+      }
+      toast.success("Purchase order force closed.");
+      router.refresh();
+    });
   }
 
   const runMutateAction = React.useCallback(
@@ -100,6 +105,8 @@ export function PODetailActionBar({
           <Button
             type="button"
             className="gap-1.5"
+            loading={pending}
+            disabled={pending}
             onClick={() => runMutateAction(primary.id)}
           >
             {primary.label}
@@ -120,6 +127,8 @@ export function PODetailActionBar({
               key={action.id}
               type="button"
               variant="soft"
+              loading={pending}
+              disabled={pending}
               onClick={() => runMutateAction(action.id)}
             >
               {action.label}
@@ -133,6 +142,8 @@ export function PODetailActionBar({
           variant="ghost"
           size="sm"
           className="shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
+          loading={pending}
+          disabled={pending}
           onClick={() => runMutateAction(destructive.id)}
         >
           {destructive.label}
@@ -146,7 +157,8 @@ export function PODetailActionBar({
         title="Mark delivery complete?"
         description="This flags the PO as delivery complete and runs auto-close evaluation."
         confirmLabel="Confirm"
-        onConfirm={() => void handleMarkDeliveryComplete()}
+        pending={pending}
+        onConfirm={handleMarkDeliveryComplete}
       />
 
       <TextareaActionDialog
@@ -156,7 +168,8 @@ export function PODetailActionBar({
         description="Provide a mandatory reason. This cannot be undone through normal workflow."
         label="Reason"
         confirmLabel="Force close"
-        onConfirm={(reason) => void handleForceClose(reason)}
+        pending={pending}
+        onConfirm={(reason) => handleForceClose(reason)}
         />
       </div>
     </div>

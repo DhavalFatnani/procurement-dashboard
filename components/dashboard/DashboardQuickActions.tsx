@@ -3,6 +3,7 @@
 import { Role } from "@/lib/prisma-enums";
 import {
   Building2,
+  ClipboardList,
   FilePlus,
   Inbox,
   PackageCheck,
@@ -54,6 +55,12 @@ const QUICK_ACTIONS_BY_ROLE: Record<Role, QuickAction[]> = {
       href: "/purchase-requests?status=PENDING_APPROVAL",
       icon: Inbox,
       description: "Vendor PRs awaiting your decision.",
+    },
+    {
+      label: "Create PO",
+      href: "/purchase-orders/configure",
+      icon: ClipboardList,
+      description: "Configure vendor, rates, and delivery for approved PRs.",
     },
     {
       label: "Vendors",

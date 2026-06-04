@@ -61,6 +61,7 @@ export function CatalogRowActions({
           type="button"
           variant="outline"
           size="sm"
+          loading={busy}
           disabled={busy}
           onClick={() => setApproveOpen(true)}
         >
@@ -70,6 +71,7 @@ export function CatalogRowActions({
           type="button"
           variant="ghost"
           size="sm"
+          loading={busy}
           disabled={busy}
           onClick={() => setRejectOpen(true)}
         >
@@ -127,6 +129,7 @@ export function CatalogRowActions({
           type="button"
           variant="ghost"
           size="sm"
+          loading={busy}
           disabled={busy}
           onClick={() => setDeactivateOpen(true)}
         >
@@ -164,6 +167,7 @@ export function CatalogRowActions({
           type="button"
           variant="outline"
           size="sm"
+          loading={busy}
           disabled={busy}
           onClick={() => setReactivateOpen(true)}
         >

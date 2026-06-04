@@ -92,6 +92,13 @@ const ACTION_COMMANDS: CommandItem[] = [
     roles: [Role.SM, Role.OPS_HEAD],
   },
   {
+    id: "act-create-po",
+    label: "Create purchase order",
+    href: "/purchase-orders/configure",
+    icon: ClipboardList,
+    roles: [Role.OPS_HEAD],
+  },
+  {
     id: "act-grn",
     label: "Record Goods Receipt",
     href: "/goods-receipt",

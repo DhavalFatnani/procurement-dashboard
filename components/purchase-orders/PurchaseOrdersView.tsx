@@ -55,15 +55,11 @@ function useDensity(): [DataTableDensity, (d: DataTableDensity) => void] {
 export function PurchaseOrdersView({
   role,
   initialRows,
-  awaitingPanel,
-  fulfillPrId,
   filters,
   filterOptions,
 }: {
   role: Role;
   initialRows: Paginated<PurchaseOrderListRow>;
-  awaitingPanel?: React.ReactNode;
-  fulfillPrId?: string;
   filters: {
     status: string;
     vendorId: string;
@@ -233,7 +229,13 @@ export function PurchaseOrdersView({
         title="Purchase orders"
         subtitle="PO lifecycle, reconciliation, and closure."
         action={
-          <div className="flex items-center gap-1 rounded-md border border-border-subtle bg-card p-0.5">
+          <div className="flex items-center gap-2">
+            {isOps ? (
+              <Link href="/purchase-orders/configure" className={cn(buttonVariants({ size: "sm" }))}>
+                Configure PO queue
+              </Link>
+            ) : null}
+            <div className="flex items-center gap-1 rounded-md border border-border-subtle bg-card p-0.5">
             <button
               type="button"
               onClick={() => setDensity("compact")}
@@ -261,10 +263,9 @@ export function PurchaseOrdersView({
               Cozy
             </button>
           </div>
+          </div>
         }
       />
-
-      {isOps ? awaitingPanel : null}
 
       <form onSubmit={handleFilterSubmit}>
         <FilterBar
@@ -326,9 +327,15 @@ export function PurchaseOrdersView({
           title="No purchase orders"
           description="Adjust filters or create a PO from an approved purchase request."
           action={
-            <Link href="/purchase-requests?status=APPROVED" className={cn(buttonVariants({ variant: "gradient" }))}>
-              View approved PRs
-            </Link>
+            isOps ? (
+              <Link href="/purchase-orders/configure" className={cn(buttonVariants({ variant: "gradient" }))}>
+                Configure PO queue
+              </Link>
+            ) : (
+              <Link href="/purchase-requests?status=APPROVED" className={cn(buttonVariants({ variant: "gradient" }))}>
+                View approved PRs
+              </Link>
+            )
           }
         />
       ) : (

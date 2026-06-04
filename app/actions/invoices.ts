@@ -58,7 +58,9 @@ export async function getInvoiceFilterOptions() {
   return getInvoiceFilterOptionsQuery();
 }
 
-export async function getPOsForInvoice(): Promise<POForInvoiceOption[]> {
+export async function getPOsForInvoice(): Promise<
+  Pick<POForInvoiceOption, "id" | "label" | "vendorName">[]
+> {
   const user = await requireRoles([Role.SM, Role.OPS_HEAD]);
   return getPOsForInvoiceQuery(assignedWarehouseIds(user));
 }

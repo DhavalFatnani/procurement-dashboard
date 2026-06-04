@@ -74,6 +74,23 @@ describe("getNavItemsForRole (flat)", () => {
 });
 
 describe("PO-centric procurement nav", () => {
+  it("includes Configure PO between PR and PO for Ops Head", () => {
+    const work = getNavGroupsForRole(Role.OPS_HEAD).find((g) => g.id === "work")!;
+    expect(work.items.map((i) => i.href)).toEqual([
+      "/inbox",
+      "/purchase-requests",
+      "/purchase-orders/configure",
+      "/purchase-orders",
+    ]);
+  });
+
+  it("omits Configure PO for SM and Finance", () => {
+    for (const role of [Role.SM, Role.FINANCE]) {
+      const work = getNavGroupsForRole(role).find((g) => g.id === "work")!;
+      expect(work.items.map((i) => i.href)).not.toContain("/purchase-orders/configure");
+    }
+  });
+
   it("nests GRN, invoices, and payments under Purchase Orders for Ops Head", () => {
     const work = getNavGroupsForRole(Role.OPS_HEAD).find((g) => g.id === "work")!;
     const po = work.items.find((i) => i.href === "/purchase-orders");
@@ -115,6 +132,7 @@ describe("Finance merged Invoices & payments entry", () => {
   it("keeps Ops Head's separate Invoices and Payments entries under PO", () => {
     const hrefs = getNavItemsForRole(Role.OPS_HEAD).map((i) => i.href);
     expect(hrefs).toContain("/purchase-orders");
+    expect(hrefs).toContain("/purchase-orders/configure");
     expect(hrefs).toContain("/invoices");
     expect(hrefs).toContain("/payments");
   });

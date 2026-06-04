@@ -70,6 +70,14 @@ export function CreateGRNForm({
   const [deliveryNoteRef, setDeliveryNoteRef] = React.useState("");
   const [submitting, setSubmitting] = React.useState(false);
 
+  // Prefetch-on-intent: hovering/focusing a PO option warms its detail (and the
+  // server cache) so selection is instant; the selection effect reuses it.
+  const poDetailCache = React.useRef(new Map<string, Promise<POForGRNOption | null>>());
+  const prefetchPo = React.useCallback((id: string) => {
+    if (!id || poDetailCache.current.has(id)) return;
+    poDetailCache.current.set(id, getPOForGRN(id));
+  }, []);
+
   React.useEffect(() => {
     if (poLocked) {
       setLoadingPoOptions(false);
@@ -94,7 +102,12 @@ export function CreateGRNForm({
     }
     let cancelled = false;
     setLoadingSelected(true);
-    void getPOForGRN(poId).then((po) => {
+    let req = poDetailCache.current.get(poId);
+    if (!req) {
+      req = getPOForGRN(poId);
+      poDetailCache.current.set(poId, req);
+    }
+    void req.then((po) => {
       if (!cancelled) {
         setSelected(po);
         setLoadingSelected(false);
@@ -211,6 +224,7 @@ export function CreateGRNForm({
                 <Combobox
                   value={poId}
                   onChange={setPoId}
+                  onHighlight={prefetchPo}
                   options={poOptions.map((p) => ({
                     value: p.id,
                     label: p.label,

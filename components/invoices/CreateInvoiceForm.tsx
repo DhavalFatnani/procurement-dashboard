@@ -39,6 +39,15 @@ export function CreateInvoiceForm() {
   const [file, setFile] = React.useState<File | null>(null);
   const [submitting, setSubmitting] = React.useState(false);
 
+  // Prefetch-on-intent: hovering/focusing a PO option kicks off its detail fetch
+  // (which also warms the server cache), so selecting it is instant. The stored
+  // promise is reused by the selection effect below.
+  const poDetailCache = React.useRef(new Map<string, Promise<POForInvoiceOption | null>>());
+  const prefetchPo = React.useCallback((id: string) => {
+    if (!id || poDetailCache.current.has(id)) return;
+    poDetailCache.current.set(id, getPOForInvoice(id));
+  }, []);
+
   React.useEffect(() => {
     let cancelled = false;
     void getPOsForInvoice().then((rows) => {
@@ -59,7 +68,12 @@ export function CreateInvoiceForm() {
     }
     let cancelled = false;
     setLoadingSelected(true);
-    void getPOForInvoice(poId).then((po) => {
+    let req = poDetailCache.current.get(poId);
+    if (!req) {
+      req = getPOForInvoice(poId);
+      poDetailCache.current.set(poId, req);
+    }
+    void req.then((po) => {
       if (!cancelled) {
         setSelectedPo(po);
         setLoadingSelected(false);
@@ -168,6 +182,7 @@ export function CreateInvoiceForm() {
             <Combobox
               value={poId}
               onChange={setPoId}
+              onHighlight={prefetchPo}
               options={poOptions.map((p) => ({
                 value: p.id,
                 label: p.label,
@@ -355,7 +370,7 @@ export function CreateInvoiceForm() {
         ) : null}
 
         <div className="flex gap-2">
-          <Button type="submit" disabled={submitting}>
+          <Button type="submit" loading={submitting} disabled={submitting}>
             {submitting ? "Uploading…" : "Upload invoice"}
           </Button>
           <Link href="/invoices" className={cn(buttonVariants({ variant: "outline" }))}>

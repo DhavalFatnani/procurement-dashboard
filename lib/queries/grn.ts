@@ -436,6 +436,24 @@ export async function getPOForGRNById(
   poId: string,
   scopeWarehouseIds?: string[],
 ): Promise<POForGRNOption | null> {
+  // Scope is part of the key: it gates which PO a user may see, so results must
+  // not be shared across warehouse scopes.
+  const scopeKey = scopeWarehouseIds === undefined ? "*" : scopeWarehouseIds.slice().sort().join(",");
+  return cachedQuery(
+    "po-for-grn",
+    [poId, scopeKey],
+    () => computePOForGRNById(poId, scopeWarehouseIds),
+    {
+      revalidate: 60,
+      tags: [LIST_CACHE_TAGS.poDetail, `${LIST_CACHE_TAGS.poDetail}:${poId}`],
+    },
+  );
+}
+
+async function computePOForGRNById(
+  poId: string,
+  scopeWarehouseIds?: string[],
+): Promise<POForGRNOption | null> {
   const po = await prisma.purchaseOrder.findFirst({
     where: {
       id: poId,
@@ -452,9 +470,20 @@ export async function getPOForGRNById(
   return mapPoToGrnOption(po);
 }
 
-/** @deprecated Prefer searchPOsForGRN — loads all eligible POs. */
+/**
+ * PO options for the GRN-create combobox. Needs `pendingQty` (computed from
+ * quantities) so it can't be trimmed to id/label, but it's cached per scope and
+ * invalidated by GRN/PO mutations so repeat opens are instant.
+ */
 export async function getPOsForGRN(scopeWarehouseIds?: string[]): Promise<POForGRNOption[]> {
-  return searchPOsForGRN("", 100, scopeWarehouseIds);
+  const scopeKey =
+    scopeWarehouseIds === undefined ? "*" : scopeWarehouseIds.slice().sort().join(",");
+  return cachedQuery(
+    "pos-for-grn",
+    [scopeKey],
+    () => searchPOsForGRN("", 100, scopeWarehouseIds),
+    { revalidate: 60, tags: [LIST_CACHE_TAGS.grn, LIST_CACHE_TAGS.purchaseOrders] },
+  );
 }
 
 export async function getGRNFilterOptions() {

@@ -189,6 +189,7 @@ const QUICK_ACTIONS_BY_ROLE: Record<Role, { label: string; href: string; icon: L
   ],
   [Role.OPS_HEAD]: [
     { label: "Review approvals", href: "/purchase-requests?status=PENDING_APPROVAL", icon: ClipboardList },
+    { label: "Configure PO", href: "/purchase-orders/configure", icon: ClipboardList },
     { label: "Review vendors", href: "/vendors?tab=pending", icon: UserPlus },
     { label: "Create PR", href: "/purchase-requests/new", icon: FilePlus },
   ],

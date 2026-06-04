@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
 export function VendorRowActions({ row }: { row: VendorListRow }) {
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
-  const [, startTransition] = React.useTransition();
+  const [pending, startTransition] = React.useTransition();
 
   if (row.status === "INACTIVE") {
     return (
@@ -37,7 +37,14 @@ export function VendorRowActions({ row }: { row: VendorListRow }) {
       <Link href={`/vendors/${row.id}`} className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}>
         Edit
       </Link>
-      <Button type="button" variant="ghost" size="sm" onClick={() => setOpen(true)}>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        loading={pending}
+        disabled={pending}
+        onClick={() => setOpen(true)}
+      >
         Deactivate
       </Button>
       <ConfirmDialog
@@ -47,6 +54,7 @@ export function VendorRowActions({ row }: { row: VendorListRow }) {
         description="This prevents future purchases but keeps all history intact."
         confirmLabel="Deactivate"
         confirmVariant="destructive"
+        pending={pending}
         onConfirm={() => {
           startTransition(async () => {
             const r = await deactivateVendor(row.id);

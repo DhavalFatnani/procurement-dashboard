@@ -51,6 +51,11 @@ export type ComboboxProps = {
   contentClassName?: string;
   /** Override the displayed trigger text. */
   renderValue?: (option: ComboboxOption | undefined) => React.ReactNode;
+  /**
+   * Fired when an option is hovered or focused (before selection). Use it to
+   * prefetch the option's detail on intent so the eventual click is instant.
+   */
+  onHighlight?: (value: string) => void;
 };
 
 /**
@@ -80,6 +85,7 @@ export function Combobox({
   triggerClassName,
   contentClassName,
   renderValue,
+  onHighlight,
 }: ComboboxProps) {
   const [open, setOpen] = React.useState(false);
   const selected = options.find((opt) => opt.value === value);
@@ -200,6 +206,10 @@ export function Combobox({
                       keywords={opt.keywords}
                       disabled={opt.disabled}
                       onSelect={() => handleSelect(opt.value)}
+                      onMouseEnter={
+                        opt.disabled ? undefined : () => onHighlight?.(opt.value)
+                      }
+                      onFocus={opt.disabled ? undefined : () => onHighlight?.(opt.value)}
                     >
                       <span className="flex size-3.5 items-center justify-center text-[var(--brand-accent)]">
                         {isSelected ? (

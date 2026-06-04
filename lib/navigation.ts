@@ -8,6 +8,7 @@ export type NavIconId =
   | "dashboard"
   | "vendors"
   | "purchaseRequests"
+  | "configurePO"
   | "purchaseOrders"
   | "goodsReceipt"
   | "invoices"
@@ -38,6 +39,12 @@ const PURCHASE_REQUESTS_ITEM: NavItem = {
   href: "/purchase-requests",
   label: "Purchase Requests",
   icon: "purchaseRequests",
+};
+
+const CONFIGURE_PO_ITEM: NavItem = {
+  href: "/purchase-orders/configure",
+  label: "Configure PO",
+  icon: "configurePO",
 };
 
 /** Flatten top-level and nested nav items (for command palette, tests). */
@@ -116,7 +123,7 @@ function workItemsFor(role: Role): NavItem[] {
     case Role.SM:
       return [INBOX_ITEM, PURCHASE_REQUESTS_ITEM, poHub];
     case Role.OPS_HEAD:
-      return [INBOX_ITEM, PURCHASE_REQUESTS_ITEM, poHub];
+      return [INBOX_ITEM, PURCHASE_REQUESTS_ITEM, CONFIGURE_PO_ITEM, poHub];
     case Role.FINANCE:
       return [INBOX_ITEM, poHub];
   }

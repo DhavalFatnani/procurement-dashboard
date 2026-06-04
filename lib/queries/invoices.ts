@@ -297,6 +297,18 @@ export async function searchPOsForInvoice(
 }
 
 export async function getPOForInvoiceById(poId: string): Promise<POForInvoiceOption | null> {
+  return cachedQuery(
+    "po-for-invoice",
+    [poId],
+    () => computePOForInvoiceById(poId),
+    {
+      revalidate: 60,
+      tags: [LIST_CACHE_TAGS.poDetail, `${LIST_CACHE_TAGS.poDetail}:${poId}`],
+    },
+  );
+}
+
+async function computePOForInvoiceById(poId: string): Promise<POForInvoiceOption | null> {
   const po = await prisma.purchaseOrder.findUnique({
     where: { id: poId },
     select: {
@@ -388,91 +400,67 @@ export async function getPOForInvoiceById(poId: string): Promise<POForInvoiceOpt
   };
 }
 
-/** @deprecated Prefer searchPOsForInvoice — loads all eligible POs. */
+/**
+ * Light PO options for the invoice-create combobox. The picker only needs
+ * id/label/vendor; full detail (GRNs, line prices) is loaded on selection via
+ * getPOForInvoiceById. Eligibility (≥1 accepted, not-yet-invoiced GRN) is
+ * filtered in the database so we never load the GRN/line graph here. Cached per
+ * scope; invalidated by GRN/invoice/PO mutations.
+ */
 export async function getPOsForInvoice(
   scopeWarehouseIds?: string[],
-): Promise<POForInvoiceOption[]> {
-  const pos = await prisma.purchaseOrder.findMany({
-    where: {
-      status: {
-        in: [
-          POStatus.OPEN,
-          POStatus.PARTIALLY_RECEIVED,
-          POStatus.FULLY_RECEIVED,
-          POStatus.INVOICED,
-          POStatus.PAID,
-          POStatus.PARTIALLY_CLOSED,
-        ],
-      },
-      grns: { some: { acceptedQty: { gt: 0 } } },
-      ...(scopeWarehouseIds !== undefined
-        ? purchaseOrderWhereFromScopeIds(scopeWarehouseIds)
-        : {}),
-    },
-    orderBy: { createdAt: "desc" },
-    select: {
-      id: true,
-      unitPrice: true,
-      vendor: { select: { businessName: true } },
-      grns: {
-        where: { acceptedQty: { gt: 0 } },
-        select: {
-          id: true,
-          receivedAt: true,
-          acceptedQty: true,
-          disputedQty: true,
-          invoiceLinks: { select: { id: true } },
-          lines: { select: { poLineId: true, acceptedQty: true } },
+): Promise<Pick<POForInvoiceOption, "id" | "label" | "vendorName">[]> {
+  const scopeKey =
+    scopeWarehouseIds === undefined ? "*" : scopeWarehouseIds.slice().sort().join(",");
+  return cachedQuery(
+    "pos-for-invoice",
+    [scopeKey],
+    async () => {
+      const pos = await prisma.purchaseOrder.findMany({
+        where: {
+          status: {
+            in: [
+              POStatus.OPEN,
+              POStatus.PARTIALLY_RECEIVED,
+              POStatus.FULLY_RECEIVED,
+              POStatus.INVOICED,
+              POStatus.PAID,
+              POStatus.PARTIALLY_CLOSED,
+            ],
+          },
+          grns: { some: { acceptedQty: { gt: 0 }, invoiceLinks: { none: {} } } },
+          ...(scopeWarehouseIds !== undefined
+            ? purchaseOrderWhereFromScopeIds(scopeWarehouseIds)
+            : {}),
         },
-      },
-      lines: {
-        orderBy: { prLine: { lineNumber: "asc" } },
-        select: {
-          id: true,
-          unitPrice: true,
-          category: { select: { name: true } },
-          subcategory: { select: { name: true } },
-        },
-      },
-    },
-  });
-
-  return pos
-    .map((po) => {
-      const eligible = po.grns.filter((g) => g.invoiceLinks.length === 0);
-      if (eligible.length === 0) {
-        return null;
-      }
-      return {
+        orderBy: { createdAt: "desc" },
+        select: { id: true, vendor: { select: { businessName: true } } },
+      });
+      return pos.map((po) => ({
         id: po.id,
         label: `${formatProcurementRef(po.id)} · ${po.vendor.businessName}`,
         vendorName: po.vendor.businessName,
-        unitPrice:
-          po.lines.length === 1
-            ? po.lines[0]!.unitPrice.toString()
-            : (po.unitPrice?.toString() ?? null),
-        linePrices: po.lines.map((line) => ({
-          poLineId: line.id,
-          label: `${line.category.name} / ${line.subcategory.name}`,
-          unitPrice: line.unitPrice.toString(),
-        })),
-        grns: po.grns.map((g) => ({
-          id: g.id,
-          receivedAt: g.receivedAt.toISOString(),
-          acceptedQty: g.acceptedQty,
-          disputedQty: g.disputedQty,
-          alreadyInvoiced: g.invoiceLinks.length > 0,
-          lineAccepted: g.lines.map((l) => ({
-            poLineId: l.poLineId,
-            acceptedQty: l.acceptedQty,
-          })),
-        })),
-      };
-    })
-    .filter((p): p is POForInvoiceOption => p != null);
+      }));
+    },
+    {
+      revalidate: 60,
+      tags: [
+        LIST_CACHE_TAGS.invoices,
+        LIST_CACHE_TAGS.grn,
+        LIST_CACHE_TAGS.purchaseOrders,
+      ],
+    },
+  );
 }
 
 export async function getGRNsForPO(poId: string): Promise<InvoiceGRNOption[]> {
+  return cachedQuery("grns-for-po", [poId], () => computeGRNsForPO(poId), {
+    revalidate: 60,
+    tags: [`${LIST_CACHE_TAGS.poDetail}:${poId}`],
+  });
+}
+
+async function computeGRNsForPO(poId: string): Promise<InvoiceGRNOption[]> {
   const grns = await prisma.goodsReceipt.findMany({
     where: { poId, acceptedQty: { gt: 0 } },
     orderBy: { receivedAt: "desc" },

@@ -441,6 +441,7 @@ export function PRDetailView({
                   type="button"
                   variant="outline"
                   className="w-full"
+                  loading={isPending}
                   disabled={isPending || (draftEditMode && !vendorLinesValid && !selection)}
                   onClick={() => {
                     void run(() => updatePR(pr.id, payload()), {
@@ -455,6 +456,7 @@ export function PRDetailView({
               <Button
                 type="button"
                 className="w-full"
+                loading={isPending}
                 disabled={isPending || (draftEditMode && !vendorLinesValid && !selection)}
                 onClick={() => {
                   void run(
@@ -525,6 +527,7 @@ export function PRDetailView({
               <Button
                 type="button"
                 className="w-full"
+                loading={isPending}
                 disabled={isPending || !selection}
                 onClick={() => {
                   void run(() => resubmitPR(pr.id, payload()), {
@@ -567,6 +570,7 @@ export function PRDetailView({
               <Button
                 type="button"
                 className="w-full"
+                loading={isPending}
                 disabled={isPending}
                 onClick={() => setApproveOpen(true)}
               >
@@ -576,6 +580,7 @@ export function PRDetailView({
                 type="button"
                 variant="outline"
                 className="w-full"
+                loading={isPending}
                 disabled={isPending}
                 onClick={() => setRejectOpen(true)}
               >
@@ -585,6 +590,7 @@ export function PRDetailView({
                 type="button"
                 variant="ghost"
                 className="w-full"
+                loading={isPending}
                 disabled={isPending}
                 onClick={() => setRevisionOpen(true)}
               >
@@ -611,7 +617,7 @@ export function PRDetailView({
 
           {isOps && awaitingPurchaseOrder ? (
             <Link
-              href={`/purchase-orders?fulfill=${encodeURIComponent(pr.id)}`}
+              href={`/purchase-orders/configure/${encodeURIComponent(pr.id)}`}
               className={cn(buttonVariants({ size: "sm" }), "w-full")}
             >
               Create purchase order

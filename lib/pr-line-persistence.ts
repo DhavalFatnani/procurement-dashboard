@@ -120,6 +120,8 @@ export async function validatePRLines(
           };
         }
         totalItems += items.length;
+        const seenCatalogIds = new Set<string>();
+        const seenProposedNames = new Set<string>();
         for (const item of items) {
           if (item.quantity < 1) {
             return { ok: false, message: "Each item quantity must be at least 1." };
@@ -133,7 +135,16 @@ export async function validatePRLines(
             };
           }
           if (hasCatalog) {
-            const catalog = catalogById.get(item.catalogItemId!);
+            const catalogId = item.catalogItemId!.trim();
+            if (seenCatalogIds.has(catalogId)) {
+              return {
+                ok: false,
+                message:
+                  "Each catalog item can only appear once per line — increase quantity instead of adding another row.",
+              };
+            }
+            seenCatalogIds.add(catalogId);
+            const catalog = catalogById.get(catalogId);
             if (
               !catalog ||
               catalog.subcategoryId !== line.subcategoryId ||
@@ -146,6 +157,14 @@ export async function validatePRLines(
             if (name.length < 2) {
               return { ok: false, message: "Proposed item names must be at least 2 characters." };
             }
+            if (seenProposedNames.has(name)) {
+              return {
+                ok: false,
+                message:
+                  "Duplicate proposed item names on the same line — combine quantities into one row.",
+              };
+            }
+            seenProposedNames.add(name);
           }
         }
       } else {
@@ -377,21 +396,34 @@ export async function replacePRLines(
     }
 
     if (usesCatalogItemAtomicity(categoryName) && line.items) {
-      let lineItemNumber = 0;
+      const quantityByCatalogId = new Map<string, number>();
+      const catalogOrder: string[] = [];
+
       for (const item of line.items) {
-        lineItemNumber += 1;
         const catalogItemId = await resolveCatalogItemId(
           tx,
           line.subcategoryId,
           item,
           createdById,
         );
+        const prior = quantityByCatalogId.get(catalogItemId);
+        if (prior === undefined) {
+          catalogOrder.push(catalogItemId);
+          quantityByCatalogId.set(catalogItemId, item.quantity);
+        } else {
+          quantityByCatalogId.set(catalogItemId, prior + item.quantity);
+        }
+      }
+
+      let lineItemNumber = 0;
+      for (const catalogItemId of catalogOrder) {
+        lineItemNumber += 1;
         await tx.purchaseRequestLineItem.create({
           data: {
             prLineId: prLine.id,
             catalogItemId,
             lineItemNumber,
-            quantity: item.quantity,
+            quantity: quantityByCatalogId.get(catalogItemId)!,
           },
         });
       }

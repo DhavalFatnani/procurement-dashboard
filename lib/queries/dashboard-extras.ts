@@ -1,6 +1,7 @@
 import { POStatus, Prisma } from "@/lib/prisma-client";
 
 import { dbParallel } from "@/lib/db-parallel";
+import { cachedQuery } from "@/lib/list-cache";
 import { prisma } from "@/lib/prisma";
 import {
   goodsReceiptWhereFromScopeIds,
@@ -38,20 +39,27 @@ const STAGE_ORDER: POStatus[] = [
 export async function getPOStageDistribution(
   scopeWarehouseIds: string[],
 ): Promise<POStageDistribution[]> {
-  const rows = await prisma.purchaseOrder.groupBy({
-    by: ["status"],
-    where: purchaseOrderWhereFromScopeIds(scopeWarehouseIds),
-    _count: { _all: true },
-  });
-  const map = new Map<POStatus, number>();
-  for (const row of rows) {
-    map.set(row.status, row._count._all);
-  }
-  return STAGE_ORDER.map((status) => ({
-    status,
-    label: POSTatusLabels[status],
-    count: map.get(status) ?? 0,
-  }));
+  return cachedQuery(
+    "dashboard:po-stage-distribution",
+    [scopeWarehouseIds.slice().sort().join(",")],
+    async () => {
+      const rows = await prisma.purchaseOrder.groupBy({
+        by: ["status"],
+        where: purchaseOrderWhereFromScopeIds(scopeWarehouseIds),
+        _count: { _all: true },
+      });
+      const map = new Map<POStatus, number>();
+      for (const row of rows) {
+        map.set(row.status, row._count._all);
+      }
+      return STAGE_ORDER.map((status) => ({
+        status,
+        label: POSTatusLabels[status],
+        count: map.get(status) ?? 0,
+      }));
+    },
+    { revalidate: 30, tags: ["dashboard-metrics"] },
+  );
 }
 
 export type RecentActivityItem = {
@@ -66,6 +74,18 @@ export type RecentActivityItem = {
 export async function getRecentActivity(
   scopeWarehouseIds: string[],
   limit = 10,
+): Promise<RecentActivityItem[]> {
+  return cachedQuery(
+    "dashboard:recent-activity",
+    [scopeWarehouseIds.slice().sort().join(","), String(limit)],
+    () => computeRecentActivity(scopeWarehouseIds, limit),
+    { revalidate: 30, tags: ["dashboard-metrics"] },
+  );
+}
+
+async function computeRecentActivity(
+  scopeWarehouseIds: string[],
+  limit: number,
 ): Promise<RecentActivityItem[]> {
   const prWhere = { warehouseId: warehouseIdFilter(scopeWarehouseIds) };
   const poWhere = purchaseOrderWhereFromScopeIds(scopeWarehouseIds);
@@ -206,6 +226,18 @@ export async function getRecentActivity(
 export async function getPrCreationSparkline(
   scope: { warehouseIds: string[] },
   days = 7,
+): Promise<{ day: string; count: number }[]> {
+  return cachedQuery(
+    "dashboard:pr-sparkline",
+    [scope.warehouseIds.slice().sort().join(","), String(days)],
+    () => computePrCreationSparkline(scope, days),
+    { revalidate: 30, tags: ["dashboard-metrics"] },
+  );
+}
+
+async function computePrCreationSparkline(
+  scope: { warehouseIds: string[] },
+  days: number,
 ): Promise<{ day: string; count: number }[]> {
   const since = new Date();
   since.setDate(since.getDate() - days + 1);
