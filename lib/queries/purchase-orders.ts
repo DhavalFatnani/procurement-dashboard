@@ -28,6 +28,7 @@ import {
   aggregatePaymentStatus,
   buildClosureSnapshot,
   deliveryStatusLabel,
+  type POWithRelations,
 } from "@/lib/poAutoClose";
 import {
   buildEffectiveLineMap,
@@ -547,13 +548,15 @@ async function fetchPOById(id: string): Promise<PODetail | null> {
         })
       : [];
 
-  const lineAdjustments = normalizePoLineAdjustments(po.lineAdjustments);
+  const lineAdjustments = normalizePoLineAdjustments(
+    po.lineAdjustments,
+  ) as POWithRelations["lineAdjustments"];
 
   const poForClosure = {
     ...po,
     lines: legacyLines,
     lineAdjustments,
-  };
+  } as POWithRelations;
 
   const snapshot = buildClosureSnapshot(poForClosure);
 
@@ -1119,6 +1122,7 @@ const awaitingPoPrSelect = {
   purchaseOrders: {
     select: {
       id: true,
+      orderedQty: true,
       createdAt: true,
       vendor: { select: { businessName: true } },
       lineItems: { select: { id: true } },

@@ -59,7 +59,7 @@ describe("buildClosureSnapshot", () => {
           orderedQty: 100,
           unitPrice: { toString: () => "10" } as POWithRelations["lineItems"][0]["unitPrice"],
           goodsReceiptLineItems: [{ acceptedQty: 100 }],
-        },
+        } as POWithRelations["lineItems"][0],
       ],
       grns: [
         {
@@ -73,9 +73,9 @@ describe("buildClosureSnapshot", () => {
               resolutionStatus: "RETURNED_TO_VENDOR",
               resolutionOutcome: GRNExceptionOutcome.REPLACE_AND_AWAIT_GRN,
               pendingReplacementQty: 20,
-            },
+            } as POWithRelations["grns"][0]["exceptions"][0],
           ],
-        },
+        } as POWithRelations["grns"][0],
       ],
     });
     const snapshot = buildClosureSnapshot(po);
