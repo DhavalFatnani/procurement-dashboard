@@ -35,9 +35,7 @@ export function ActionCard({
     >
       <span
         className={cn(
-          "flex size-9 items-center justify-center rounded-xl",
-          "bg-[color-mix(in_srgb,var(--brand-accent)_12%,transparent)]",
-          "text-[var(--brand-accent)]",
+          "flex size-9 items-center justify-center rounded-xl surface-accent-soft",
           "transition-transform duration-fast group-hover:scale-105",
         )}
         aria-hidden

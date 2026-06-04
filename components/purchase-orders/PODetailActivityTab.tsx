@@ -57,7 +57,7 @@ export function PODetailActivityTab({ po }: { po: PODetail }) {
           return (
             <li key={event.id} className="relative flex items-start gap-3">
               <span
-                className="absolute -left-4 mt-1 flex size-3.5 items-center justify-center rounded-full border-2 border-card bg-[var(--brand-accent)] text-popover-foreground"
+                className="absolute -left-4 mt-1 flex size-3.5 items-center justify-center rounded-full border-2 border-card bg-[var(--brand-accent)] text-[var(--text-on-accent)]"
                 aria-hidden
               />
               <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-secondary text-muted-foreground">

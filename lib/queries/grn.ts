@@ -10,6 +10,17 @@ import {
   resolveExceptionForLineItem,
   type GrnExceptionSnapshot,
 } from "@/lib/grn-exception-lines";
+import {
+  pendingQtyForNextGrnReceipt,
+  sumReceivedQtyOnPoLine,
+  type GrnReceiptLinePending,
+} from "@/lib/grn-pending-qty";
+import {
+  buildEffectiveLineMap,
+  effectiveOrderedQtyForLegacyLine,
+  effectiveOrderedQtyForLineItem,
+  sumEffectiveOrderedQty,
+} from "@/lib/po-line-effective";
 import { hasLockTagsLines, sumOrderedQty } from "@/lib/purchase-lines";
 import {
   goodsReceiptWhereFromScopeIds,
@@ -72,6 +83,7 @@ export type POForGRNLine = {
   lineNumber: number;
   lineItemNumber: number;
   label: string;
+  /** Original PO line ordered qty (for receipt entry display). */
   orderedQty: number;
   previouslyReceivedQty: number;
   pendingQty: number;
@@ -237,8 +249,8 @@ export async function getGRNById(id: string): Promise<GRNDetail | null> {
           const poLine = line.purchaseOrderLineItem;
           return {
             poLineItemId: line.poLineItemId,
-            lineNumber: poLine.prLineItem.prLine.lineNumber,
-            lineItemNumber: poLine.prLineItem.lineItemNumber,
+            lineNumber: poLine.prLineItem?.prLine.lineNumber ?? 0,
+            lineItemNumber: poLine.prLineItem?.lineItemNumber ?? 0,
             label: `${poLine.category.name} / ${poLine.subcategory.name} · ${poLine.catalogItem.name}`,
             receivedQty: line.receivedQty,
             acceptedQty: line.acceptedQty,
@@ -300,7 +312,7 @@ const poForGrnSelect = {
       prLineItem: {
         select: { lineItemNumber: true, prLine: { select: { lineNumber: true } } },
       },
-      goodsReceiptLineItems: { select: { acceptedQty: true } },
+      goodsReceiptLineItems: { select: { receivedQty: true, acceptedQty: true } },
     },
   },
   lines: {
@@ -311,7 +323,7 @@ const poForGrnSelect = {
       category: { select: { name: true } },
       subcategory: { select: { name: true } },
       prLine: { select: { lineNumber: true } },
-      goodsReceiptLines: { select: { acceptedQty: true } },
+      goodsReceiptLines: { select: { receivedQty: true, acceptedQty: true } },
     },
   },
   purchaseRequest: {
@@ -322,33 +334,66 @@ const poForGrnSelect = {
   serialReservation: {
     select: { series: true, rangeStart: true, rangeEnd: true },
   },
-  grns: { select: { acceptedQty: true } },
+  lineAdjustments: {
+    orderBy: { createdAt: "asc" },
+    select: {
+      poLineItemId: true,
+      poLineId: true,
+      originalOrderedQty: true,
+      effectiveOrderedQty: true,
+      originalUnitPrice: true,
+      effectiveUnitPrice: true,
+      createdAt: true,
+    },
+  },
 } satisfies Prisma.PurchaseOrderSelect;
+
+export function grnReceiptQuantitiesForPoLine(
+  effectiveOrderedQty: number,
+  receipts: ReadonlyArray<{ receivedQty: number }>,
+): GrnReceiptLinePending {
+  const previouslyReceivedQty = sumReceivedQtyOnPoLine(receipts);
+  return {
+    previouslyReceivedQty,
+    pendingQty: pendingQtyForNextGrnReceipt(effectiveOrderedQty, previouslyReceivedQty),
+  };
+}
 
 function mapPoToGrnOption(
   po: Prisma.PurchaseOrderGetPayload<{ select: typeof poForGrnSelect }>,
 ): POForGRNOption | null {
+  const effectiveMap = buildEffectiveLineMap(po.lineAdjustments);
+
   const lineRows: POForGRNLine[] =
     po.lineItems.length > 0
       ? po.lineItems.map((line) => {
-          const previouslyReceivedQty = line.goodsReceiptLineItems.reduce(
-            (s, grl) => s + grl.acceptedQty,
-            0,
+          const effectiveOrdered = effectiveOrderedQtyForLineItem(
+            line.id,
+            line.orderedQty,
+            effectiveMap,
+          );
+          const qty = grnReceiptQuantitiesForPoLine(
+            effectiveOrdered,
+            line.goodsReceiptLineItems,
           );
           return {
             poLineItemId: line.id,
-            lineNumber: line.prLineItem.prLine.lineNumber,
-            lineItemNumber: line.prLineItem.lineItemNumber,
+            lineNumber: line.prLineItem?.prLine.lineNumber ?? 0,
+            lineItemNumber: line.prLineItem?.lineItemNumber ?? 0,
             label: `${line.category.name} / ${line.subcategory.name} · ${line.catalogItem.name}`,
             orderedQty: line.orderedQty,
-            previouslyReceivedQty,
-            pendingQty: Math.max(0, line.orderedQty - previouslyReceivedQty),
+            ...qty,
           };
         })
       : po.lines.map((line) => {
-          const previouslyReceivedQty = line.goodsReceiptLines.reduce(
-            (s, grl) => s + grl.acceptedQty,
-            0,
+          const effectiveOrdered = effectiveOrderedQtyForLegacyLine(
+            line.id,
+            line.orderedQty,
+            effectiveMap,
+          );
+          const qty = grnReceiptQuantitiesForPoLine(
+            effectiveOrdered,
+            line.goodsReceiptLines,
           );
           return {
             poLineItemId: line.id,
@@ -357,20 +402,26 @@ function mapPoToGrnOption(
             lineItemNumber: 1,
             label: `${line.category.name} / ${line.subcategory.name}`,
             orderedQty: line.orderedQty,
-            previouslyReceivedQty,
-            pendingQty: Math.max(0, line.orderedQty - previouslyReceivedQty),
+            ...qty,
           };
         });
 
-  const orderedQty =
-    lineRows.length > 0
-      ? lineRows.reduce((s, l) => s + l.orderedQty, 0)
-      : (po.orderedQty ?? 0);
-  const previouslyReceivedQty = po.grns.reduce((s, g) => s + g.acceptedQty, 0);
-  const pendingQty = Math.max(0, orderedQty - previouslyReceivedQty);
+  const orderedQty = sumEffectiveOrderedQty(
+    po.lineItems,
+    po.lines,
+    effectiveMap,
+    po.orderedQty,
+  );
+  const previouslyReceivedQty = lineRows.reduce(
+    (s, l) => s + l.previouslyReceivedQty,
+    0,
+  );
+  const pendingQty = lineRows.reduce((s, l) => s + l.pendingQty, 0);
   if (pendingQty <= 0) {
     return null;
   }
+
+  const receivableLines = lineRows.filter((line) => line.pendingQty > 0);
 
   const isLockTags =
     lineRows.length > 0
@@ -389,7 +440,7 @@ function mapPoToGrnOption(
     previouslyReceivedQty,
     pendingQty,
     isLockTags,
-    lines: lineRows,
+    lines: receivableLines,
     serialRange:
       isLockTags && po.serialReservation
         ? {

@@ -58,6 +58,27 @@ enum GRNExceptionResolution {
   OVERRIDE_ACCEPTED
 }
 
+/// Physical handling of disputed qty at resolve time.
+enum GRNExceptionDisposition {
+  KEEP
+  RETURN_TO_VENDOR
+  /// Disputed qty removed from receipt; not sent back (e.g. damaged). Pair with close-line to reduce PO commitment.
+  NOT_RETURNED
+}
+
+/// Ops resolution outcome (four scenarios; replaces disposition × commitment in UI).
+enum GRNExceptionOutcome {
+  ACCEPT_AT_PO_PRICE
+  ACCEPT_AT_DISPUTED_PRICE
+  RETURN_AND_SETTLE
+  REPLACE_AND_AWAIT_GRN
+}
+
+enum CatalogItemKind {
+  BASE
+  DISPUTED
+}
+
 enum InvoiceMatchStatus {
   PENDING
   MATCHED
@@ -69,6 +90,13 @@ enum PaymentStatus {
   UNPAID
   PARTIALLY_PAID
   PAID
+}
+
+enum POAdvanceRequestStatus {
+  PENDING
+  CANCELLED
+  REJECTED
+  FULFILLED
 }
 
 enum VendorStatus {
@@ -138,6 +166,10 @@ model User {
   invoicesUploaded          Invoice[]           @relation("InvoiceUploadedBy")
   invoicesOverridden        Invoice[]           @relation("InvoiceOverrideBy")
   paymentsPaid              Payment[]
+  poAdvanceRequests         POAdvanceRequest[] @relation("POAdvanceRequestedBy")
+  poAdvanceRequestsReviewed POAdvanceRequest[] @relation("POAdvanceReviewedBy")
+  poAdvancePaymentsPaid     POAdvancePayment[] @relation("POAdvancePaidBy")
+  poLineAdjustmentsCreated  PurchaseOrderLineAdjustment[] @relation("POLineAdjustmentCreatedBy")
   serialReservationsCreated SerialReservation[]
   seriesConfigsConfigured   SeriesConfig[]
   catalogItemsCreated       CatalogItem[]       @relation("CatalogItemCreatedBy")
@@ -274,30 +306,36 @@ model Subcategory {
 }
 
 model CatalogItem {
-  id             String            @id @default(cuid())
-  subcategoryId  String
-  name           String
-  sku            String?
-  unit           String            @default("pcs")
-  status         CatalogItemStatus @default(PENDING_APPROVAL)
-  createdById    String
-  approvedById   String?
-  approvedAt     DateTime?
-  rejectedReason String?
-  createdAt      DateTime          @default(now())
-  updatedAt      DateTime          @updatedAt
+  id                String            @id @default(cuid())
+  subcategoryId     String
+  name              String
+  sku               String?
+  unit              String            @default("pcs")
+  kind              CatalogItemKind   @default(BASE)
+  baseCatalogItemId String?
+  status            CatalogItemStatus @default(PENDING_APPROVAL)
+  createdById       String
+  approvedById      String?
+  approvedAt        DateTime?
+  rejectedReason    String?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
 
-  subcategory  Subcategory               @relation(fields: [subcategoryId], references: [id], onDelete: Cascade)
-  createdBy    User                      @relation("CatalogItemCreatedBy", fields: [createdById], references: [id])
-  approvedBy   User?                     @relation("CatalogItemApprovedBy", fields: [approvedById], references: [id])
-  prLineItems  PurchaseRequestLineItem[]
-  poLineItems  PurchaseOrderLineItem[]
-  vendorLinks  CatalogItemVendor[]
-  vendorPrices VendorCatalogItemPrice[]
+  subcategory       Subcategory               @relation(fields: [subcategoryId], references: [id], onDelete: Cascade)
+  baseCatalogItem   CatalogItem?              @relation("CatalogDisputeVariant", fields: [baseCatalogItemId], references: [id], onDelete: SetNull)
+  disputeVariants   CatalogItem[]             @relation("CatalogDisputeVariant")
+  createdBy         User                      @relation("CatalogItemCreatedBy", fields: [createdById], references: [id])
+  approvedBy        User?                     @relation("CatalogItemApprovedBy", fields: [approvedById], references: [id])
+  prLineItems       PurchaseRequestLineItem[]
+  poLineItems       PurchaseOrderLineItem[]
+  vendorLinks       CatalogItemVendor[]
+  vendorPrices      VendorCatalogItemPrice[]
+  grnExceptionsAsVariant GRNException[]       @relation("GRNExceptionDisputeVariant")
 
   @@unique([subcategoryId, name])
   @@index([subcategoryId, status])
   @@index([createdById])
+  @@index([baseCatalogItemId, kind])
 }
 
 model CatalogItemVendor {
@@ -466,6 +504,9 @@ model PurchaseOrder {
   invoices          Invoice[]
   serialReservation SerialReservation?
   catalogItemPrices VendorCatalogItemPrice[]
+  advanceRequests   POAdvanceRequest[]
+  advancePayments   POAdvancePayment[]
+  lineAdjustments   PurchaseOrderLineAdjustment[]
 
   @@index([prId])
   @@index([status])
@@ -474,6 +515,64 @@ model PurchaseOrder {
   @@index([status, createdAt])
   // Inbox ("POs to receive"/"at risk") and dashboard recent-activity order by updatedAt desc.
   @@index([updatedAt])
+}
+
+model POAdvanceRequest {
+  id               String                 @id @default(cuid())
+  poId             String
+  requestedAmount  Decimal                @db.Decimal(18, 4)
+  requestedPercent Decimal?               @db.Decimal(6, 3)
+  reason           String
+  status           POAdvanceRequestStatus @default(PENDING)
+  requestedById    String
+  requestedAt      DateTime               @default(now())
+  reviewedById     String?
+  reviewReason     String?
+  updatedAt        DateTime               @updatedAt
+
+  purchaseOrder PurchaseOrder       @relation(fields: [poId], references: [id], onDelete: Cascade)
+  requestedBy   User                @relation("POAdvanceRequestedBy", fields: [requestedById], references: [id])
+  reviewedBy    User?               @relation("POAdvanceReviewedBy", fields: [reviewedById], references: [id])
+  payment       POAdvancePayment?
+
+  @@index([poId])
+  @@index([status])
+  @@index([requestedAt])
+}
+
+model POAdvancePayment {
+  id             String   @id @default(cuid())
+  poId           String
+  requestId      String   @unique
+  amount         Decimal  @db.Decimal(18, 4)
+  method         String?
+  transactionRef String
+  proofUrl       String?
+  paidById       String
+  paidAt         DateTime
+  createdAt      DateTime @default(now())
+
+  purchaseOrder PurchaseOrder          @relation(fields: [poId], references: [id], onDelete: Cascade)
+  request       POAdvanceRequest       @relation(fields: [requestId], references: [id], onDelete: Restrict)
+  paidBy        User                   @relation("POAdvancePaidBy", fields: [paidById], references: [id])
+  allocations   POAdvanceAllocation[]
+
+  @@index([poId])
+  @@index([paidAt])
+}
+
+model POAdvanceAllocation {
+  id               String  @id @default(cuid())
+  advancePaymentId String
+  invoiceId        String
+  amount           Decimal @db.Decimal(18, 4)
+  createdAt        DateTime @default(now())
+
+  advancePayment POAdvancePayment @relation(fields: [advancePaymentId], references: [id], onDelete: Cascade)
+  invoice        Invoice          @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([advancePaymentId])
+  @@index([invoiceId])
 }
 
 model PurchaseOrderLine {
@@ -491,6 +590,7 @@ model PurchaseOrderLine {
   subcategory     Subcategory         @relation(fields: [subcategoryId], references: [id])
   goodsReceiptLines GoodsReceiptLine[]
   grnExceptions     GRNException[]
+  lineAdjustments   PurchaseOrderLineAdjustment[]
 
   @@index([poId])
   @@index([categoryId])
@@ -498,27 +598,34 @@ model PurchaseOrderLine {
 }
 
 model PurchaseOrderLineItem {
-  id            String  @id @default(cuid())
-  poId          String
-  prLineItemId  String  @unique
-  catalogItemId String
-  categoryId    String
-  subcategoryId String
-  orderedQty    Int
-  unitPrice     Decimal @db.Decimal(18, 4)
+  id                       String  @id @default(cuid())
+  poId                     String
+  prLineItemId             String? @unique
+  catalogItemId            String
+  categoryId               String
+  subcategoryId            String
+  orderedQty               Int
+  unitPrice                Decimal @db.Decimal(18, 4)
+  sourcePoLineItemId       String?
+  originatingGrnExceptionId String? @unique
 
-  purchaseOrder         PurchaseOrder              @relation(fields: [poId], references: [id], onDelete: Cascade)
-  prLineItem            PurchaseRequestLineItem    @relation(fields: [prLineItemId], references: [id])
-  catalogItem           CatalogItem                @relation(fields: [catalogItemId], references: [id])
-  category              Category                   @relation(fields: [categoryId], references: [id])
-  subcategory           Subcategory                @relation(fields: [subcategoryId], references: [id])
-  goodsReceiptLineItems GoodsReceiptLineItem[]
-  grnExceptions         GRNException[]
+  purchaseOrder            PurchaseOrder              @relation(fields: [poId], references: [id], onDelete: Cascade)
+  prLineItem               PurchaseRequestLineItem?   @relation(fields: [prLineItemId], references: [id])
+  catalogItem              CatalogItem                @relation(fields: [catalogItemId], references: [id])
+  category                 Category                   @relation(fields: [categoryId], references: [id])
+  subcategory              Subcategory                @relation(fields: [subcategoryId], references: [id])
+  sourcePoLineItem         PurchaseOrderLineItem?     @relation("POLineDisputeSplit", fields: [sourcePoLineItemId], references: [id], onDelete: SetNull)
+  disputeSplitLines        PurchaseOrderLineItem[]    @relation("POLineDisputeSplit")
+  originatingGrnException    GRNException?              @relation("POLineFromGrnException", fields: [originatingGrnExceptionId], references: [id], onDelete: SetNull)
+  goodsReceiptLineItems    GoodsReceiptLineItem[]
+  grnExceptions            GRNException[]
+  lineAdjustments          PurchaseOrderLineAdjustment[]
 
   @@index([poId])
   @@index([catalogItemId])
   @@index([categoryId])
   @@index([subcategoryId])
+  @@index([sourcePoLineItemId])
 }
 
 model GoodsReceipt {
@@ -580,30 +687,66 @@ model GoodsReceiptLine {
 }
 
 model GRNException {
-  id               String                  @id @default(cuid())
-  grnId            String
-  poLineItemId     String?
-  poLineId         String?
-  exceptionType    GRNExceptionType
-  exceptionQty     Int
-  note             String
-  resolutionStatus GRNExceptionResolution?
-  resolvedById     String?
-  resolvedAt       DateTime?
-  resolutionNote   String?
-  createdAt        DateTime                @default(now())
-  updatedAt        DateTime                @default(now()) @updatedAt
+  id                        String                  @id @default(cuid())
+  grnId                     String
+  poLineItemId              String?
+  poLineId                  String?
+  exceptionType             GRNExceptionType
+  exceptionQty              Int
+  note                      String
+  resolutionStatus          GRNExceptionResolution?
+  resolutionOutcome         GRNExceptionOutcome?
+  resolutionDisposition     GRNExceptionDisposition?
+  closeLineAfterResolve     Boolean?
+  pendingReplacementQty     Int?
+  disputeVariantCatalogItemId String?
+  resolvedById              String?
+  resolvedAt                DateTime?
+  resolutionNote            String?
+  createdAt                 DateTime                @default(now())
+  updatedAt                 DateTime                @default(now()) @updatedAt
 
-  grn                  GoodsReceipt           @relation(fields: [grnId], references: [id], onDelete: Cascade)
-  purchaseOrderLineItem PurchaseOrderLineItem? @relation(fields: [poLineItemId], references: [id], onDelete: SetNull)
-  purchaseOrderLine     PurchaseOrderLine?     @relation(fields: [poLineId], references: [id], onDelete: SetNull)
-  resolvedBy            User?                  @relation(fields: [resolvedById], references: [id])
+  grn                       GoodsReceipt            @relation(fields: [grnId], references: [id], onDelete: Cascade)
+  purchaseOrderLineItem     PurchaseOrderLineItem?  @relation(fields: [poLineItemId], references: [id], onDelete: SetNull)
+  purchaseOrderLine         PurchaseOrderLine?      @relation(fields: [poLineId], references: [id], onDelete: SetNull)
+  disputeVariantCatalogItem CatalogItem?            @relation("GRNExceptionDisputeVariant", fields: [disputeVariantCatalogItemId], references: [id], onDelete: SetNull)
+  resolvedBy                User?                   @relation(fields: [resolvedById], references: [id])
+  lineAdjustment            PurchaseOrderLineAdjustment?
+  disputeSplitPoLineItem    PurchaseOrderLineItem?  @relation("POLineFromGrnException")
 
   @@index([grnId])
   @@index([poLineItemId])
   @@index([poLineId])
   // Inbox "open exceptions" filters `exceptions: { some: { resolutionStatus: null } }`.
   @@index([resolutionStatus])
+  @@index([resolutionOutcome])
+}
+
+/// Effective qty/price after dispute resolution (original PO line values stay immutable).
+model PurchaseOrderLineAdjustment {
+  id                  String   @id @default(cuid())
+  poId                String
+  poLineItemId        String?
+  poLineId            String?
+  grnExceptionId      String   @unique
+  originalOrderedQty  Int
+  effectiveOrderedQty Int
+  originalUnitPrice   Decimal  @db.Decimal(18, 4)
+  effectiveUnitPrice  Decimal  @db.Decimal(18, 4)
+  reason              String
+  createdById         String
+  createdAt           DateTime @default(now())
+
+  purchaseOrder         PurchaseOrder          @relation(fields: [poId], references: [id], onDelete: Cascade)
+  purchaseOrderLineItem PurchaseOrderLineItem? @relation(fields: [poLineItemId], references: [id], onDelete: SetNull)
+  purchaseOrderLine     PurchaseOrderLine?     @relation(fields: [poLineId], references: [id], onDelete: SetNull)
+  grnException          GRNException           @relation(fields: [grnExceptionId], references: [id], onDelete: Cascade)
+  createdBy             User                   @relation("POLineAdjustmentCreatedBy", fields: [createdById], references: [id])
+
+  @@index([poId])
+  @@index([poLineItemId])
+  @@index([poLineId])
+  @@index([createdAt])
 }
 
 model Invoice {
@@ -627,8 +770,9 @@ model Invoice {
   uploadedBy    User          @relation("InvoiceUploadedBy", fields: [uploadedById], references: [id])
   overrideBy    User?         @relation("InvoiceOverrideBy", fields: [overrideById], references: [id])
 
-  grnLinks InvoiceGRNLink[]
-  payments Payment[]
+  grnLinks            InvoiceGRNLink[]
+  payments            Payment[]
+  advanceAllocations  POAdvanceAllocation[]
 
   @@unique([poId, invoiceNumber])
   @@index([createdAt])

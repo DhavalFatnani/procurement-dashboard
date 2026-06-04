@@ -1,5 +1,5 @@
 import { cache } from "react";
-import { ExecutionType, POStatus, PRStatus, Role } from "@/lib/prisma-enums";
+import { ExecutionType, InvoiceMatchStatus, POStatus, PaymentStatus, PRStatus, Role } from "@/lib/prisma-enums";
 
 import {
   getCachedActiveCatalogItems,
@@ -16,6 +16,10 @@ import {
 } from "@/lib/format-warehouse";
 import { cachedQuery, LIST_CACHE_TAGS, stableFilterKey } from "@/lib/list-cache";
 import { paginatedListQuery, type Paginated } from "@/lib/pagination";
+import {
+  aggregateInvoiceMatchStatus,
+  aggregatePaymentStatus,
+} from "@/lib/po-closure-snapshot";
 import { prVersionActionLabel } from "@/lib/pr-version-label";
 import { prisma } from "@/lib/prisma";
 import { timed } from "@/lib/server-timing";
@@ -25,7 +29,8 @@ import {
   type PRLineRow,
 } from "@/lib/purchase-lines";
 import type { SessionUser } from "@/lib/session";
-import { userCanActForWarehouse, warehouseScopeForUser } from "@/lib/warehouse-scope";
+import { canViewPurchaseRequest, prDetailNeedsFilterOptions } from "@/lib/pr-access";
+import { warehouseScopeForUser } from "@/lib/warehouse-scope";
 
 export type { PRLineRow };
 
@@ -98,6 +103,7 @@ export type PRDetail = {
   subcategoryName: string;
   lineSummary: string;
   lineCount: number;
+  itemCount: number;
   quantity: number;
   lines: PRLineRow[];
   warehouseId: string;
@@ -128,6 +134,9 @@ export type PRDetail = {
     vendorName: string;
     createdAt: string;
     itemCount: number;
+    orderedQty: number;
+    invoiceMatchStatus: InvoiceMatchStatus;
+    paymentStatus: PaymentStatus;
   }[];
   /** First PO when any exist — convenience for legacy callers */
   purchaseOrder: { id: string; status: POStatus; createdAt: string } | null;
@@ -207,15 +216,7 @@ export const EMPTY_PR_FILTER_OPTIONS = {
   creators: UserOption[];
 };
 
-export function prDetailNeedsFilterOptions(
-  role: SessionUser["role"],
-  status: PRStatus,
-): boolean {
-  return (
-    role === Role.SM &&
-    (status === PRStatus.DRAFT || status === PRStatus.REVISION_REQUIRED)
-  );
-}
+export { prDetailNeedsFilterOptions } from "@/lib/pr-access";
 
 export const getFilterOptions = cache(async (): Promise<{
   categories: CategoryOption[];
@@ -262,6 +263,10 @@ async function fetchPurchaseRequests(
 
   const assignedScope = warehouseScopeForUser(user);
   clauses.push(assignedScope);
+
+  if (user.role === Role.SM) {
+    clauses.push({ createdById: user.id });
+  }
 
   if (filters.warehouseId) {
     clauses.push({ warehouseId: filters.warehouseId });
@@ -433,20 +438,22 @@ async function fetchPRById(user: SessionUser, id: string): Promise<PRDetail | nu
         select: {
           id: true,
           status: true,
+          orderedQty: true,
           createdAt: true,
           vendor: { select: { businessName: true } },
           lineItems: { select: { id: true } },
-          grns: {
-            select: { receivedAt: true },
-            orderBy: { receivedAt: "asc" },
-          },
           invoices: {
             select: {
               createdAt: true,
+              matchStatus: true,
               paymentStatus: true,
               payments: { select: { paidAt: true }, orderBy: { paidAt: "desc" }, take: 1 },
             },
             orderBy: { createdAt: "asc" },
+          },
+          grns: {
+            select: { receivedAt: true },
+            orderBy: { receivedAt: "asc" },
           },
         },
         orderBy: { createdAt: "asc" },
@@ -469,11 +476,7 @@ async function fetchPRById(user: SessionUser, id: string): Promise<PRDetail | nu
     return null;
   }
 
-  if (user.role === Role.SM && pr.createdById !== user.id) {
-    return null;
-  }
-
-  if (user.role === Role.OPS_HEAD && !userCanActForWarehouse(user, pr.warehouseId)) {
+  if (!canViewPurchaseRequest(user, pr)) {
     return null;
   }
 
@@ -534,6 +537,7 @@ async function fetchPRById(user: SessionUser, id: string): Promise<PRDetail | nu
     subcategoryName: primaryLine?.subcategoryName ?? pr.subcategory?.name ?? "—",
     lineSummary: summary.summary,
     lineCount: summary.lineCount || lines.length,
+    itemCount: summary.itemCount || allLineItems.length || lines.length,
     quantity: totalQty,
     lines,
     warehouseId: pr.warehouseId,
@@ -568,6 +572,9 @@ async function fetchPRById(user: SessionUser, id: string): Promise<PRDetail | nu
       vendorName: po.vendor.businessName,
       createdAt: po.createdAt.toISOString(),
       itemCount: po.lineItems.length,
+      orderedQty: po.orderedQty ?? 0,
+      invoiceMatchStatus: aggregateInvoiceMatchStatus(po.invoices),
+      paymentStatus: aggregatePaymentStatus(po.invoices),
     })),
     purchaseOrder: firstPo
       ? { id: firstPo.id, status: firstPo.status, createdAt: firstPo.createdAt.toISOString() }

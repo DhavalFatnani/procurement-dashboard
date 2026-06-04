@@ -1,3 +1,4 @@
+import type { LockTagsSerialPreview } from "@/app/actions/serial";
 import { ExecutionType, PRStatus, Role, type SerialSeries } from "@/lib/prisma-enums";
 import Link from "next/link";
 
@@ -50,6 +51,64 @@ export function PRDetailProgress({ pr }: { pr: PRDetail }) {
             completedAt: pr.progress[step.atKey],
           }))}
         />
+      </CardContent>
+    </Card>
+  );
+}
+
+export function PRDetailLockTagsSerialPreview({
+  preview,
+  status,
+}: {
+  preview: LockTagsSerialPreview;
+  status: PRStatus;
+}) {
+  const showPreview =
+    status === PRStatus.APPROVED || status === PRStatus.CONVERTED_TO_PO;
+
+  if (!showPreview) {
+    return null;
+  }
+
+  return (
+    <Card size="sm">
+      <CardHeader>
+        <CardTitle>Lock tag serial preview</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4 text-ds-sm">
+        <p className="text-muted-foreground">
+          {preview.isHeld
+            ? "This range is held on PR approval and blocked in serial governance. It is confirmed for vendor handoff when a purchase order is created."
+            : "Preview only — the range is committed when a purchase order is created. Share the confirmed range with the vendor after PO creation."}
+        </p>
+        <dl className="grid gap-3 sm:grid-cols-2">
+          <div>
+            <dt className="text-ds-xs text-muted-foreground">Series</dt>
+            <dd className="mt-1 font-medium">{preview.seriesName}</dd>
+          </div>
+          <div>
+            <dt className="text-ds-xs text-muted-foreground">Quantity</dt>
+            <dd className="mt-1 font-medium">{preview.quantity.toLocaleString("en-IN")}</dd>
+          </div>
+          <div>
+            <dt className="text-ds-xs text-muted-foreground">
+              {preview.isHeld ? "Held range" : "Estimated range"}
+            </dt>
+            <dd className="mt-1 font-mono font-medium">
+              {preview.rangeStart} → {preview.rangeEnd}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-ds-xs text-muted-foreground">Last reserved end</dt>
+            <dd className="mt-1 font-mono">{preview.lastRangeEnd ?? "None yet"}</dd>
+          </div>
+        </dl>
+        <Link
+          href={`/serial-governance?tab=summary&series=${preview.series}`}
+          className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "w-full sm:w-auto")}
+        >
+          View series usage in Serial Governance
+        </Link>
       </CardContent>
     </Card>
   );

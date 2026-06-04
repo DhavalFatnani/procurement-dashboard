@@ -11,6 +11,7 @@ import { cachedQuery, LIST_CACHE_TAGS, stableFilterKey } from "@/lib/list-cache"
 import { paginatedListQuery, type Paginated } from "@/lib/pagination";
 import { prisma } from "@/lib/prisma";
 import { STORAGE_BUCKETS } from "@/lib/storage";
+import { computeAdvanceBalances } from "@/lib/po-advance";
 import { invoiceWhereFromScopeIds, purchaseOrderWhereFromScopeIds } from "@/lib/warehouse-scope";
 
 export type InvoiceFilters = {
@@ -48,6 +49,8 @@ export type POForInvoiceOption = {
   unitPrice: string | null;
   gstApplicable: boolean;
   gstRatePercent: string | null;
+  /** Unallocated advance on PO (for upload hint). */
+  advanceUnallocatedOnPo: string;
   linePrices: { poLineId: string; label: string; unitPrice: string }[];
   grns: InvoiceGRNOption[];
 };
@@ -338,6 +341,12 @@ async function computePOForInvoiceById(poId: string): Promise<POForInvoiceOption
           subcategory: { select: { name: true } },
         },
       },
+      advancePayments: {
+        select: {
+          amount: true,
+          allocations: { select: { amount: true } },
+        },
+      },
       grns: {
         where: { acceptedQty: { gt: 0 } },
         select: {
@@ -375,10 +384,13 @@ async function computePOForInvoiceById(poId: string): Promise<POForInvoiceOption
           unitPrice: line.unitPrice.toString(),
         }));
 
+  const { advanceUnallocated } = computeAdvanceBalances(po.advancePayments);
+
   return {
     id: po.id,
     label: `${formatProcurementRef(po.id)} · ${po.vendor.businessName}`,
     vendorName: po.vendor.businessName,
+    advanceUnallocatedOnPo: advanceUnallocated.toFixed(2),
     unitPrice:
       linePrices.length === 1
         ? linePrices[0]!.unitPrice
@@ -435,6 +447,13 @@ export async function getPOsForInvoice(
             ],
           },
           grns: { some: { acceptedQty: { gt: 0 }, invoiceLinks: { none: {} } } },
+          NOT: {
+            grns: {
+              some: {
+                exceptions: { some: { resolutionStatus: null } },
+              },
+            },
+          },
           ...(scopeWarehouseIds !== undefined
             ? purchaseOrderWhereFromScopeIds(scopeWarehouseIds)
             : {}),

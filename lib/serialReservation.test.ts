@@ -25,7 +25,7 @@ vi.mock("@/lib/logger", () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
 
-import { atomicReserveSerialRange } from "./serialReservation";
+import { atomicReserveSerialRange, reserveSerialRangeInTransaction } from "./serialReservation";
 
 const baseInput = {
   quantity: 50,
@@ -77,6 +77,7 @@ describe("atomicReserveSerialRange — internal print PR", () => {
       ...baseInput,
       prId: "pr-new",
       series: SerialSeries.APPAREL_BARCODES,
+      purpose: "internal_print",
       internalPrintPR: {
         categoryId: "cat-1",
         subcategoryId: "sub-1",
@@ -128,6 +129,7 @@ describe("atomicReserveSerialRange — range allocation start numbers", () => {
       const result = await atomicReserveSerialRange({
         ...baseInput,
         series,
+        purpose: "internal_print",
       });
 
       expect(result.success).toBe(true);
@@ -149,6 +151,7 @@ describe("atomicReserveSerialRange — range allocation start numbers", () => {
     await atomicReserveSerialRange({
       ...baseInput,
       series: SerialSeries.LOCK_TAGS,
+      purpose: "internal_print",
     });
 
     const { data } = txCreate.mock.calls[0]![0] as {
@@ -166,6 +169,7 @@ describe("atomicReserveSerialRange — range allocation start numbers", () => {
     await atomicReserveSerialRange({
       ...baseInput,
       series: SerialSeries.JEWELLERY_BARCODES,
+      purpose: "internal_print",
     });
 
     const { data } = txCreate.mock.calls[0]![0] as {
@@ -276,6 +280,45 @@ describe("atomicReserveSerialRange — serialization conflict retries", () => {
 
     expect(result).toEqual({ success: false, error: "boom" });
     expect(calls).toBe(1);
+  });
+});
+
+describe("reserveSerialRangeInTransaction — vendor lock tags", () => {
+  it("reserves with poId and does not transition PR to EXECUTED_PRINT", async () => {
+    txPrFindUnique.mockResolvedValue({ id: "pr-1", status: PRStatus.APPROVED });
+    txCreate.mockResolvedValue({ id: "res-vendor", poId: "po-1" });
+
+    await reserveSerialRangeInTransaction(makeTx() as never, {
+      ...baseInput,
+      series: SerialSeries.LOCK_TAGS,
+      poId: "po-1",
+      idempotencyKey: "po-po-1-lock-tags",
+      purpose: "vendor_lock_tags",
+    });
+
+    expect(txCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          poId: "po-1",
+          prId: null,
+        }),
+      }),
+    );
+    expect(txPrUpdate).not.toHaveBeenCalled();
+  });
+
+  it("rejects vendor reservation when PR is not approved", async () => {
+    txPrFindUnique.mockResolvedValue({ id: "pr-1", status: PRStatus.PENDING_APPROVAL });
+
+    await expect(
+      reserveSerialRangeInTransaction(makeTx() as never, {
+        ...baseInput,
+        series: SerialSeries.LOCK_TAGS,
+        poId: "po-1",
+        idempotencyKey: "po-po-1-lock-tags",
+        purpose: "vendor_lock_tags",
+      }),
+    ).rejects.toThrow(/approved/i);
   });
 });
 

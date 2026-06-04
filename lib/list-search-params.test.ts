@@ -99,4 +99,8 @@ describe("parsePurchaseOrderPageParams", () => {
       "PR-clxyz123",
     );
   });
+
+  it("parses prId filter for PO list scoped to a purchase request", () => {
+    expect(parsePurchaseOrderPageParams({ prId: "PR-abc123" }).prId).toBe("PR-abc123");
+  });
 });

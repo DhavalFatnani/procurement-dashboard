@@ -6,6 +6,7 @@ import {
   ClipboardList,
   FilePlus,
   FileText,
+  HandCoins,
   Hash,
   LayoutDashboard,
   PackageCheck,
@@ -19,6 +20,7 @@ import {
   Warehouse,
 } from "lucide-react";
 
+import { FINANCE_ROUTES } from "@/lib/finance-routes";
 import { getNavItemsForRole } from "@/lib/navigation";
 
 export type CommandItem = {
@@ -62,9 +64,36 @@ const NAV_COMMANDS: CommandItem[] = [
   { id: "nav-invoices", label: "Go to Invoices", href: "/invoices", icon: Receipt },
   { id: "nav-payments", label: "Go to Payments", href: "/payments", icon: Wallet },
   {
+    id: "nav-invoice-settlement",
+    label: "Go to Invoice settlement",
+    href: FINANCE_ROUTES.invoiceSettlement,
+    icon: Receipt,
+    roles: [Role.FINANCE],
+  },
+  {
+    id: "nav-vendor-advances",
+    label: "Go to Vendor advances",
+    href: FINANCE_ROUTES.vendorAdvances,
+    icon: HandCoins,
+    roles: [Role.FINANCE],
+  },
+  {
+    id: "nav-payment-register",
+    label: "Go to Payment register",
+    href: FINANCE_ROUTES.paymentRegister,
+    icon: Wallet,
+    roles: [Role.FINANCE],
+  },
+  {
     id: "nav-serial",
     label: "Go to Serial Governance",
     href: "/serial-governance",
+    icon: Hash,
+  },
+  {
+    id: "nav-serial-map",
+    label: "Serial range map",
+    href: "/serial-governance/range-map",
     icon: Hash,
   },
   { id: "nav-reports", label: "Go to Reports", href: "/reports", icon: BarChart3 },

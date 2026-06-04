@@ -2,9 +2,11 @@
 
 import { Role } from "@/lib/prisma-enums";
 import {
+  BarChart3,
   Building2,
   ClipboardList,
   FilePlus,
+  HandCoins,
   Inbox,
   PackageCheck,
   Receipt,
@@ -14,6 +16,7 @@ import {
 import { ActionCard } from "@/components/shared/ActionCard";
 import { AnimatedGrid, AnimatedGridItem } from "@/components/shared/AnimatedGrid";
 import { PageSection } from "@/components/shared/PageSection";
+import { FINANCE_ROUTES } from "@/lib/finance-routes";
 
 type QuickAction = {
   label: string;
@@ -83,10 +86,28 @@ const QUICK_ACTIONS_BY_ROLE: Record<Role, QuickAction[]> = {
       description: "Invoices and payments awaiting action.",
     },
     {
-      label: "Pay invoices",
-      href: "/payments?paymentStatus=UNPAID",
+      label: "Settle invoices",
+      href: `${FINANCE_ROUTES.invoiceSettlement}?paymentStatus=UNPAID`,
       icon: Receipt,
       description: "Matched invoices ready for disbursement.",
+    },
+    {
+      label: "Vendor advances",
+      href: FINANCE_ROUTES.vendorAdvances,
+      icon: HandCoins,
+      description: "Review pending advance requests and ledger.",
+    },
+    {
+      label: "Payment register",
+      href: FINANCE_ROUTES.paymentRegister,
+      icon: Receipt,
+      description: "Cash and advance settlements recorded.",
+    },
+    {
+      label: "Reports",
+      href: "/reports?section=ageing",
+      icon: BarChart3,
+      description: "Payment ageing, vendor exposure, and settlement activity.",
     },
   ],
 };

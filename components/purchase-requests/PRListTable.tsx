@@ -132,7 +132,7 @@ export function PRListTable({
         cell: (r) => <PRItemsSummaryCell row={r} />,
       },
       { id: "wh", header: "Warehouse", cell: (r) => r.warehouseName },
-      { id: "qty", header: "Qty", variant: "numeric", cell: (r) => r.quantity },
+      { id: "qty", header: "Units", variant: "numeric", cell: (r) => r.quantity.toLocaleString("en-IN") },
       {
         id: "vendor",
         header: "Vendor",

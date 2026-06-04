@@ -1,6 +1,12 @@
-import { InvoiceMatchStatus, PaymentStatus, PRStatus } from "@/lib/prisma-enums";
+import {
+  InvoiceMatchStatus,
+  PaymentStatus,
+  POAdvanceRequestStatus,
+  PRStatus,
+} from "@/lib/prisma-enums";
 
 import { dbSerial } from "@/lib/db-serial";
+import { advanceOverageForPo, committedTotalFromPo } from "@/lib/po-advance";
 import { prisma } from "@/lib/prisma";
 import {
   invoiceWhereFromScopeIds,
@@ -11,6 +17,16 @@ import {
 export type CycleTimePoint = { day: string; count: number };
 export type ExceptionPoint = { day: string; total: number; open: number };
 export type PaymentAgePoint = { bucket: string; count: number };
+
+export type PaymentAgeingExportRow = {
+  invoiceNumber: string;
+  poId: string;
+  vendorName: string;
+  invoiceAmount: string;
+  remaining: string;
+  ageDays: number;
+  bucket: string;
+};
 export type TopVendor = { id: string; name: string; openValue: number; poCount: number };
 
 export type ReportsData = {
@@ -23,6 +39,9 @@ export type ReportsData = {
     avgPrToPoDays: number | null;
     matchRate: number;
     openInvoiceValue: number;
+    pendingAdvanceRequests: number;
+    pendingAdvanceValue: number;
+    advanceOverCommittedPoCount: number;
   };
 };
 
@@ -170,6 +189,96 @@ export async function getReports(scopeWarehouseIds: string[]): Promise<ReportsDa
   };
 }
 
+const poAdvanceInclude = {
+  gstApplicable: true,
+  gstRatePercent: true,
+  lineItems: { select: { id: true, orderedQty: true, unitPrice: true } },
+  lines: { select: { id: true, orderedQty: true, unitPrice: true } },
+  lineAdjustments: {
+    orderBy: { createdAt: "asc" as const },
+    select: {
+      poLineItemId: true,
+      poLineId: true,
+      originalOrderedQty: true,
+      effectiveOrderedQty: true,
+      originalUnitPrice: true,
+      effectiveUnitPrice: true,
+      createdAt: true,
+    },
+  },
+  advancePayments: {
+    include: { allocations: { select: { amount: true } } },
+  },
+  advanceRequests: { select: { status: true, requestedAmount: true } },
+};
+
+async function advanceMetrics(scopeWarehouseIds: string[]) {
+  const poScope = purchaseOrderWhereFromScopeIds(scopeWarehouseIds);
+
+  const [pendingRequests, posWithAdvance] = await dbSerial(
+    () =>
+      prisma.pOAdvanceRequest.findMany({
+        where: {
+          status: POAdvanceRequestStatus.PENDING,
+          purchaseOrder: poScope,
+        },
+        select: { requestedAmount: true },
+      }),
+    () =>
+      prisma.purchaseOrder.findMany({
+        where: {
+          ...poScope,
+          OR: [
+            { advancePayments: { some: {} } },
+            { advanceRequests: { some: { status: POAdvanceRequestStatus.PENDING } } },
+          ],
+        },
+        select: poAdvanceInclude,
+        take: 300,
+      }),
+  );
+
+  const pendingAdvanceValue = pendingRequests.reduce(
+    (sum, r) => sum + Number(r.requestedAmount),
+    0,
+  );
+
+  let advanceOverCommittedPoCount = 0;
+  for (const po of posWithAdvance) {
+    const committed = committedTotalFromPo({
+      gstApplicable: po.gstApplicable,
+      gstRatePercent: po.gstRatePercent?.toString() ?? null,
+      lineItems: [],
+      lines: [],
+      lineAdjustments: po.lineAdjustments,
+      lineItemsWithIds: po.lineItems.map((l) => ({
+        id: l.id,
+        orderedQty: l.orderedQty,
+        unitPrice: Number(l.unitPrice),
+      })),
+      linesWithIds: po.lines.map((l) => ({
+        id: l.id,
+        orderedQty: l.orderedQty,
+        unitPrice: Number(l.unitPrice),
+      })),
+    });
+    const overage = advanceOverageForPo({
+      committedTotal: committed,
+      advancePayments: po.advancePayments,
+      advanceRequests: po.advanceRequests,
+    });
+    if (overage.overCommittedBy > 0) {
+      advanceOverCommittedPoCount += 1;
+    }
+  }
+
+  return {
+    pendingAdvanceRequests: pendingRequests.length,
+    pendingAdvanceValue,
+    advanceOverCommittedPoCount,
+  };
+}
+
 async function monthlyMetrics(
   scopeWarehouseIds: string[],
 ): Promise<ReportsData["summary"]> {
@@ -179,7 +288,8 @@ async function monthlyMetrics(
   const invoiceScope = invoiceWhereFromScopeIds(scopeWarehouseIds);
   const poScope = purchaseOrderWhereFromScopeIds(scopeWarehouseIds);
 
-  const [prsThisMonth, matchedCount, totalInvoices, openInvoices] = await dbSerial(
+  const [prsThisMonth, matchedCount, totalInvoices, openInvoices, advance] =
+    await dbSerial(
     () =>
       prisma.purchaseRequest.count({
         where: {
@@ -208,7 +318,8 @@ async function monthlyMetrics(
         },
         select: { amount: true, payments: { select: { amount: true } } },
       }),
-  );
+      () => advanceMetrics(scopeWarehouseIds),
+    );
 
   const openValue = openInvoices.reduce((sum, inv) => {
     const paid = inv.payments.reduce(
@@ -241,7 +352,58 @@ async function monthlyMetrics(
     avgPrToPoDays,
     matchRate: totalInvoices > 0 ? Math.round((matchedCount / totalInvoices) * 100) : 0,
     openInvoiceValue: openValue,
+    ...advance,
   };
+}
+
+function ageingBucketForDays(ageDays: number): string {
+  if (ageDays <= 7) return "≤7d";
+  if (ageDays <= 14) return "8–14d";
+  if (ageDays <= 30) return "15–30d";
+  return "30d+";
+}
+
+export async function getPaymentAgeingExportRows(
+  scopeWarehouseIds: string[],
+): Promise<PaymentAgeingExportRow[]> {
+  const invoiceScope = invoiceWhereFromScopeIds(scopeWarehouseIds);
+  const rows = await prisma.invoice.findMany({
+    where: {
+      paymentStatus: { not: PaymentStatus.PAID },
+      ...invoiceScope,
+    },
+    select: {
+      invoiceNumber: true,
+      poId: true,
+      amount: true,
+      createdAt: true,
+      payments: { select: { amount: true } },
+      purchaseOrder: {
+        select: { vendor: { select: { businessName: true } } },
+      },
+    },
+    orderBy: { createdAt: "asc" },
+  });
+
+  const now = Date.now();
+  return rows.map((inv) => {
+    const paid = inv.payments.reduce(
+      (sum, p) => sum + (p.amount ? Number(p.amount) : 0),
+      0,
+    );
+    const total = Number(inv.amount);
+    const remaining = Math.max(0, total - paid);
+    const ageDays = Math.floor((now - inv.createdAt.getTime()) / (1000 * 60 * 60 * 24));
+    return {
+      invoiceNumber: inv.invoiceNumber,
+      poId: inv.poId,
+      vendorName: inv.purchaseOrder.vendor.businessName,
+      invoiceAmount: inv.amount.toString(),
+      remaining: remaining.toString(),
+      ageDays,
+      bucket: ageingBucketForDays(ageDays),
+    };
+  });
 }
 
 export type { PRStatus };

@@ -37,6 +37,8 @@ export type DataTableProps<T> = {
   getRowKey?: (row: T, index: number) => string;
   getRowClassName?: (row: T, index: number) => string | undefined;
   density?: DataTableDensity;
+  /** Vertical scroll cap for list pages. Pass `false` on embedded detail tables. */
+  scrollMaxHeight?: string | false;
 };
 
 function cellClass(variant: DataTableColumn<unknown>["variant"]) {
@@ -60,12 +62,23 @@ function DataTableInner<T>({
   getRowKey,
   getRowClassName,
   density = "compact",
+  scrollMaxHeight = "70vh",
 }: DataTableProps<T>) {
   const rowHeight = density === "cozy" ? "h-12" : "h-10";
 
   return (
     <div className="overflow-hidden rounded-2xl border border-border-subtle bg-card shadow-ds">
-      <div className="max-h-[70vh] overflow-auto">
+      <div
+        className={cn(
+          scrollMaxHeight !== false && "overflow-auto",
+          scrollMaxHeight === false ? "overflow-x-auto" : undefined,
+        )}
+        style={
+          scrollMaxHeight !== false
+            ? { maxHeight: scrollMaxHeight }
+            : undefined
+        }
+      >
         <Table>
           <TableHeader className="sticky top-0 z-10">
             <TableRow className="border-border-subtle bg-muted/50 hover:bg-muted/50">

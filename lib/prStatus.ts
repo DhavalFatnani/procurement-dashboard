@@ -9,7 +9,7 @@ const ALLOWED: Partial<Record<PRStatus, readonly PRStatus[]>> = {
     PRStatus.CANCELLED,
   ],
   [PRStatus.REVISION_REQUIRED]: [PRStatus.PENDING_APPROVAL, PRStatus.FORCE_CANCELLED],
-  [PRStatus.APPROVED]: [PRStatus.CONVERTED_TO_PO],
+  [PRStatus.APPROVED]: [PRStatus.CONVERTED_TO_PO, PRStatus.PENDING_APPROVAL],
 };
 
 export class PRStatusTransitionError extends Error {

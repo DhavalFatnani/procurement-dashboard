@@ -87,7 +87,7 @@ export function MetricTile({
         {trend ? <MetricTrendChip trend={trend} /> : null}
       </div>
       {sparkline ? (
-        <div className="-mx-1 -mb-2 h-12 [&_svg]:overflow-visible">{sparkline}</div>
+        <div className="-mx-1 -mb-2 h-12 overflow-hidden">{sparkline}</div>
       ) : null}
     </>
   );

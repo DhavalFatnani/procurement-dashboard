@@ -2,6 +2,7 @@
 
 import { Chip } from "@/components/shared/Chip";
 import { SheetSection } from "@/components/shared/SheetSection";
+import { formatExceptionResolutionLabel } from "@/lib/grn-exception-lines";
 import type { GRNDetailLine } from "@/lib/queries/grn";
 import { cn } from "@/lib/utils";
 
@@ -65,7 +66,8 @@ export function GrnLineExceptionSummary({
         </span>
         {exception.resolutionStatus ? (
           <Chip tone="success" size="sm">
-            {exception.resolutionStatus.replaceAll("_", " ")}
+            {formatExceptionResolutionLabel(exception) ??
+              exception.resolutionStatus.replaceAll("_", " ")}
           </Chip>
         ) : (
           <Chip tone="error" size="sm" showDot>

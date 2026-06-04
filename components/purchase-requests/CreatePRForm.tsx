@@ -1,6 +1,6 @@
 "use client";
 
-import { ExecutionType } from "@/lib/prisma-enums";
+import { ExecutionType, Role } from "@/lib/prisma-enums";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import * as React from "react";
@@ -79,23 +79,28 @@ type SerialHintState = {
 type RequestMode = "unset" | "vendor" | "print";
 
 export function CreatePRForm({
+  role,
   categories,
   subcategories,
   catalogItems,
   warehouses,
-  defaultWarehouseId,
+  defaultWarehouseId = "",
 }: {
+  role: Role;
   categories: CategoryOption[];
   subcategories: SubcategoryOption[];
   catalogItems: CatalogItemOption[];
   warehouses: WarehouseOption[];
-  defaultWarehouseId: string;
+  defaultWarehouseId?: string;
 }) {
   const router = useRouter();
   const { isPending: submitPending, run: runSubmit } = useServerMutation();
+  const isOps = role === Role.OPS_HEAD;
+  const requiresWarehousePick = isOps;
   const [warehouseId, setWarehouseId] = React.useState(defaultWarehouseId);
+  const warehouseReady = !requiresWarehousePick || warehouseId.length > 0;
   const selectedWarehouse = React.useMemo(
-    () => warehouses.find((w) => w.id === warehouseId) ?? warehouses[0],
+    () => warehouses.find((w) => w.id === warehouseId) ?? null,
     [warehouses, warehouseId],
   );
   const [prId, setPrId] = React.useState<string | null>(null);
@@ -351,8 +356,8 @@ export function CreatePRForm({
     };
   }
 
-  function renderWarehouseField() {
-    if (warehouses.length <= 1) {
+  function renderWarehouseField(forceSelect = false) {
+    if (!forceSelect && !isOps && warehouses.length <= 1) {
       return (
         <p className="rounded-md border border-border-subtle bg-muted/30 px-3 py-2 text-ds-sm">
           {selectedWarehouse?.label ?? "—"}
@@ -555,12 +560,28 @@ export function CreatePRForm({
         }
       />
 
-      {!typeChosen ? (
+      {!warehouseReady ? (
+        <section className="space-y-4 rounded-xl border border-border-subtle bg-card p-5 shadow-ds">
+          <div className="space-y-1">
+            <p className="text-ds-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Step 1 — Warehouse
+            </p>
+            <h2 className="text-ds-md font-semibold tracking-tight text-foreground">
+              Which warehouse is this request for?
+            </h2>
+            <p className="max-w-2xl text-ds-sm text-muted-foreground">
+              Select the store or facility before choosing the request type.
+            </p>
+          </div>
+          {renderWarehouseField(true)}
+        </section>
+      ) : !typeChosen ? (
         <CreatePRTypePicker
           warehouses={warehouses}
           selectedWarehouseName={selectedWarehouse?.label ?? "—"}
           onSelectVendor={enterVendorMode}
           onSelectPrint={enterPrintMode}
+          warehouseField={isOps ? renderWarehouseField(true) : undefined}
         />
       ) : (
         <>
@@ -755,7 +776,9 @@ export function CreatePRForm({
         >
           <h2 className="text-ds-sm font-semibold">4. Lock tag guidance</h2>
           <p className="text-ds-xs text-muted-foreground">
-            System suggestion for {selection?.subcategoryName} (informational only)
+            System suggestion for {selection?.subcategoryName}. Preview only — the range is
+            committed when a purchase order is created (vendor purchase) or when you confirm
+            print (internal print).
           </p>
           <dl className="grid gap-3 text-ds-sm sm:grid-cols-2">
             <div>

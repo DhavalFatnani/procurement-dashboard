@@ -1,5 +1,6 @@
 import { GRNExceptionResolution } from "@/lib/prisma-enums";
 
+import { formatOrderTotalsInline } from "@/lib/order-totals-display";
 import type { PODetail } from "@/lib/queries/purchase-orders";
 
 export type POActivityEventKind =
@@ -32,7 +33,7 @@ export function buildPOActivity(po: PODetail): POActivityEvent[] {
     kind: "po_created",
     at: po.createdAt,
     title: "Purchase order created",
-    description: `${po.lineSummary} · ${po.orderedQty} units ordered.`,
+    description: `${po.lineSummary} · ${formatOrderTotalsInline(po.itemCount, po.orderedQty)}.`,
   });
 
   for (const grn of po.grns) {
@@ -48,21 +49,34 @@ export function buildPOActivity(po: PODetail): POActivityEvent[] {
       byName: grn.receivedByName,
     });
 
+    const seenExceptionIds = new Set<string>();
     for (const line of grn.lines) {
       const ex = line.exception;
-      if (!ex?.resolutionStatus) {
+      if (!ex?.resolutionStatus || seenExceptionIds.has(ex.id)) {
         continue;
       }
+      seenExceptionIds.add(ex.id);
       events.push({
         id: `grn-${grn.id}-ex-${ex.id}`,
         kind: "grn_exception_resolved",
-        // No timestamp on resolution today — surface at GRN time so it
-        // anchors next to the receipt line it relates to.
         at: grn.receivedAt,
         title: `Exception resolved — ${humanise(ex.resolutionStatus)}`,
         description: ex.resolutionNote
           ? `${humanise(ex.exceptionType)} · ${ex.resolutionNote} (${line.label})`
           : `${humanise(ex.exceptionType)} (${line.label})`,
+      });
+    }
+    for (const ex of grn.openExceptions) {
+      if (!ex.resolutionStatus || seenExceptionIds.has(ex.id)) {
+        continue;
+      }
+      seenExceptionIds.add(ex.id);
+      events.push({
+        id: `grn-${grn.id}-ex-${ex.id}`,
+        kind: "grn_exception_resolved",
+        at: grn.receivedAt,
+        title: `Exception resolved — ${humanise(ex.resolutionStatus)}`,
+        description: ex.resolutionNote ?? humanise(ex.exceptionType),
       });
     }
   }

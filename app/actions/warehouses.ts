@@ -10,7 +10,7 @@ import {
   getWarehouseOptions as getWarehouseOptionsQuery,
   getWarehouses as getWarehousesQuery,
 } from "@/lib/queries/warehouses";
-import { revalidateInboxCache } from "@/lib/revalidate-tags";
+import { revalidateInboxCache, revalidateSerialGovernance } from "@/lib/revalidate-tags";
 import { requireRoles } from "@/lib/server-action-guard";
 
 function revalidateWarehouseSurfaces() {
@@ -19,7 +19,7 @@ function revalidateWarehouseSurfaces() {
   revalidatePath("/admin/warehouses");
   revalidatePath("/profile");
   revalidatePath("/purchase-requests/new");
-  revalidatePath("/serial-governance");
+  revalidateSerialGovernance();
   revalidatePath("/purchase-requests");
   revalidatePath("/purchase-orders");
   revalidatePath("/goods-receipt");

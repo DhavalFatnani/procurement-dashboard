@@ -1,5 +1,6 @@
 import { PaymentStatus, POStatus, Role } from "@/lib/prisma-enums";
 
+import { FINANCE_ROUTES } from "@/lib/finance-routes";
 import type { PODetail } from "@/lib/queries/purchase-orders";
 
 /**
@@ -10,10 +11,12 @@ import type { PODetail } from "@/lib/queries/purchase-orders";
  * surface) so there is a single source of truth for what is offered.
  */
 export type PONextActionId =
+  | "resolve-disputes"
   | "record-grn"
   | "upload-invoice"
   | "record-payment"
   | "mark-delivery-complete"
+  | "cancel-po"
   | "force-close";
 
 export type PONextAction = {
@@ -54,6 +57,16 @@ export function getApplicablePOActions(
     (inv) => inv.paymentStatus !== PaymentStatus.PAID,
   );
 
+  if (isOps && po.openDisputeCount > 0) {
+    actions.push({
+      id: "resolve-disputes",
+      label: "Resolve GRN disputes",
+      description: `${po.openDisputeCount} open exception${po.openDisputeCount === 1 ? "" : "s"} block invoicing until cleared.`,
+      tone: "primary",
+      href: `/purchase-orders/${encodeURIComponent(po.id)}?tab=fulfillment`,
+    });
+  }
+
   if ((isSm || isOps) && inReceivePhase) {
     actions.push({
       id: "record-grn",
@@ -64,7 +77,7 @@ export function getApplicablePOActions(
     });
   }
 
-  if ((isSm || isOps) && inInvoicePhase) {
+  if ((isSm || isOps) && inInvoicePhase && po.readyForInvoice) {
     actions.push({
       id: "upload-invoice",
       label: "Upload invoice",
@@ -74,13 +87,13 @@ export function getApplicablePOActions(
     });
   }
 
-  if ((isFinance || isOps) && hasUnpaidInvoice) {
+  if (isFinance && hasUnpaidInvoice) {
     actions.push({
       id: "record-payment",
       label: "Record payment",
       description: "Disburse against matched invoices.",
       tone: actions.length === 0 ? "primary" : "secondary",
-      href: `/payments?paymentStatus=UNPAID&poId=${encodeURIComponent(po.id)}`,
+      href: `${FINANCE_ROUTES.invoiceSettlement}?paymentStatus=UNPAID&poId=${encodeURIComponent(po.id)}`,
     });
   }
 
@@ -90,6 +103,23 @@ export function getApplicablePOActions(
       label: "Mark delivery complete",
       description: "Flag this PO as delivered and run closure evaluation.",
       tone: actions.length === 0 ? "primary" : "secondary",
+    });
+  }
+
+  const canCancelPo =
+    isOps &&
+    status === POStatus.OPEN &&
+    po.grns.length === 0 &&
+    po.invoices.length === 0 &&
+    po.reconciliation.advanced === 0;
+
+  if (canCancelPo) {
+    actions.push({
+      id: "cancel-po",
+      label: "Cancel purchase order",
+      description:
+        "Remove this unconfirmed PO before any GRN. Releases lock-tag serials back to the purchase request.",
+      tone: "destructive",
     });
   }
 

@@ -7,6 +7,7 @@ import { DataTable, type DataTableColumn } from "@/components/shared/DataTable";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { Pagination } from "@/components/shared/Pagination";
 import { ProcurementRefLink } from "@/components/shared/ProcurementRef";
+import { Badge } from "@/components/ui/badge";
 import { formatSerialBatchLabel } from "@/lib/display-ref";
 import { formatDateTimeMedium } from "@/lib/format-datetime";
 import { useListTransition } from "@/lib/list-transition-context";
@@ -38,7 +39,11 @@ const columns: DataTableColumn<SerialActivityRow>[] = [
     ),
   },
   { id: "qty", header: "Qty", variant: "numeric", cell: (r) => r.quantity },
-  { id: "type", header: "Type", cell: (r) => r.type },
+  {
+    id: "type",
+    header: "Type",
+    cell: (r) => <SerialActivityTypeBadge type={r.type} />,
+  },
   { id: "warehouse", header: "Warehouse", cell: (r) => r.warehouseName },
   {
     id: "link",
@@ -55,6 +60,32 @@ const columns: DataTableColumn<SerialActivityRow>[] = [
   { id: "by", header: "Created by", cell: (r) => r.createdByName },
   { id: "on", header: "Date", variant: "date", cell: (r) => formatDateTimeMedium(r.createdAt) },
 ];
+
+function SerialActivityTypeBadge({
+  type,
+}: {
+  type: SerialActivityRow["type"];
+}) {
+  const label =
+    type === "Hold"
+      ? "Approval hold"
+      : type === "Unconfirmed"
+        ? "Unconfirmed PO"
+        : type;
+  const className =
+    type === "Hold"
+      ? "bg-[var(--status-warning-bg)] text-[var(--status-warning)]"
+      : type === "Unconfirmed"
+        ? "bg-[var(--status-warning-bg)]/80 text-[var(--status-warning)] ring-1 ring-dashed ring-[var(--status-warning)]/50"
+        : type === "Receipt"
+          ? "bg-[var(--status-info-bg)] text-[var(--status-info)]"
+          : "bg-[var(--accent-subtle)] text-[var(--brand-accent)]";
+  return (
+    <Badge variant="outline" className={className}>
+      {label}
+    </Badge>
+  );
+}
 
 export function SerialActivityTable({
   activity,

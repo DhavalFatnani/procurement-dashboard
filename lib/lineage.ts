@@ -1,5 +1,6 @@
 import type { BreadcrumbIconId, BreadcrumbItem } from "@/lib/breadcrumbs";
 import { formatProcurementRef } from "@/lib/display-ref";
+import { FINANCE_ROUTES } from "@/lib/finance-routes";
 
 const MODULE_LABELS: Record<string, { label: string; icon: BreadcrumbIconId }> = {
   "/inbox": { label: "Inbox", icon: "inbox" },
@@ -10,6 +11,18 @@ const MODULE_LABELS: Record<string, { label: string; icon: BreadcrumbIconId }> =
   "/goods-receipt": { label: "Goods Receipt", icon: "goodsReceipt" },
   "/invoices": { label: "Invoices", icon: "invoices" },
   "/payments": { label: "Payments", icon: "payments" },
+  [FINANCE_ROUTES.invoiceSettlement]: {
+    label: "Invoice settlement",
+    icon: "payments",
+  },
+  [FINANCE_ROUTES.vendorAdvances]: {
+    label: "Vendor advances",
+    icon: "payments",
+  },
+  [FINANCE_ROUTES.paymentRegister]: {
+    label: "Payment register",
+    icon: "payments",
+  },
   "/vendors": { label: "Vendors", icon: "vendors" },
   "/serial-governance": { label: "Serial Governance", icon: "serialGovernance" },
   "/reports": { label: "Reports", icon: "reports" },
@@ -90,6 +103,44 @@ export function grnDetailBreadcrumbs(input: {
 
 export function listBreadcrumbs(href: string): BreadcrumbItem[] {
   return [moduleCrumb(href)];
+}
+
+export function serialRangeMapBreadcrumbs(): BreadcrumbItem[] {
+  return [
+    moduleCrumb("/serial-governance"),
+    { label: "Range map" },
+  ];
+}
+
+export function financeInvoiceSettlementDetailBreadcrumbs(
+  invoiceNumber: string,
+): BreadcrumbItem[] {
+  return [
+    moduleCrumb(FINANCE_ROUTES.invoiceSettlement),
+    { label: invoiceNumber, mono: true },
+  ];
+}
+
+export function financePaymentRegisterDetailBreadcrumbs(label: string): BreadcrumbItem[] {
+  return [moduleCrumb(FINANCE_ROUTES.paymentRegister), { label, mono: true }];
+}
+
+export function financeAdvanceRequestDetailBreadcrumbs(
+  poId: string,
+): BreadcrumbItem[] {
+  return [
+    moduleCrumb(FINANCE_ROUTES.vendorAdvances),
+    { label: formatProcurementRef(poId), mono: true },
+  ];
+}
+
+export function financeAdvancePaymentDetailBreadcrumbs(
+  poLabel: string,
+): BreadcrumbItem[] {
+  return [
+    moduleCrumb(FINANCE_ROUTES.vendorAdvances),
+    { label: poLabel, mono: true },
+  ];
 }
 
 export function configurePOBreadcrumbs(prId?: string): BreadcrumbItem[] {

@@ -1,8 +1,14 @@
 import { Role } from "@/lib/prisma-enums";
 
+import { FINANCE_ROUTES } from "@/lib/finance-routes";
 import { prisma } from "@/lib/prisma";
 
-export type FinderEntityKind = "purchaseRequest" | "purchaseOrder" | "vendor" | "invoice";
+export type FinderEntityKind =
+  | "purchaseRequest"
+  | "purchaseOrder"
+  | "vendor"
+  | "invoice"
+  | "payment";
 
 export type FinderResult = {
   id: string;
@@ -71,7 +77,6 @@ async function findPurchaseOrders(query: string, limit: number): Promise<FinderR
 }
 
 async function findVendors(query: string, limit: number, role: Role): Promise<FinderResult[]> {
-  // Vendors aren't browsable for Finance — skip
   if (role === Role.FINANCE) {
     return [];
   }
@@ -91,7 +96,11 @@ async function findVendors(query: string, limit: number, role: Role): Promise<Fi
   }));
 }
 
-async function findInvoices(query: string, limit: number): Promise<FinderResult[]> {
+async function findInvoices(
+  query: string,
+  limit: number,
+  role: Role,
+): Promise<FinderResult[]> {
   const rows = await prisma.invoice.findMany({
     where: { invoiceNumber: { contains: query, mode: "insensitive" } },
     select: {
@@ -109,8 +118,51 @@ async function findInvoices(query: string, limit: number): Promise<FinderResult[
     refLabel: `INV-${inv.invoiceNumber}`,
     title: inv.purchaseOrder.vendor.businessName,
     subtitle: `Invoice ${inv.invoiceNumber}`,
-    href: `/purchase-orders/${inv.poId}?tab=invoices`,
+    href:
+      role === Role.FINANCE
+        ? FINANCE_ROUTES.invoiceDetail(inv.id)
+        : `/purchase-orders/${inv.poId}?tab=invoices`,
   }));
+}
+
+async function findPaymentsByTransactionRef(
+  query: string,
+  limit: number,
+): Promise<FinderResult[]> {
+  const rows = await prisma.payment.findMany({
+    where: {
+      transactionRef: { contains: query, mode: "insensitive" },
+      amount: { not: null },
+    },
+    select: {
+      id: true,
+      transactionRef: true,
+      amount: true,
+      method: true,
+      invoice: {
+        select: {
+          id: true,
+          invoiceNumber: true,
+          purchaseOrder: { select: { vendor: { select: { businessName: true } } } },
+        },
+      },
+    },
+    take: limit,
+    orderBy: { createdAt: "desc" },
+  });
+  return rows.map((p) => ({
+    id: p.id,
+    kind: "payment",
+    refLabel: p.transactionRef ?? p.id.slice(-8).toUpperCase(),
+    title: p.invoice.purchaseOrder.vendor.businessName,
+    subtitle: `Cash ${p.method ?? "payment"} · ${formatInrAmount(p.amount)} · INV ${p.invoice.invoiceNumber}`,
+    href: FINANCE_ROUTES.cashPaymentDetail(p.id),
+  }));
+}
+
+function formatInrAmount(amount: { toString(): string } | null): string {
+  if (amount == null) return "—";
+  return `₹${Number(amount).toLocaleString("en-IN")}`;
 }
 
 export async function findEntities({
@@ -129,28 +181,31 @@ export async function findEntities({
 
   const ref = looksLikeRef(trimmed);
 
-  // Ref-prefix shortcut — jump straight to matching kind
   if (ref) {
     const restQuery = ref.rest;
     switch (ref.prefix) {
       case "PR":
+        if (role === Role.FINANCE) return [];
         return findPurchaseRequests(restQuery, limit);
       case "PO":
         return findPurchaseOrders(restQuery, limit);
       case "INV":
-        return findInvoices(restQuery, limit);
+        return findInvoices(restQuery, limit, role);
       case "GRN":
-        return []; // GRNs are surfaced via parent PO; skip direct ref jump
+        return [];
       default:
         break;
     }
   }
 
-  // Free-text — vendor + invoice number across kinds
-  const [vendors, invoices] = await Promise.all([
+  const searches: Promise<FinderResult[]>[] = [
     findVendors(trimmed, limit, role),
-    findInvoices(trimmed, limit),
-  ]);
+    findInvoices(trimmed, limit, role),
+  ];
+  if (role === Role.FINANCE) {
+    searches.push(findPaymentsByTransactionRef(trimmed, limit));
+  }
 
-  return [...vendors, ...invoices].slice(0, limit * 2);
+  const results = await Promise.all(searches);
+  return results.flat().slice(0, limit * 2);
 }

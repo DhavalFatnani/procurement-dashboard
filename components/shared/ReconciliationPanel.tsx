@@ -41,6 +41,8 @@ export type ReconciliationMetrics = {
   ordered: number;
   received: number;
   invoiced: number;
+  advanced?: number;
+  settled?: number;
   paid: number;
 };
 
@@ -92,15 +94,23 @@ export function ReconciliationPanel({
   closureChecks?: ClosureCheck[];
 }) {
   const receivedRatio = metrics.ordered > 0 ? metrics.received / metrics.ordered : 0;
-  const paidRatio = metrics.invoiced > 0 ? metrics.paid / metrics.invoiced : 0;
+  const settled = metrics.settled ?? metrics.paid;
+  const settledRatio = metrics.invoiced > 0 ? settled / metrics.invoiced : 0;
+  const showAdvance = (metrics.advanced ?? 0) > 0;
 
   return (
     <div className="rounded-lg border border-border-subtle bg-card px-6 py-5">
-      <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-        <MetricColumn label="Ordered" value={metrics.ordered} />
+      <div
+        className={
+          showAdvance
+            ? "grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6"
+            : "grid gap-6 sm:grid-cols-2 lg:grid-cols-4"
+        }
+      >
+        <MetricColumn label="Ordered units" value={metrics.ordered.toLocaleString("en-IN")} />
         <MetricColumn
-          label="Received"
-          value={metrics.received}
+          label="Received units"
+          value={metrics.received.toLocaleString("en-IN")}
           valueClassName={ratioTone(receivedRatio)}
           context={
             metrics.ordered > 0
@@ -109,14 +119,30 @@ export function ReconciliationPanel({
           }
         />
         <MetricColumn label="Invoiced" value={metrics.invoiced} />
+        {showAdvance ? (
+          <MetricColumn
+            label="Advanced"
+            value={metrics.advanced!}
+            context="Paid to vendor before invoice"
+          />
+        ) : null}
         <MetricColumn
-          label="Paid"
-          value={metrics.paid}
-          valueClassName={ratioTone(paidRatio)}
+          label={showAdvance ? "Settled" : "Paid"}
+          value={settled}
+          valueClassName={ratioTone(settledRatio)}
           context={
-            metrics.invoiced > 0 ? `${Math.round(paidRatio * 100)}% of invoiced` : undefined
+            metrics.invoiced > 0
+              ? `${Math.round(settledRatio * 100)}% of invoiced`
+              : undefined
           }
         />
+        {showAdvance && metrics.invoiced > 0 ? (
+          <MetricColumn
+            label="Net exposure"
+            value={Math.max(0, metrics.invoiced - settled)}
+            context="Invoiced minus settled"
+          />
+        ) : null}
       </div>
 
       {closureChecks && closureChecks.length > 0 ? (

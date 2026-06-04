@@ -12,6 +12,7 @@ import {
   PackageCheck,
   Receipt,
   Sparkles,
+  Wallet,
   UserPlus,
   type LucideIcon,
 } from "lucide-react";
@@ -23,6 +24,7 @@ import { EmptyState } from "@/components/shared/EmptyState";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { ProcurementRefText } from "@/components/shared/ProcurementRef";
 import { formatDateTimeMedium } from "@/lib/format-datetime";
+import { FINANCE_ROUTES } from "@/lib/finance-routes";
 import { cn } from "@/lib/utils";
 
 const KIND_META: Record<
@@ -37,6 +39,7 @@ const KIND_META: Record<
   invoice_to_upload: { icon: Receipt, tone: "info" },
   invoice_to_pay: { icon: Receipt, tone: "info" },
   invoice_partial: { icon: Receipt, tone: "warning" },
+  advance_request: { icon: Wallet, tone: "warning" },
   vendor_request: { icon: UserPlus, tone: "info" },
   po_at_risk: { icon: AlertTriangle, tone: "error" },
 };
@@ -194,8 +197,21 @@ const QUICK_ACTIONS_BY_ROLE: Record<Role, { label: string; href: string; icon: L
     { label: "Create PR", href: "/purchase-requests/new", icon: FilePlus },
   ],
   [Role.FINANCE]: [
-    { label: "Pay invoices", href: "/payments?paymentStatus=UNPAID", icon: Receipt },
-    { label: "Continue partials", href: "/payments?paymentStatus=PARTIALLY_PAID", icon: Sparkles },
+    {
+      label: "Pay invoices",
+      href: `${FINANCE_ROUTES.invoiceSettlement}?paymentStatus=UNPAID`,
+      icon: Receipt,
+    },
+    {
+      label: "Continue partials",
+      href: `${FINANCE_ROUTES.invoiceSettlement}?paymentStatus=PARTIALLY_PAID`,
+      icon: Sparkles,
+    },
+    {
+      label: "Vendor advances",
+      href: FINANCE_ROUTES.vendorAdvances,
+      icon: Wallet,
+    },
   ],
 };
 

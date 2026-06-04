@@ -113,6 +113,7 @@ export function parsePurchaseOrderPageParams(
   status: POStatus | "";
   vendorId: string;
   warehouseId: string;
+  prId: string;
   dateFrom: string;
   dateTo: string;
   fulfill: string;
@@ -131,6 +132,7 @@ export function parsePurchaseOrderPageParams(
     status,
     vendorId: str(sp.vendorId),
     warehouseId: str(sp.warehouseId),
+    prId: str(sp.prId),
     dateFrom: str(sp.dateFrom),
     dateTo: str(sp.dateTo),
     fulfill: str(sp.fulfill),
@@ -213,6 +215,8 @@ export function parsePaymentPageParams(
   vendorId: string;
   poId: string;
   invoiceId: string;
+  advanceRequestId: string;
+  view: "invoices" | "advance";
   dateFrom: string;
   dateTo: string;
   page: number;
@@ -237,6 +241,37 @@ export function parsePaymentPageParams(
     vendorId: str(sp.vendorId),
     poId: str(sp.poId),
     invoiceId: str(sp.invoiceId),
+    advanceRequestId: str(sp.advanceRequestId),
+    view: str(sp.view) === "advance" ? "advance" : "invoices",
+    dateFrom: str(sp.dateFrom),
+    dateTo: str(sp.dateTo),
+    page: Math.max(1, Number(str(sp.page) || "1") || 1),
+    includeExactCount: sp.exactCount === "1",
+  };
+}
+
+export function parsePaymentRegisterPageParams(
+  sp: Record<string, string | string[] | undefined>,
+): {
+  vendorId: string;
+  poId: string;
+  type: "cash" | "advance" | "";
+  dateFrom: string;
+  dateTo: string;
+  page: number;
+  includeExactCount: boolean;
+} {
+  const str = (v: string | string[] | undefined): string =>
+    typeof v === "string" ? v : "";
+
+  const typeRaw = str(sp.type);
+  const type =
+    typeRaw === "cash" || typeRaw === "advance" ? typeRaw : ("" as const);
+
+  return {
+    vendorId: str(sp.vendorId),
+    poId: str(sp.poId),
+    type,
     dateFrom: str(sp.dateFrom),
     dateTo: str(sp.dateTo),
     page: Math.max(1, Number(str(sp.page) || "1") || 1),
@@ -268,7 +303,12 @@ export function parseSerialGovernancePageParams(
 
   const typeRaw = str(sp.type);
   const type =
-    typeRaw === "Receipt" || typeRaw === "Print" ? typeRaw : ("" as const);
+    typeRaw === "Receipt" ||
+    typeRaw === "Print" ||
+    typeRaw === "Hold" ||
+    typeRaw === "Unconfirmed"
+      ? typeRaw
+      : ("" as const);
 
   return {
     tab,

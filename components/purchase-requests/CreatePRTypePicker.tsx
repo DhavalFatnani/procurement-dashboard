@@ -2,6 +2,7 @@
 
 import { ExecutionType } from "@/lib/prisma-enums";
 import { ClipboardList, Hash, Warehouse } from "lucide-react";
+import type { ReactNode } from "react";
 
 import { ExecutionTypeBadge } from "@/components/shared/ExecutionTypeBadge";
 import {
@@ -48,6 +49,7 @@ export function CreatePRTypePicker({
   onSelectVendor,
   onSelectPrint,
   onCancel,
+  warehouseField,
   className,
 }: {
   warehouses: WarehouseOption[];
@@ -55,6 +57,8 @@ export function CreatePRTypePicker({
   onSelectVendor: () => void;
   onSelectPrint: () => void;
   onCancel?: () => void;
+  /** When set, replaces the passive warehouse summary (Ops Head picker). */
+  warehouseField?: ReactNode;
   className?: string;
 }) {
   return (
@@ -139,19 +143,28 @@ export function CreatePRTypePicker({
       </div>
 
       <div className="flex flex-col gap-3 rounded-xl border border-border-subtle bg-muted/20 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-start gap-2.5 text-ds-sm">
+        <div className="flex min-w-0 flex-1 items-start gap-2.5 text-ds-sm">
           <Warehouse className="mt-0.5 size-4 shrink-0 text-muted-foreground" strokeWidth={1.5} />
-          <div>
-            <p className="font-medium text-foreground">
-              {warehouses.length === 1
-                ? `Assigned warehouse: ${selectedWarehouseName}`
-                : `${warehouses.length} warehouses available`}
-            </p>
-            <p className="text-ds-xs text-muted-foreground">
-              {warehouses.length === 1
-                ? "This request will be scoped to your store."
-                : "You can pick the warehouse in the next step."}
-            </p>
+          <div className="min-w-0 flex-1 space-y-2">
+            {warehouseField ? (
+              <>
+                <p className="font-medium text-foreground">Warehouse for this request</p>
+                {warehouseField}
+              </>
+            ) : (
+              <>
+                <p className="font-medium text-foreground">
+                  {warehouses.length === 1
+                    ? `Assigned warehouse: ${selectedWarehouseName}`
+                    : `${warehouses.length} warehouses available`}
+                </p>
+                <p className="text-ds-xs text-muted-foreground">
+                  {warehouses.length === 1
+                    ? "This request will be scoped to your store."
+                    : "You can pick the warehouse in the next step."}
+                </p>
+              </>
+            )}
           </div>
         </div>
         {onCancel ? (

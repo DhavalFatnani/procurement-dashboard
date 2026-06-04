@@ -3,6 +3,7 @@
 import { Role } from "@/lib/prisma-enums";
 
 import type { MutationResult } from "@/lib/action-result";
+import { countOpenGrnExceptionsOnPo } from "@/lib/po-line-effective";
 import { computeInvoiceMatchFromExpected } from "@/lib/invoiceMatch";
 import { applyGstToSubtotal } from "@/lib/po-gst";
 import { applyPOClosureInTransaction, PO_CLOSURE_TX_OPTS } from "@/lib/poAutoClose";
@@ -104,6 +105,15 @@ export async function createInvoice(
   const poAccess = await assertSessionPurchaseOrderAccess(user, poId);
   if (!poAccess.ok) {
     return { ok: false, message: poAccess.message };
+  }
+
+  const openDisputes = await countOpenGrnExceptionsOnPo(prisma, poId);
+  if (openDisputes > 0) {
+    return {
+      ok: false,
+      message:
+        "Resolve all GRN disputes on this purchase order before uploading an invoice.",
+    };
   }
 
   const grnIds = formData

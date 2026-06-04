@@ -1,6 +1,8 @@
 "use client";
 
 import { Role } from "@/lib/prisma-enums";
+import { Map } from "lucide-react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import * as React from "react";
 
@@ -22,6 +24,7 @@ import { SerialSearchPanel } from "@/components/serial-governance/SerialSearchPa
 import { SerialSummaryTab } from "@/components/serial-governance/SerialSummaryTab";
 import { SerialWarehouseTab } from "@/components/serial-governance/SerialWarehouseTab";
 import { PageHeader } from "@/components/shared/PageHeader";
+import { Button } from "@/components/ui/button";
 import {
   Tabs,
   TabsContent,
@@ -116,6 +119,17 @@ export function SerialGovernanceView({
           isOps
             ? "Track serial pool usage and reservation history across warehouses."
             : "View serial usage and reserved ranges from print and receipt."
+        }
+        action={
+          <Button
+            render={<Link href="/serial-governance/range-map" />}
+            variant="soft"
+            size="sm"
+            className="gap-1.5"
+          >
+            <Map className="size-3.5" strokeWidth={1.75} aria-hidden />
+            Range map
+          </Button>
         }
       />
 

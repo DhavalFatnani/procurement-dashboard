@@ -11,7 +11,7 @@ export function BrandMark({
     <div className={cn("flex items-center gap-2.5", className)}>
       <span
         className={cn(
-          "grid place-items-center rounded-xl bg-accent-gradient font-semibold text-primary-foreground shadow-ds",
+          "grid place-items-center rounded-xl bg-accent-gradient font-semibold text-[var(--text-on-accent)] shadow-ds",
           size === "sm" ? "size-7 text-ds-xs" : "size-8 text-ds-sm",
         )}
       >

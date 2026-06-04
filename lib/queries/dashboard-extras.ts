@@ -1,6 +1,7 @@
-import { POStatus, Prisma } from "@/lib/prisma-client";
+import { InvoiceMatchStatus, POStatus, Prisma, Role } from "@/lib/prisma-client";
 
 import { dbParallel } from "@/lib/db-parallel";
+import { FINANCE_ROUTES } from "@/lib/finance-routes";
 import { cachedQuery } from "@/lib/list-cache";
 import { prisma } from "@/lib/prisma";
 import {
@@ -75,17 +76,32 @@ export async function getRecentActivity(
   scopeWarehouseIds: string[],
   limit = 10,
 ): Promise<RecentActivityItem[]> {
+  return getRecentActivityForRole(scopeWarehouseIds, null, limit);
+}
+
+export async function getRecentActivityForRole(
+  scopeWarehouseIds: string[],
+  role: Role | null,
+  limit = 10,
+): Promise<RecentActivityItem[]> {
   return cachedQuery(
     "dashboard:recent-activity",
-    [scopeWarehouseIds.slice().sort().join(","), String(limit)],
-    () => computeRecentActivity(scopeWarehouseIds, limit),
+    [scopeWarehouseIds.slice().sort().join(","), role ?? "all", String(limit)],
+    () => computeRecentActivity(scopeWarehouseIds, limit, role),
     { revalidate: 30, tags: ["dashboard-metrics"] },
   );
 }
 
+const ACTIVITY_KINDS_BY_ROLE: Record<Role, RecentActivityItem["kind"][]> = {
+  [Role.SM]: ["pr", "grn", "invoice", "po"],
+  [Role.OPS_HEAD]: ["pr", "po", "grn", "invoice", "payment"],
+  [Role.FINANCE]: ["invoice", "payment"],
+};
+
 async function computeRecentActivity(
   scopeWarehouseIds: string[],
   limit: number,
+  role: Role | null = null,
 ): Promise<RecentActivityItem[]> {
   const prWhere = { warehouseId: warehouseIdFilter(scopeWarehouseIds) };
   const poWhere = purchaseOrderWhereFromScopeIds(scopeWarehouseIds);
@@ -195,7 +211,7 @@ async function computeRecentActivity(
       title: `GRN — ${grn.purchaseOrder.vendor.businessName}`,
       actor: grn.receivedBy?.name ?? "System",
       timestamp: grn.receivedAt.toISOString(),
-      href: `/purchase-orders/${grn.poId}?tab=grns`,
+      href: `/purchase-orders/${grn.poId}?tab=fulfillment`,
     })),
     ...invoices.map((inv) => ({
       id: inv.id,
@@ -203,7 +219,10 @@ async function computeRecentActivity(
       title: `Invoice ${inv.invoiceNumber} — ${inv.purchaseOrder.vendor.businessName}`,
       actor: inv.uploadedBy?.name ?? "System",
       timestamp: inv.updatedAt.toISOString(),
-      href: `/purchase-orders/${inv.poId}?tab=invoices`,
+      href:
+        role === Role.FINANCE
+          ? FINANCE_ROUTES.invoiceDetail(inv.id)
+          : `/purchase-orders/${inv.poId}?tab=invoices`,
     })),
     ...payments.map((p) => ({
       id: p.id,
@@ -211,11 +230,19 @@ async function computeRecentActivity(
       title: `Payment ₹${Number(p.amount ?? 0).toLocaleString("en-IN")} — invoice ${p.invoice.invoiceNumber}`,
       actor: p.paidBy?.name ?? "Finance",
       timestamp: p.createdAt.toISOString(),
-      href: `/purchase-orders/${p.invoice.purchaseOrder.id}?tab=payments`,
+      href:
+        role === Role.FINANCE
+          ? FINANCE_ROUTES.cashPaymentDetail(p.id)
+          : `/purchase-orders/${p.invoice.purchaseOrder.id}?tab=financials`,
     })),
   ];
 
-  return items
+  const allowedKinds = role ? ACTIVITY_KINDS_BY_ROLE[role] : null;
+  const filtered = allowedKinds
+    ? items.filter((item) => allowedKinds.includes(item.kind))
+    : items;
+
+  return filtered
     .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
     .slice(0, limit);
 }
@@ -263,4 +290,256 @@ async function computePrCreationSparkline(
     ORDER BY s.day ASC
   `;
   return rows.map((r) => ({ day: r.day, count: Number(r.count) }));
+}
+
+export type DashboardWorkQueueItem = {
+  id: string;
+  title: string;
+  subtitle: string;
+  href: string;
+  badge?: string;
+};
+
+export async function getDashboardWorkQueue(
+  scopeWarehouseIds: string[],
+  role: Role,
+): Promise<DashboardWorkQueueItem[]> {
+  return cachedQuery(
+    "dashboard:work-queue",
+    [scopeWarehouseIds.slice().sort().join(","), role],
+    () => computeDashboardWorkQueue(scopeWarehouseIds, role),
+    { revalidate: 30, tags: ["dashboard-metrics"] },
+  );
+}
+
+async function computeDashboardWorkQueue(
+  scopeWarehouseIds: string[],
+  role: Role,
+): Promise<DashboardWorkQueueItem[]> {
+  const prWhere = { warehouseId: warehouseIdFilter(scopeWarehouseIds) };
+  const poWhere = purchaseOrderWhereFromScopeIds(scopeWarehouseIds);
+
+  if (role === Role.FINANCE) {
+    const invoices = await prisma.invoice.findMany({
+      where: {
+        paymentStatus: { not: "PAID" },
+        ...invoiceWhereFromScopeIds(scopeWarehouseIds),
+      },
+      orderBy: { createdAt: "asc" },
+      take: 5,
+      select: {
+        id: true,
+        invoiceNumber: true,
+        amount: true,
+        paymentStatus: true,
+        purchaseOrder: {
+          select: { vendor: { select: { businessName: true } } },
+        },
+      },
+    });
+
+    return invoices.map((inv) => ({
+      id: inv.id,
+      title: `Invoice ${inv.invoiceNumber}`,
+      subtitle: inv.purchaseOrder.vendor.businessName,
+      href: FINANCE_ROUTES.invoiceDetail(inv.id),
+      badge: inv.paymentStatus.replaceAll("_", " "),
+    }));
+  }
+
+  if (role === Role.OPS_HEAD) {
+    const [pendingPrs, vendorRequests, awaitingPoPrs, grnExceptions, mismatchPos] =
+      await dbParallel(
+        () =>
+          prisma.purchaseRequest.findMany({
+            where: {
+              ...prWhere,
+              status: "PENDING_APPROVAL",
+              executionType: "VENDOR_PURCHASE",
+            },
+            orderBy: { updatedAt: "asc" },
+            take: 4,
+            select: {
+              id: true,
+              vendor: { select: { businessName: true } },
+              lines: {
+                orderBy: { lineNumber: "asc" },
+                take: 1,
+                select: { subcategory: { select: { name: true } } },
+              },
+            },
+          }),
+        () =>
+          prisma.vendorRequest.findMany({
+            where: { status: "PENDING" },
+            orderBy: { createdAt: "asc" },
+            take: 3,
+            select: { id: true, businessName: true },
+          }),
+        () =>
+          prisma.purchaseRequest.findMany({
+            where: {
+              status: "APPROVED",
+              executionType: "VENDOR_PURCHASE",
+              warehouseId: warehouseIdFilter(scopeWarehouseIds),
+              lines: { some: { items: { some: { poLineItem: null } } } },
+            },
+            orderBy: { updatedAt: "asc" },
+            take: 3,
+            select: {
+              id: true,
+              vendor: { select: { businessName: true } },
+              lines: {
+                orderBy: { lineNumber: "asc" },
+                take: 1,
+                select: { subcategory: { select: { name: true } } },
+              },
+            },
+          }),
+        () =>
+          prisma.goodsReceipt.findMany({
+            where: {
+              ...goodsReceiptWhereFromScopeIds(scopeWarehouseIds),
+              exceptions: { some: { resolutionStatus: null } },
+            },
+            orderBy: { receivedAt: "desc" },
+            take: 3,
+            select: {
+              id: true,
+              poId: true,
+              purchaseOrder: { select: { vendor: { select: { businessName: true } } } },
+              exceptions: {
+                where: { resolutionStatus: null },
+                select: { exceptionType: true },
+              },
+            },
+          }),
+        () =>
+          prisma.purchaseOrder.findMany({
+            where: {
+              ...poWhere,
+              invoices: {
+                some: {
+                  matchStatus: InvoiceMatchStatus.MISMATCH,
+                  overrideReason: null,
+                },
+              },
+            },
+            orderBy: { updatedAt: "desc" },
+            take: 3,
+            select: {
+              id: true,
+              vendor: { select: { businessName: true } },
+            },
+          }),
+      );
+
+    return [
+      ...pendingPrs.map((pr) => ({
+        id: pr.id,
+        title: pr.vendor?.businessName ?? pr.lines[0]?.subcategory.name ?? pr.id,
+        subtitle: "Vendor PR awaiting your approval",
+        href: `/purchase-requests/${pr.id}`,
+        badge: "Approve",
+      })),
+      ...vendorRequests.map((v) => ({
+        id: v.id,
+        title: v.businessName,
+        subtitle: "New vendor awaiting activation",
+        href: `/vendors?tab=pending&requestId=${v.id}`,
+        badge: "Vendor",
+      })),
+      ...awaitingPoPrs.map((pr) => ({
+        id: pr.id,
+        title: pr.vendor?.businessName ?? pr.lines[0]?.subcategory.name ?? pr.id,
+        subtitle: "Approved — configure purchase order",
+        href: `/purchase-orders/configure/${pr.id}`,
+        badge: "Configure PO",
+      })),
+      ...grnExceptions.map((grn) => ({
+        id: grn.id,
+        title: grn.purchaseOrder.vendor.businessName,
+        subtitle: `${grn.exceptions.length} open GRN exception${grn.exceptions.length === 1 ? "" : "s"}`,
+        href: `/purchase-orders/${grn.poId}?tab=fulfillment`,
+        badge: "Resolve",
+      })),
+      ...mismatchPos.map((po) => ({
+        id: po.id,
+        title: po.vendor.businessName,
+        subtitle: "Invoice mismatch needs override",
+        href: `/purchase-orders/${po.id}?tab=invoices`,
+        badge: "Override",
+      })),
+    ].slice(0, 8);
+  }
+
+  const [drafts, pending, posToReceive] = await dbParallel(
+    () =>
+      prisma.purchaseRequest.findMany({
+        where: { ...prWhere, status: "DRAFT" },
+        orderBy: { updatedAt: "desc" },
+        take: 4,
+        select: {
+          id: true,
+          lines: {
+            orderBy: { lineNumber: "asc" },
+            take: 1,
+            select: { subcategory: { select: { name: true } } },
+          },
+        },
+      }),
+    () =>
+      prisma.purchaseRequest.findMany({
+        where: { ...prWhere, status: "PENDING_APPROVAL" },
+        orderBy: { updatedAt: "desc" },
+        take: 3,
+        select: {
+          id: true,
+          vendor: { select: { businessName: true } },
+          lines: {
+            orderBy: { lineNumber: "asc" },
+            take: 1,
+            select: { subcategory: { select: { name: true } } },
+          },
+        },
+      }),
+    () =>
+      prisma.purchaseOrder.findMany({
+        where: {
+          ...poWhere,
+          status: { in: [POStatus.OPEN, POStatus.PARTIALLY_RECEIVED] },
+        },
+        orderBy: { updatedAt: "desc" },
+        take: 3,
+        select: {
+          id: true,
+          status: true,
+          vendor: { select: { businessName: true } },
+        },
+      }),
+  );
+
+  return [
+    ...drafts.map((pr) => ({
+      id: pr.id,
+      title: pr.lines[0]?.subcategory.name ?? pr.id,
+      subtitle: "Draft — finish and submit",
+      href: `/purchase-requests/${pr.id}`,
+      badge: "Draft",
+    })),
+    ...pending.map((pr) => ({
+      id: pr.id,
+      title: pr.vendor?.businessName ?? pr.lines[0]?.subcategory.name ?? pr.id,
+      subtitle: "Waiting for Ops approval",
+      href: `/purchase-requests/${pr.id}`,
+      badge: "Pending",
+    })),
+    ...posToReceive.map((po) => ({
+      id: po.id,
+      title: po.vendor.businessName,
+      subtitle: "Record goods receipt",
+      href: `/goods-receipt/new?poId=${encodeURIComponent(po.id)}`,
+      badge: "Receive",
+    })),
+  ].slice(0, 6);
 }

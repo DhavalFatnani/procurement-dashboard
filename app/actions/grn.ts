@@ -1,8 +1,19 @@
 "use server";
 
-import type { GRNExceptionType } from "@/lib/prisma-enums";
+import { GRNExceptionType } from "@/lib/prisma-enums";
+
+import { isSmCreatableExceptionType } from "@/lib/grn-exception-outcomes";
+import {
+  pendingQtyForNextGrnReceipt,
+  sumReceivedQtyOnPoLine,
+} from "@/lib/grn-pending-qty";
 import { Role } from "@/lib/prisma-enums";
 
+import {
+  buildEffectiveLineMap,
+  effectiveOrderedQtyForLegacyLine,
+  effectiveOrderedQtyForLineItem,
+} from "@/lib/po-line-effective";
 import { applyPOClosureInTransaction, PO_CLOSURE_TX_OPTS } from "@/lib/poAutoClose";
 import type { Paginated } from "@/lib/pagination";
 import { prisma } from "@/lib/prisma";
@@ -74,7 +85,7 @@ export async function getPOForGRN(poId: string): Promise<POForGRNOption | null> 
   if (!access.ok) {
     return null;
   }
-  return getPOForGRNByIdQuery(poId);
+  return getPOForGRNByIdQuery(poId, assignedWarehouseIds(user));
 }
 
 export async function getGRNFilterOptions() {
@@ -97,12 +108,24 @@ export async function createGRN(
     include: {
       lineItems: {
         include: {
-          goodsReceiptLineItems: { select: { acceptedQty: true } },
+          goodsReceiptLineItems: { select: { receivedQty: true, acceptedQty: true } },
         },
       },
       lines: {
         include: {
-          goodsReceiptLines: { select: { acceptedQty: true } },
+          goodsReceiptLines: { select: { receivedQty: true, acceptedQty: true } },
+        },
+      },
+      lineAdjustments: {
+        orderBy: { createdAt: "asc" },
+        select: {
+          poLineItemId: true,
+          poLineId: true,
+          originalOrderedQty: true,
+          effectiveOrderedQty: true,
+          originalUnitPrice: true,
+          effectiveUnitPrice: true,
+          createdAt: true,
         },
       },
     },
@@ -116,6 +139,7 @@ export async function createGRN(
     return { ok: false, message: "This PO is not open for goods receipt." };
   }
 
+  const effectiveMap = buildEffectiveLineMap(po.lineAdjustments);
   const useLineItems = po.lineItems.length > 0;
   const receipts: GRNLineItemInput[] = useLineItems
     ? data.lineItemReceipts
@@ -140,11 +164,13 @@ export async function createGRN(
         return { ok: false, message: "Received quantity cannot be negative." };
       }
       const poLine = po.lineItems.find((l) => l.id === receipt.poLineItemId)!;
-      const previouslyReceived = poLine.goodsReceiptLineItems.reduce(
-        (s, grl) => s + grl.acceptedQty,
-        0,
+      const previouslyReceived = sumReceivedQtyOnPoLine(poLine.goodsReceiptLineItems);
+      const effectiveOrdered = effectiveOrderedQtyForLineItem(
+        poLine.id,
+        poLine.orderedQty,
+        effectiveMap,
       );
-      const pending = poLine.orderedQty - previouslyReceived;
+      const pending = pendingQtyForNextGrnReceipt(effectiveOrdered, previouslyReceived);
       if (receipt.receivedQty > pending) {
         return {
           ok: false,
@@ -163,11 +189,13 @@ export async function createGRN(
         return { ok: false, message: "Received quantity cannot be negative." };
       }
       const poLine = po.lines.find((l) => l.id === receipt.poLineId)!;
-      const previouslyReceived = poLine.goodsReceiptLines.reduce(
-        (s, grl) => s + grl.acceptedQty,
-        0,
+      const previouslyReceived = sumReceivedQtyOnPoLine(poLine.goodsReceiptLines);
+      const effectiveOrdered = effectiveOrderedQtyForLegacyLine(
+        poLine.id,
+        poLine.orderedQty,
+        effectiveMap,
       );
-      const pending = poLine.orderedQty - previouslyReceived;
+      const pending = pendingQtyForNextGrnReceipt(effectiveOrdered, previouslyReceived);
       if (receipt.receivedQty > pending) {
         return {
           ok: false,
@@ -196,6 +224,13 @@ export async function createGRN(
       return {
         ok: false,
         message: "Cannot flag an exception on a line with zero received quantity.",
+      };
+    }
+    if (!isSmCreatableExceptionType(receipt.exception.exceptionType)) {
+      return {
+        ok: false,
+        message:
+          "Invalid exception type. For a short delivery, enter the actual qty received — do not flag quantity short.",
       };
     }
     if (!receipt.exception.note.trim()) {

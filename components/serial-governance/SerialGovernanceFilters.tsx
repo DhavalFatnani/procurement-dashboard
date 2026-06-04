@@ -129,8 +129,10 @@ export function SerialGovernanceFilters({
         ariaLabel="Type"
         triggerClassName="w-[160px]"
         options={[
-          { value: "Receipt", label: "Receipt (PO / GRN)" },
-          { value: "Print", label: "Print (internal)" },
+          { value: "Hold", label: "Approval hold (PR)" },
+          { value: "Unconfirmed", label: "Unconfirmed PO (cancellable)" },
+          { value: "Receipt", label: "Committed PO" },
+          { value: "Print", label: "Internal print" },
         ]}
       />
       <FilterSelect

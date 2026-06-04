@@ -12,6 +12,7 @@ import {
   forceClosePR,
   rejectPR,
   resubmitPR,
+  revertPRApproval,
   sendForRevision,
   submitPR,
   submitPRForApproval,
@@ -24,6 +25,7 @@ import type {
   SubcategoryOption,
 } from "@/lib/queries/purchase-requests";
 import { PRCatalogApproveDialog } from "@/components/purchase-requests/PRCatalogApproveDialog";
+import { PRPurchaseOrdersTable } from "@/components/purchase-requests/PRPurchaseOrdersTable";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { ExecutionTypeBadge } from "@/components/shared/ExecutionTypeBadge";
 import { PageHeader } from "@/components/shared/PageHeader";
@@ -48,12 +50,12 @@ import {
   toLineInputs,
   type PRLineDraft,
 } from "@/components/purchase-requests/PRLineEditor";
-import { ProcurementRefText } from "@/components/shared/ProcurementRef";
 import {
   formatPrPageTitle,
   formatProcurementRef,
 } from "@/lib/display-ref";
 import { formatDateTimeMedium } from "@/lib/format-datetime";
+import { formatItemCount, formatUnitCount } from "@/lib/order-totals-display";
 import { cn } from "@/lib/utils";
 import { useServerMutation } from "@/lib/use-server-mutation";
 
@@ -68,6 +70,8 @@ const FORCE_CLOSE_ALLOWED: PRStatus[] = [
 export function PRDetailView({
   pr,
   role,
+  canRevise = false,
+  canEditDraft = false,
   categories,
   subcategories,
   catalogItems = [],
@@ -78,6 +82,8 @@ export function PRDetailView({
 }: {
   pr: PRDetail;
   role: Role;
+  canRevise?: boolean;
+  canEditDraft?: boolean;
   categories: CategoryOption[];
   subcategories: SubcategoryOption[];
   catalogItems?: CatalogItemOption[];
@@ -96,8 +102,10 @@ export function PRDetailView({
   const isSm = role === Role.SM;
 
   const [draftEditMode, setDraftEditMode] = React.useState(false);
-  const isRevisionEditing = isSm && displayStatus === PRStatus.REVISION_REQUIRED;
-  const isDraftEditing = isSm && displayStatus === PRStatus.DRAFT && draftEditMode;
+  const isRevisionEditing =
+    canRevise && displayStatus === PRStatus.REVISION_REQUIRED;
+  const isDraftEditing =
+    canEditDraft && displayStatus === PRStatus.DRAFT && draftEditMode;
   const showEditableFields = isRevisionEditing || isDraftEditing;
 
   const [categoryId, setCategoryId] = React.useState(pr.categoryId);
@@ -117,9 +125,16 @@ export function PRDetailView({
     pr.poProgress.assigned < pr.poProgress.total
       ? pr.poProgress
       : undefined;
+  const showPurchaseOrdersSection =
+    pr.executionType === ExecutionType.VENDOR_PURCHASE &&
+    (pr.purchaseOrders.length > 0 ||
+      displayStatus === PRStatus.APPROVED ||
+      displayStatus === PRStatus.CONVERTED_TO_PO ||
+      Boolean(partiallyOnPo));
   const [approveOpen, setApproveOpen] = React.useState(false);
   const [rejectOpen, setRejectOpen] = React.useState(false);
   const [revisionOpen, setRevisionOpen] = React.useState(false);
+  const [revertOpen, setRevertOpen] = React.useState(false);
   const [cancelOpen, setCancelOpen] = React.useState(false);
   const [forceOpen, setForceOpen] = React.useState(false);
 
@@ -130,6 +145,12 @@ export function PRDetailView({
 
   const subs = subcategories.filter((s) => s.categoryId === categoryId);
   const canForceClose = isOps && FORCE_CLOSE_ALLOWED.includes(displayStatus);
+  const canRevertApproval =
+    isOps &&
+    pr.executionType === ExecutionType.VENDOR_PURCHASE &&
+    displayStatus === PRStatus.APPROVED &&
+    pr.purchaseOrders.length === 0 &&
+    pr.poProgress.assigned === 0;
 
   const isVendorMultiLine =
     pr.executionType === ExecutionType.VENDOR_PURCHASE && pr.lineCount > 1;
@@ -293,7 +314,7 @@ export function PRDetailView({
                 ) : isVendorMultiLine || pr.lines.length > 1 || pr.lines.some((l) => l.items.length > 0) ? (
                   <div className="sm:col-span-2">
                     <p className="mb-2 text-ds-xs font-medium text-muted-foreground">
-                      Requirements ({pr.lineCount} lines · {pr.quantity} total qty)
+                      Requirements ({formatItemCount(pr.itemCount)} · {formatUnitCount(pr.quantity)})
                     </p>
                     <div className="overflow-x-auto rounded-md border border-border-subtle">
                       <table className="w-full text-ds-sm">
@@ -418,6 +439,14 @@ export function PRDetailView({
           </Card>
           )}
 
+          {showPurchaseOrdersSection ? (
+            <PRPurchaseOrdersTable
+              prId={pr.id}
+              purchaseOrders={pr.purchaseOrders}
+              showConfigureLink={isOps && awaitingPurchaseOrder}
+            />
+          ) : null}
+
           {pr.executionType === ExecutionType.VENDOR_PURCHASE ? progressSlot : null}
 
           {pr.executionType === ExecutionType.VENDOR_PURCHASE ? printSlot : null}
@@ -433,7 +462,9 @@ export function PRDetailView({
         >
           <h2 className="text-ds-sm font-semibold">Actions</h2>
 
-          {isSm && displayStatus === PRStatus.DRAFT && pr.executionType === ExecutionType.VENDOR_PURCHASE ? (
+          {canEditDraft &&
+          displayStatus === PRStatus.DRAFT &&
+          pr.executionType === ExecutionType.VENDOR_PURCHASE ? (
             <>
               {!draftEditMode ? (
                 <Button
@@ -528,7 +559,7 @@ export function PRDetailView({
             </Link>
           ) : null}
 
-          {isSm &&
+          {canRevise &&
           displayStatus === PRStatus.REVISION_REQUIRED &&
           pr.executionType === ExecutionType.VENDOR_PURCHASE ? (
             <>
@@ -536,7 +567,10 @@ export function PRDetailView({
                 type="button"
                 className="w-full"
                 loading={isPending}
-                disabled={isPending || !selection}
+                disabled={
+                  isPending ||
+                  (isVendorMultiLine ? !vendorLinesValid : !selection)
+                }
                 onClick={() => {
                   void run(() => resubmitPR(pr.id, payload()), {
                     onSuccess: () => {
@@ -607,6 +641,19 @@ export function PRDetailView({
             </>
           ) : null}
 
+          {canRevertApproval ? (
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full"
+              loading={isPending}
+              disabled={isPending}
+              onClick={() => setRevertOpen(true)}
+            >
+              Revert to pending approval
+            </Button>
+          ) : null}
+
           {isOps && pr.executionType === ExecutionType.VENDOR_PURCHASE ? (
             <button
               type="button"
@@ -629,32 +676,9 @@ export function PRDetailView({
               className={cn(buttonVariants({ size: "sm" }), "w-full")}
             >
               {partiallyOnPo
-                ? `Configure remaining PO (${pr.poProgress.total - pr.poProgress.assigned} items)`
+                ? `Configure remaining PO (${pr.poProgress.total - pr.poProgress.assigned} catalog items)`
                 : "Create purchase order"}
             </Link>
-          ) : null}
-
-          {pr.purchaseOrders.length > 0 ? (
-            <div className="space-y-2">
-              <p className="text-ds-xs font-medium text-muted-foreground">
-                Purchase orders ({pr.purchaseOrders.length})
-              </p>
-              {pr.purchaseOrders.map((po) => (
-                <Link
-                  key={po.id}
-                  href={`/purchase-orders/${po.id}`}
-                  className={cn(
-                    buttonVariants({ variant: "outline", size: "sm" }),
-                    "w-full justify-start",
-                  )}
-                >
-                  <span className="truncate">
-                    {po.vendorName} · {po.itemCount} item{po.itemCount === 1 ? "" : "s"}
-                  </span>
-                  <ProcurementRefText id={po.id} className="ml-auto shrink-0" />
-                </Link>
-              ))}
-            </div>
           ) : null}
         </aside>
       </div>
@@ -706,6 +730,25 @@ export function PRDetailView({
             onSuccess: () => {
               setOptimisticStatus(PRStatus.REVISION_REQUIRED);
               toast.success("Sent for revision.");
+            },
+            onError: (m) => toast.error(m),
+          });
+        }}
+      />
+
+      <TextareaActionDialog
+        open={revertOpen}
+        onOpenChange={setRevertOpen}
+        title="Revert to pending approval"
+        description="Returns this request to the approval queue. Use when approval was granted in error or needs a second review. Cannot be done after a purchase order is created."
+        label="Reason for revert"
+        confirmLabel="Revert approval"
+        onConfirm={(text) => {
+          void run(() => revertPRApproval(pr.id, text), {
+            onSuccess: () => {
+              setOptimisticStatus(PRStatus.PENDING_APPROVAL);
+              toast.success("Reverted to pending approval.");
+              setRevertOpen(false);
             },
             onError: (m) => toast.error(m),
           });

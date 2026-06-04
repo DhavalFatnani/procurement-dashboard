@@ -43,6 +43,42 @@
     background: var(--gradient-accent);
   }
 
+  /* Tinted accent surfaces — use instead of bg-primary/10 + text-primary. */
+  .surface-accent-soft {
+    background: var(--accent-subtle);
+    color: var(--brand-accent);
+  }
+
+  .surface-accent-solid {
+    background: var(--brand-accent);
+    color: var(--text-on-accent);
+  }
+
+  /*
+   * Solid accent buttons/links must keep light labels. Body text color and
+   * Next.js <Link> inheritance otherwise wins in light mode.
+   */
+  :is(a, button, [data-slot="button"]).bg-primary,
+  :is(a, button, [data-slot="button"]).bg-accent-gradient,
+  :is(a, button, [data-slot="button"]).surface-accent-solid {
+    color: var(--text-on-accent);
+  }
+
+  :is(a, button, [data-slot="button"]).bg-primary:hover,
+  :is(a, button, [data-slot="button"]).bg-accent-gradient:hover,
+  :is(a, button, [data-slot="button"]).surface-accent-solid:hover {
+    color: var(--text-on-accent);
+  }
+
+  :is(a, button, [data-slot="button"]).surface-accent-soft {
+    background: var(--accent-subtle);
+    color: var(--brand-accent);
+  }
+
+  :is(a, button, [data-slot="button"]).surface-accent-soft:hover {
+    color: var(--brand-accent);
+  }
+
   /* Page-level vertical rhythm. */
   .page-stack {
     @apply flex flex-col gap-8;
@@ -211,13 +247,13 @@
     --text-on-status: #ffffff;
 
     /* ────────── ACCENT (indigo) ──────────────────────────────────── */
-    --brand-accent: #818cf8;          /* indigo-400 — lifts against dark */
+    --brand-accent: #6366f1;          /* indigo-500 — solid fills + links */
     --accent-subtle: rgba(99, 102, 241, 0.18);
-    --accent-hover: #a5b4fc;
+    --accent-hover: #818cf8;          /* indigo-400 — hover lift */
 
     --accent-role-sm: #2dd4bf;        /* teal-400 */
-    --accent-role-ops: #818cf8;       /* indigo-400 */
-    --accent-role-finance: #c4b5fd;   /* violet-300 */
+    --accent-role-ops: #6366f1;       /* indigo-500 */
+    --accent-role-finance: #a78bfa;   /* violet-400 — readable on dark surfaces */
 
     /* ────────── STATUS ───────────────────────────────────────────── */
     --status-success: #4ade80;
@@ -276,7 +312,7 @@
     --popover: var(--surface-3);
     --popover-foreground: var(--text-primary);
     --primary: var(--brand-accent);
-    --primary-foreground: #0b0b10;
+    --primary-foreground: var(--text-on-accent);
     --secondary: var(--surface-selected);
     --secondary-foreground: var(--text-primary);
     --muted: var(--surface-hover);
@@ -291,7 +327,7 @@
     --sidebar: var(--surface-1);
     --sidebar-foreground: var(--text-primary);
     --sidebar-primary: var(--brand-accent);
-    --sidebar-primary-foreground: #0b0b10;
+    --sidebar-primary-foreground: var(--text-on-accent);
     --sidebar-accent: var(--surface-selected);
     --sidebar-accent-foreground: var(--text-primary);
     --sidebar-border: var(--border-subtle);
@@ -479,4 +515,80 @@
   text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Serial range map — segment reveal + lifecycle pulses */
+@keyframes serial-map-segment-enter {
+  from {
+    opacity: 0;
+    transform: scaleX(0.35);
+  }
+  to {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+}
+
+@keyframes serial-map-hold-glow {
+  0%,
+  100% {
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--status-warning) 45%, transparent);
+  }
+  50% {
+    box-shadow:
+      inset 0 0 0 1px color-mix(in srgb, var(--status-warning) 70%, transparent),
+      0 0 14px color-mix(in srgb, var(--status-warning) 35%, transparent);
+  }
+}
+
+@keyframes serial-map-cancel-breathe {
+  0%,
+  100% {
+    opacity: 0.78;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes serial-map-shimmer {
+  0% {
+    background-position: 200% center;
+  }
+  100% {
+    background-position: -200% center;
+  }
+}
+
+.serial-map-track {
+  background:
+    linear-gradient(
+      90deg,
+      transparent 0%,
+      color-mix(in srgb, var(--brand-accent) 6%, transparent) 50%,
+      transparent 100%
+    ),
+    var(--surface-2);
+  background-size: 200% 100%;
+}
+
+.serial-map-track[data-animate="true"] {
+  animation: serial-map-shimmer 8s ease-in-out infinite;
+}
+
+.serial-map-segment {
+  transform-origin: left center;
+  animation: serial-map-segment-enter 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.serial-map-segment--hold {
+  animation:
+    serial-map-segment-enter 0.55s cubic-bezier(0.22, 1, 0.36, 1) both,
+    serial-map-hold-glow 2.4s ease-in-out infinite;
+}
+
+.serial-map-segment--cancel {
+  animation:
+    serial-map-segment-enter 0.55s cubic-bezier(0.22, 1, 0.36, 1) both,
+    serial-map-cancel-breathe 2.8s ease-in-out infinite;
 }

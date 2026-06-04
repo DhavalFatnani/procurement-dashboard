@@ -2,8 +2,13 @@ import { Role } from "@/lib/prisma-enums";
 
 import { DashboardMetricsGrid } from "@/components/dashboard/DashboardMetricsGrid";
 import { DashboardWelcomeStrip } from "@/components/dashboard/DashboardWelcomeStrip";
+import { OpsDashboardMetricsGrid } from "@/components/dashboard/OpsDashboardMetricsGrid";
 import { dbParallel } from "@/lib/db-parallel";
-import { getDashboardMetricsForSession } from "@/lib/queries/dashboard";
+import {
+  getDashboardMetricsForSession,
+  getFinanceDashboardMetrics,
+  getOpsDashboardMetrics,
+} from "@/lib/queries/dashboard";
 import { getPrCreationSparkline } from "@/lib/queries/dashboard-extras";
 import type { SessionUser } from "@/lib/session";
 import { assignedWarehouseIds } from "@/lib/warehouse-scope";
@@ -16,6 +21,40 @@ export async function DashboardOverviewSection({
   user: SessionUser;
   displayName: string;
 }) {
+  if (user.role === Role.FINANCE) {
+    const metrics = await timed("dashboard.financeMetrics", () =>
+      getFinanceDashboardMetrics(user),
+    );
+
+    return (
+      <>
+        <DashboardWelcomeStrip
+          displayName={displayName}
+          role={user.role}
+          metrics={metrics}
+        />
+        <DashboardMetricsGrid metrics={metrics} variant="finance" />
+      </>
+    );
+  }
+
+  if (user.role === Role.OPS_HEAD) {
+    const metrics = await timed("dashboard.opsMetrics", () =>
+      getOpsDashboardMetrics(user),
+    );
+
+    return (
+      <>
+        <DashboardWelcomeStrip
+          displayName={displayName}
+          role={user.role}
+          metrics={metrics}
+        />
+        <OpsDashboardMetricsGrid metrics={metrics} />
+      </>
+    );
+  }
+
   const [metrics, sparkline] = await dbParallel(
     () => timed("dashboard.metrics", () => getDashboardMetricsForSession(user)),
     () =>
@@ -23,8 +62,6 @@ export async function DashboardOverviewSection({
         getPrCreationSparkline({ warehouseIds: assignedWarehouseIds(user) }),
       ),
   );
-
-  const isOps = user.role === Role.OPS_HEAD;
 
   return (
     <>
@@ -35,7 +72,7 @@ export async function DashboardOverviewSection({
       />
       <DashboardMetricsGrid
         metrics={metrics}
-        variant={isOps ? "ops" : "default"}
+        variant="default"
         sparklineData={sparkline.map((d) => ({ value: d.count }))}
       />
     </>

@@ -1,6 +1,6 @@
 "use client";
 
-import { CatalogItemStatus } from "@/lib/prisma-enums";
+import { CatalogItemKind, CatalogItemStatus } from "@/lib/prisma-enums";
 import { Package, Plus } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import * as React from "react";
@@ -66,6 +66,7 @@ export function CatalogView({
     status: string;
     categoryId: string;
     subcategoryId: string;
+    disputedVariantsOnly: boolean;
   };
   filterOptions: {
     categories: { id: string; name: string }[];
@@ -162,10 +163,15 @@ export function CatalogView({
       const v = String(fd.get(key) ?? "").trim();
       if (v) params.set(key, v);
     }
+    if (fd.get("disputed") === "on") {
+      params.set("disputed", "1");
+    }
     navigate(params);
   }
 
-  function clearFilter(key: "q" | "status" | "categoryId" | "subcategoryId") {
+  function clearFilter(
+    key: "q" | "status" | "categoryId" | "subcategoryId" | "disputed",
+  ) {
     const params = new URLSearchParams(searchParams.toString());
     params.delete(key);
     if (key === "categoryId") {
@@ -215,6 +221,12 @@ export function CatalogView({
       label: `Subcategory: ${subcategory.name}`,
       onClear: () => clearFilter("subcategoryId"),
     },
+    filters.disputedVariantsOnly && {
+      key: "disputed",
+      tone: "warning",
+      label: "Disputed variants only",
+      onClear: () => clearFilter("disputed"),
+    },
   ]);
 
   const columns: DataTableColumn<CatalogItemListRow>[] = React.useMemo(
@@ -225,6 +237,11 @@ export function CatalogView({
         cell: (r) => (
           <div>
             <span className="font-medium text-foreground">{r.name}</span>
+            {r.kind === CatalogItemKind.DISPUTED ? (
+              <Chip tone="warning" size="sm" className="mt-1">
+                Disputed variant
+              </Chip>
+            ) : null}
             {r.sku ? (
               <span className="block text-ds-xs text-muted-foreground">{r.sku}</span>
             ) : null}
@@ -349,6 +366,14 @@ export function CatalogView({
               label: `${s.name} (${s.categoryName})`,
             }))}
           />
+          <label className="flex items-center gap-2 text-ds-sm text-muted-foreground">
+            <input
+              type="checkbox"
+              name="disputed"
+              defaultChecked={filters.disputedVariantsOnly}
+            />
+            Disputed variants only
+          </label>
           <Button type="submit" size="sm" className="h-8">
             Apply
           </Button>

@@ -10,6 +10,7 @@ import {
   History,
   Receipt,
   Search,
+  Wallet,
 } from "lucide-react";
 import * as React from "react";
 
@@ -26,6 +27,7 @@ const KIND_ICONS = {
   purchaseOrder: ClipboardList,
   vendor: Building2,
   invoice: Receipt,
+  payment: Wallet,
 };
 
 export function CommandPalette({
@@ -121,7 +123,11 @@ export function CommandPalette({
           <Command.Input
             value={query}
             onValueChange={setQuery}
-            placeholder="Find a PR, PO, vendor, invoice, or jump to a page…"
+            placeholder={
+              role === Role.FINANCE
+                ? "Find PO, invoice, payment ref, or jump to a page…"
+                : "Find a PR, PO, vendor, invoice, or jump to a page…"
+            }
             className="h-12 flex-1 bg-transparent text-[15px] text-foreground outline-none placeholder:text-muted-foreground"
           />
           {loading ? (
@@ -141,7 +147,7 @@ export function CommandPalette({
               className="[&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:py-2 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-wide [&_[cmdk-group-heading]]:text-muted-foreground"
             >
               {results.map((r) => {
-                const Icon = KIND_ICONS[r.kind];
+                const Icon = KIND_ICONS[r.kind] ?? Receipt;
                 return (
                   <Command.Item
                     key={`${r.kind}-${r.id}`}

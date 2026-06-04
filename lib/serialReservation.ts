@@ -27,6 +27,8 @@ export type InternalPrintPRPayload = {
   createdById: string;
 };
 
+export type ReserveSerialPurpose = "internal_print" | "vendor_lock_tags";
+
 export type ReserveSerialInput = {
   series: SerialSeries;
   quantity: number;
@@ -34,6 +36,10 @@ export type ReserveSerialInput = {
   createdById: string;
   prId: string;
   idempotencyKey: string;
+  /** Defaults to internal_print for backward compatibility. */
+  purpose?: ReserveSerialPurpose;
+  /** Required when purpose is vendor_lock_tags. */
+  poId?: string;
   /** When set, creates the PR inside the reservation transaction if it does not exist yet. */
   internalPrintPR?: InternalPrintPRPayload;
 };
@@ -42,105 +48,159 @@ export type ReserveSerialResult =
   | { success: true; reservation: SerialReservation }
   | { success: false; error: string };
 
+export type PrismaTx = Omit<
+  typeof prisma,
+  "$connect" | "$disconnect" | "$on" | "$transaction" | "$extends" | "$use"
+>;
+
 export { getSeriesStartNumber } from "@/lib/serial-series";
+
+const VENDOR_LOCK_TAGS_ALLOWED_PR_STATUSES: readonly PRStatus[] = [
+  PRStatus.APPROVED,
+  PRStatus.CONVERTED_TO_PO,
+];
+
+function assertVendorLockTagsPrStatus(status: PRStatus): void {
+  if (!VENDOR_LOCK_TAGS_ALLOWED_PR_STATUSES.includes(status)) {
+    throw new Error(
+      `Purchase request must be approved before reserving vendor lock tag serials (status: ${status}).`,
+    );
+  }
+}
+
+async function computeReservationRange(
+  tx: PrismaTx,
+  series: SerialSeries,
+  quantity: number,
+): Promise<{ rangeStart: bigint; rangeEnd: bigint }> {
+  const { start: seriesStart } = getSeriesNumericBounds(series);
+
+  const latest = await tx.serialReservation.findFirst({
+    where: {
+      series,
+      rangeStart: { gte: seriesStart },
+      rangeEnd: { gte: seriesStart },
+    },
+    orderBy: { rangeEnd: "desc" },
+  });
+
+  const rangeStart = computeNextRangeStart(series, latest?.rangeEnd ?? null);
+  const rangeEnd = rangeStart + BigInt(quantity) - BigInt(1);
+
+  const config = await tx.seriesConfig.findUnique({
+    where: { series },
+  });
+  const ceiling = resolveSeriesCeiling(series, config?.ceilingNumber);
+  if (rangeEnd > ceiling) {
+    throw new Error("Range ceiling exceeded");
+  }
+
+  if (!isValidReservationRange(series, rangeStart, rangeEnd)) {
+    throw new Error("Reservation range outside series bounds");
+  }
+
+  return { rangeStart, rangeEnd };
+}
+
+/**
+ * Reserve a serial range inside an existing transaction (e.g. PO creation).
+ * Throws on failure — caller should roll back the outer transaction.
+ */
+export async function reserveSerialRangeInTransaction(
+  tx: PrismaTx,
+  input: ReserveSerialInput,
+): Promise<SerialReservation> {
+  const purpose = input.purpose ?? "internal_print";
+
+  const existing = await tx.serialReservation.findUnique({
+    where: { idempotencyKey: input.idempotencyKey },
+  });
+  if (existing) {
+    return existing;
+  }
+
+  if (purpose === "vendor_lock_tags") {
+    if (!input.poId) {
+      throw new Error("poId is required for vendor lock tag serial reservations.");
+    }
+  }
+
+  const { rangeStart, rangeEnd } = await computeReservationRange(
+    tx,
+    input.series,
+    input.quantity,
+  );
+
+  if (input.internalPrintPR) {
+    const existingPr = await tx.purchaseRequest.findUnique({
+      where: { id: input.prId },
+    });
+    if (!existingPr) {
+      const prData = input.internalPrintPR;
+      await tx.purchaseRequest.create({
+        data: {
+          id: input.prId,
+          categoryId: prData.categoryId,
+          subcategoryId: prData.subcategoryId,
+          quantity: prData.quantity,
+          warehouseId: prData.warehouseId,
+          executionType: prData.executionType,
+          status: PRStatus.DRAFT,
+          createdById: prData.createdById,
+          lines: {
+            create: {
+              lineNumber: 1,
+              categoryId: prData.categoryId,
+              subcategoryId: prData.subcategoryId,
+              quantity: prData.quantity,
+            },
+          },
+        },
+      });
+    }
+  }
+
+  const pr = await tx.purchaseRequest.findUnique({ where: { id: input.prId } });
+  if (!pr) {
+    throw new Error("Purchase request not found");
+  }
+
+  if (purpose === "internal_print") {
+    assertPRStatusTransition(pr.status, PRStatus.EXECUTED_PRINT);
+  } else {
+    assertVendorLockTagsPrStatus(pr.status);
+  }
+
+  const reservation = await tx.serialReservation.create({
+    data: {
+      series: input.series,
+      rangeStart,
+      rangeEnd,
+      quantity: input.quantity,
+      warehouseId: input.warehouseId,
+      status: "RESERVED",
+      prId: purpose === "vendor_lock_tags" ? null : input.prId,
+      poId: purpose === "vendor_lock_tags" ? input.poId : undefined,
+      idempotencyKey: input.idempotencyKey,
+      createdById: input.createdById,
+    },
+  });
+
+  if (purpose === "internal_print") {
+    await tx.purchaseRequest.update({
+      where: { id: input.prId },
+      data: { status: PRStatus.EXECUTED_PRINT },
+    });
+  }
+
+  return reservation;
+}
 
 async function reserveInTransaction(
   input: ReserveSerialInput,
 ): Promise<SerialReservation> {
   return prisma.$transaction(
-    async (tx) => {
-      const existing = await tx.serialReservation.findUnique({
-        where: { idempotencyKey: input.idempotencyKey },
-      });
-      if (existing) {
-        return existing;
-      }
-
-      const { start: seriesStart } = getSeriesNumericBounds(input.series);
-
-      const latest = await tx.serialReservation.findFirst({
-        where: {
-          series: input.series,
-          rangeStart: { gte: seriesStart },
-          rangeEnd: { gte: seriesStart },
-        },
-        orderBy: { rangeEnd: "desc" },
-      });
-
-      const rangeStart = computeNextRangeStart(input.series, latest?.rangeEnd ?? null);
-      const rangeEnd = rangeStart + BigInt(input.quantity) - BigInt(1);
-
-      const config = await tx.seriesConfig.findUnique({
-        where: { series: input.series },
-      });
-      const ceiling = resolveSeriesCeiling(
-        input.series,
-        config?.ceilingNumber,
-      );
-      if (rangeEnd > ceiling) {
-        throw new Error("Range ceiling exceeded");
-      }
-
-      if (!isValidReservationRange(input.series, rangeStart, rangeEnd)) {
-        throw new Error("Reservation range outside series bounds");
-      }
-
-      if (input.internalPrintPR) {
-        const existingPr = await tx.purchaseRequest.findUnique({
-          where: { id: input.prId },
-        });
-        if (!existingPr) {
-          const prData = input.internalPrintPR;
-          await tx.purchaseRequest.create({
-            data: {
-              id: input.prId,
-              categoryId: prData.categoryId,
-              subcategoryId: prData.subcategoryId,
-              quantity: prData.quantity,
-              warehouseId: prData.warehouseId,
-              executionType: prData.executionType,
-              status: PRStatus.DRAFT,
-              createdById: prData.createdById,
-              lines: {
-                create: {
-                  lineNumber: 1,
-                  categoryId: prData.categoryId,
-                  subcategoryId: prData.subcategoryId,
-                  quantity: prData.quantity,
-                },
-              },
-            },
-          });
-        }
-      }
-
-      const pr = await tx.purchaseRequest.findUnique({ where: { id: input.prId } });
-      if (!pr) {
-        throw new Error("Purchase request not found");
-      }
-      assertPRStatusTransition(pr.status, PRStatus.EXECUTED_PRINT);
-
-      const reservation = await tx.serialReservation.create({
-        data: {
-          series: input.series,
-          rangeStart,
-          rangeEnd,
-          quantity: input.quantity,
-          warehouseId: input.warehouseId,
-          status: "RESERVED",
-          prId: input.prId,
-          idempotencyKey: input.idempotencyKey,
-          createdById: input.createdById,
-        },
-      });
-
-      await tx.purchaseRequest.update({
-        where: { id: input.prId },
-        data: { status: PRStatus.EXECUTED_PRINT },
-      });
-
-      return reservation;
-    },
+    async (tx) => reserveSerialRangeInTransaction(tx, input),
     SERIAL_RESERVE_TX_OPTS,
   );
 }
@@ -151,7 +211,7 @@ const TIMEOUT_ERROR =
   "Reservation took too long. Please try again.";
 
 /** Remote Supabase + Serializable isolation can exceed Prisma's 5s default. */
-const SERIAL_RESERVE_TX_OPTS = {
+export const SERIAL_RESERVE_TX_OPTS = {
   isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
   maxWait: 10_000,
   timeout: 20_000,

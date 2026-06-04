@@ -1,4 +1,11 @@
-import type { GRNExceptionResolution, GRNExceptionType } from "@/lib/prisma-enums";
+import type {
+  GRNExceptionDisposition,
+  GRNExceptionOutcome,
+  GRNExceptionResolution,
+  GRNExceptionType,
+} from "@/lib/prisma-enums";
+
+import { OUTCOME_LABELS } from "@/lib/grn-exception-outcomes";
 
 export type GrnExceptionSnapshot = {
   id: string;
@@ -6,6 +13,10 @@ export type GrnExceptionSnapshot = {
   exceptionQty: number;
   note: string;
   resolutionStatus: GRNExceptionResolution | null;
+  resolutionOutcome: GRNExceptionOutcome | null;
+  resolutionDisposition: GRNExceptionDisposition | null;
+  closeLineAfterResolve: boolean | null;
+  pendingReplacementQty: number | null;
   resolutionNote: string | null;
 };
 
@@ -17,8 +28,40 @@ type ExceptionRecord = {
   exceptionQty: number;
   note: string;
   resolutionStatus: GRNExceptionResolution | null;
+  resolutionOutcome?: GRNExceptionOutcome | null;
+  resolutionDisposition?: GRNExceptionDisposition | null;
+  closeLineAfterResolve?: boolean | null;
+  pendingReplacementQty?: number | null;
   resolutionNote: string | null;
 };
+
+export function formatExceptionResolutionLabel(ex: GrnExceptionSnapshot): string | null {
+  if (!ex.resolutionStatus) {
+    return null;
+  }
+  if (ex.resolutionOutcome) {
+    return OUTCOME_LABELS[ex.resolutionOutcome];
+  }
+  const disposition =
+    ex.resolutionDisposition === "KEEP"
+      ? "Kept"
+      : ex.resolutionDisposition === "RETURN_TO_VENDOR"
+        ? "Returned"
+        : ex.resolutionDisposition === "NOT_RETURNED"
+          ? "Removed (not returned)"
+          : null;
+  const commitment =
+    ex.closeLineAfterResolve === true
+      ? "line closed"
+      : ex.closeLineAfterResolve === false
+        ? "still expecting"
+        : null;
+
+  if (disposition && commitment) {
+    return `${disposition} · ${commitment}`;
+  }
+  return ex.resolutionStatus.replaceAll("_", " ");
+}
 
 export function toGrnExceptionSnapshot(ex: ExceptionRecord): GrnExceptionSnapshot {
   return {
@@ -27,6 +70,10 @@ export function toGrnExceptionSnapshot(ex: ExceptionRecord): GrnExceptionSnapsho
     exceptionQty: ex.exceptionQty,
     note: ex.note,
     resolutionStatus: ex.resolutionStatus,
+    resolutionOutcome: ex.resolutionOutcome ?? null,
+    resolutionDisposition: ex.resolutionDisposition ?? null,
+    closeLineAfterResolve: ex.closeLineAfterResolve ?? null,
+    pendingReplacementQty: ex.pendingReplacementQty ?? null,
     resolutionNote: ex.resolutionNote,
   };
 }

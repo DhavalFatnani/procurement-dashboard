@@ -4,16 +4,23 @@ import { notFound } from "next/navigation";
 import {
   PRDetailInternalPrintBody,
   PRDetailInternalPrintSide,
+  PRDetailLockTagsSerialPreview,
   PRDetailProgress,
   PRDetailVersionHistory,
 } from "@/components/purchase-requests/PRDetailSections";
 import { PRDetailPageShell } from "@/components/purchase-requests/PRDetailPageShell";
+import { getLockTagsSerialPreviewForPR } from "@/app/actions/serial";
 import {
   EMPTY_PR_FILTER_OPTIONS,
   getFilterOptions,
   getPRById,
   prDetailNeedsFilterOptions,
 } from "@/lib/queries/purchase-requests";
+import {
+  canEditDraftPurchaseRequestAsOps,
+  canEditOwnDraftPurchaseRequest,
+  canRevisePurchaseRequest,
+} from "@/lib/pr-access";
 import { ACCESS } from "@/lib/route-access";
 import { assertRole, getRequestSession } from "@/lib/session";
 
@@ -32,12 +39,26 @@ export default async function PurchaseRequestDetailPage({ params }: { params: Pa
     ? await getFilterOptions()
     : EMPTY_PR_FILTER_OPTIONS;
 
+  const prAccess = {
+    status: pr.status,
+    warehouseId: pr.warehouseId,
+    createdById: pr.createdById,
+  };
+  const canRevise = canRevisePurchaseRequest(user, prAccess);
+  const canEditDraft =
+    canEditOwnDraftPurchaseRequest(user, prAccess) ||
+    canEditDraftPurchaseRequestAsOps(user, prAccess);
+
   const isInternalPrint = pr.executionType === ExecutionType.INTERNAL_PRINT;
+  const lockTagsPreview =
+    !isInternalPrint ? await getLockTagsSerialPreviewForPR(id) : null;
 
   return (
     <PRDetailPageShell
       pr={pr}
       role={user.role}
+      canRevise={canRevise}
+      canEditDraft={canEditDraft}
       categories={filterOptions.categories}
       subcategories={filterOptions.subcategories}
       catalogItems={filterOptions.catalogItems}
@@ -45,7 +66,12 @@ export default async function PurchaseRequestDetailPage({ params }: { params: Pa
         isInternalPrint ? (
           <PRDetailInternalPrintSide pr={pr} role={user.role} />
         ) : (
-          <PRDetailProgress pr={pr} />
+          <div className="space-y-4">
+            {lockTagsPreview ? (
+              <PRDetailLockTagsSerialPreview preview={lockTagsPreview} status={pr.status} />
+            ) : null}
+            <PRDetailProgress pr={pr} />
+          </div>
         )
       }
       printSlot={isInternalPrint ? <PRDetailInternalPrintBody pr={pr} /> : null}

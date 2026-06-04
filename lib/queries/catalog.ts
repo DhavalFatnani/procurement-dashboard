@@ -1,6 +1,11 @@
 import { cache } from "react";
 
-import { CatalogItemStatus, ExecutionType, type Prisma } from "@/lib/prisma-client";
+import {
+  CatalogItemKind,
+  CatalogItemStatus,
+  ExecutionType,
+  type Prisma,
+} from "@/lib/prisma-client";
 
 import { getCachedCategories } from "@/lib/cache";
 import { catalogItemAtomicityCategoryNames } from "@/lib/catalog-atomicity";
@@ -13,6 +18,8 @@ export type CatalogItemFilters = {
   status?: CatalogItemStatus;
   categoryId?: string;
   subcategoryId?: string;
+  /** When true, only disputed settlement variants. */
+  disputedVariantsOnly?: boolean;
   page?: number;
   pageSize?: number;
   includeExactCount?: boolean;
@@ -23,6 +30,8 @@ export type CatalogItemListRow = {
   name: string;
   sku: string | null;
   unit: string;
+  kind: CatalogItemKind;
+  baseCatalogItemId: string | null;
   status: CatalogItemStatus;
   categoryId: string;
   categoryName: string;
@@ -104,6 +113,9 @@ async function fetchCatalogItems(
   } else if (filters.categoryId) {
     clauses.push({ subcategory: { categoryId: filters.categoryId } });
   }
+  if (filters.disputedVariantsOnly) {
+    clauses.push({ kind: CatalogItemKind.DISPUTED });
+  }
   if (filters.search?.trim()) {
     const q = filters.search.trim();
     clauses.push({
@@ -138,6 +150,8 @@ async function fetchCatalogItems(
           name: true,
           sku: true,
           unit: true,
+          kind: true,
+          baseCatalogItemId: true,
           status: true,
           approvedAt: true,
           rejectedReason: true,
@@ -164,6 +178,8 @@ async function fetchCatalogItems(
       name: row.name,
       sku: row.sku,
       unit: row.unit,
+      kind: row.kind,
+      baseCatalogItemId: row.baseCatalogItemId,
       status: row.status,
       categoryId: row.subcategory.categoryId,
       categoryName: row.subcategory.category.name,
@@ -189,6 +205,8 @@ export async function getCatalogItemById(
       name: true,
       sku: true,
       unit: true,
+      kind: true,
+      baseCatalogItemId: true,
       status: true,
       approvedAt: true,
       rejectedReason: true,
@@ -216,6 +234,8 @@ export async function getCatalogItemById(
     name: row.name,
     sku: row.sku,
     unit: row.unit,
+    kind: row.kind,
+    baseCatalogItemId: row.baseCatalogItemId,
     status: row.status,
     categoryId: row.subcategory.categoryId,
     categoryName: row.subcategory.category.name,

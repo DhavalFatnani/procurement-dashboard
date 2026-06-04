@@ -8,9 +8,13 @@ import {
 
 import { dbSerial } from "@/lib/db-serial";
 import { cachedQuery, LIST_CACHE_TAGS, stableFilterKey } from "@/lib/list-cache";
+import { formatProcurementRef } from "@/lib/display-ref";
+import { FINANCE_ROUTES } from "@/lib/finance-routes";
 import { prisma } from "@/lib/prisma";
+import { getPendingAdvanceRequests } from "@/lib/queries/po-advance";
 import type { SessionUser } from "@/lib/session";
 import {
+  assignedWarehouseIds,
   nestedPurchaseOrderWarehouseScope,
   nestedPurchaseRequestWarehouseScope,
   warehouseScopeForUser,
@@ -25,6 +29,7 @@ export type InboxItemKind =
   | "invoice_to_upload"
   | "invoice_to_pay"
   | "invoice_partial"
+  | "advance_request"
   | "vendor_request"
   | "po_at_risk";
 
@@ -92,7 +97,7 @@ async function fetchSmInbox(user: SessionUser): Promise<InboxData> {
         take: ITEMS_PER_GROUP,
       }),
       () => prisma.purchaseRequest.findMany({
-        where: { status: PRStatus.REVISION_REQUIRED, createdById: user.id, ...warehouseScope },
+        where: { status: PRStatus.REVISION_REQUIRED, ...warehouseScope },
         select: {
           id: true,
           updatedAt: true,
@@ -214,7 +219,7 @@ async function fetchSmInbox(user: SessionUser): Promise<InboxData> {
     title: grn.purchaseOrder.vendor.businessName,
     subtitle: `${grn.exceptions.length} open exception${grn.exceptions.length === 1 ? "" : "s"}`,
     timestamp: grn.receivedAt.toISOString(),
-    href: `/purchase-orders/${grn.poId}?tab=grns`,
+    href: `/purchase-orders/${grn.poId}?tab=fulfillment`,
     actionLabel: "Review",
   }));
 
@@ -392,7 +397,7 @@ async function fetchOpsHeadInbox(user: SessionUser): Promise<InboxData> {
     title: grn.purchaseOrder.vendor.businessName,
     subtitle: `${grn.exceptions.length} open exception${grn.exceptions.length === 1 ? "" : "s"}`,
     timestamp: grn.receivedAt.toISOString(),
-    href: `/purchase-orders/${grn.poId}?tab=grns`,
+    href: `/purchase-orders/${grn.poId}?tab=fulfillment`,
     actionLabel: "Resolve",
   }));
 
@@ -459,7 +464,7 @@ async function fetchFinanceInbox(user: SessionUser): Promise<InboxData> {
   const invoiceScope = nestedPurchaseOrderWarehouseScope(user);
   const prWarehouseFilter = invoiceScope.purchaseOrder?.purchaseRequest ?? {};
 
-  const [readyToPay, partials, atRiskInvoices, vendorChanged, recent] =
+  const [readyToPay, partials, atRiskInvoices, vendorChanged, recent, pendingAdvances] =
     await dbSerial(
       () => prisma.invoice.findMany({
         where: {
@@ -546,7 +551,20 @@ async function fetchFinanceInbox(user: SessionUser): Promise<InboxData> {
         orderBy: { createdAt: "desc" },
         take: ITEMS_PER_GROUP,
       }),
+      () => getPendingAdvanceRequests(assignedWarehouseIds(user)),
     );
+
+  const advanceItems: InboxItem[] = pendingAdvances.map((r) => ({
+    id: r.id,
+    key: `adv:${r.id}`,
+    kind: "advance_request",
+    ref: r.poId,
+    title: r.vendorName,
+    subtitle: `Advance ₹${Number(r.requestedAmount).toLocaleString("en-IN")} on ${formatProcurementRef(r.poId)}`,
+    timestamp: r.requestedAt,
+    href: `${FINANCE_ROUTES.vendorAdvances}?advanceRequestId=${encodeURIComponent(r.id)}`,
+    actionLabel: "Pay advance",
+  }));
 
   const readyToPayItems: InboxItem[] = readyToPay.map((inv) => ({
     id: inv.id,
@@ -556,7 +574,7 @@ async function fetchFinanceInbox(user: SessionUser): Promise<InboxData> {
     title: inv.purchaseOrder.vendor.businessName,
     subtitle: `Invoice ${inv.invoiceNumber} — ₹${Number(inv.amount).toLocaleString("en-IN")}`,
     timestamp: inv.updatedAt.toISOString(),
-    href: `/payments?invoiceId=${inv.id}`,
+    href: FINANCE_ROUTES.invoiceDetail(inv.id),
     actionLabel: "Pay",
   }));
 
@@ -575,7 +593,7 @@ async function fetchFinanceInbox(user: SessionUser): Promise<InboxData> {
       title: inv.purchaseOrder.vendor.businessName,
       subtitle: `Invoice ${inv.invoiceNumber} — ₹${remaining.toLocaleString("en-IN")} remaining`,
       timestamp: inv.updatedAt.toISOString(),
-      href: `/payments?invoiceId=${inv.id}`,
+      href: FINANCE_ROUTES.invoiceDetail(inv.id),
       actionLabel: "Continue",
     };
   });
@@ -602,7 +620,7 @@ async function fetchFinanceInbox(user: SessionUser): Promise<InboxData> {
         title: inv.purchaseOrder.vendor.businessName,
         subtitle: `Vendor details changed after PO — re-verify before paying`,
         timestamp: inv.updatedAt.toISOString(),
-        href: `/payments?invoiceId=${inv.id}`,
+        href: FINANCE_ROUTES.invoiceDetail(inv.id),
         actionLabel: "Verify",
       })),
   ];
@@ -615,11 +633,11 @@ async function fetchFinanceInbox(user: SessionUser): Promise<InboxData> {
     title: p.invoice.purchaseOrder.vendor.businessName,
     subtitle: `Paid ₹${Number(p.amount ?? 0).toLocaleString("en-IN")} on invoice ${p.invoice.invoiceNumber}`,
     timestamp: (p.paidAt ?? p.createdAt).toISOString(),
-    href: `/payments?invoiceId=${p.invoice.id}`,
+    href: FINANCE_ROUTES.invoiceDetail(p.invoice.id),
     actionLabel: "Open",
   }));
 
-  const awaiting = [...readyToPayItems, ...partialItems];
+  const awaiting = [...advanceItems, ...readyToPayItems, ...partialItems];
 
   return {
     summary: {
@@ -632,7 +650,8 @@ async function fetchFinanceInbox(user: SessionUser): Promise<InboxData> {
       {
         id: "awaiting",
         label: "Awaiting payment",
-        description: "Matched invoices ready to pay, and partial payments to continue.",
+        description:
+          "Vendor advance requests from PO setup, matched invoices ready to pay, and partial payments to continue.",
         items: awaiting.slice(0, ITEMS_PER_GROUP),
         total: awaiting.length,
       },

@@ -7,6 +7,8 @@
 
 This is an internal warehouse procurement and serial governance tool for KNOT, a quick-commerce fashion startup. It is used daily by three roles — Warehouse SM (raises requests, records GRNs, prints labels), Ops Head (approves, governs vendors, full visibility), and Finance (processes payments). All users are on laptop/desktop. No mobile requirement.
 
+**Finance navigation:** Finance lands on **Invoice settlement** (`/payments/invoices`). Sidebar **Payables** groups Inbox, Invoice settlement, Vendor advances, and Payment register. Purchase Orders stays read-only under **Procurement** with no nested GRN/invoice links — PO detail opens on the **Financials** tab by default. Legacy `/payments` query params redirect to the canonical payables routes.
+
 This is a serious operational tool. Every screen must be fast, information-dense, and frictionless. Users will spend hours in this system daily. Design for that — not for occasional visitors, not for onboarding, not for impressiveness. Design for sustained, efficient daily work.
 
 ---
@@ -151,6 +153,11 @@ Badge border-radius:  4px
 Left column: 60% — primary content, cards, forms
 Right column: 40% — action panel, timeline, status
 ```
+
+**PO detail — Summary vs Fulfillment tabs:**
+- **Summary** is the only full commercial line-items table (ordered, accepted cumulative qty, unit price, line value). The Accepted column is cumulative accepted quantity across all GRNs (not per-receipt received). When a line was short-shipped via dispute resolution, Ordered shows original → effective qty.
+- **Fulfillment** owns receipt workflow without duplicating Summary’s catalog: receiving context metrics, **Open disputes** workbench (four resolution outcomes — accept at PO price, accept at new price for damaged/quality only, return and settle, replace await GRN; warehouse note shown read-only), **Awaiting replacement GRN** banner when applicable, **Receiving follow-ups** for pending/short-ship only, and read-only **GRN history**. Deep link: `?tab=fulfillment&resolveExceptionId=`. Embedded detail tables must not use list-page `max-h-[70vh]` scroll cages.
+- **New GRN:** SM enters **qty received this delivery**; partial vs PO needs no exception. Exception types: Damaged, Wrong item, Quality rejection only (not quantity short).
 
 ---
 
@@ -627,7 +634,10 @@ Commands to include:
     Go to Purchase Orders     → /purchase-orders
     Go to Goods Receipt       → /goods-receipt
     Go to Invoices            → /invoices
-    Go to Payments            → /payments
+    Go to Payments            → /payments (Ops; redirects to invoice settlement)
+    Go to Invoice settlement  → /payments/invoices [Finance]
+    Go to Vendor advances     → /vendor-advances [Finance]
+    Go to Payment register    → /payments/register [Finance]
     Go to Serial Governance   → /serial-governance
     Go to Reports             → /reports
 

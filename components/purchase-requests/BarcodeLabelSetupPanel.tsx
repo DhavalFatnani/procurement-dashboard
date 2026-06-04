@@ -116,7 +116,7 @@ function SetupRow({
             <p className="mt-0.5 text-ds-2xs leading-relaxed text-muted-foreground">{description}</p>
           ) : null}
           {affects ? (
-            <p className="mt-1 text-ds-2xs text-primary/80">Affects: {affects}</p>
+            <p className="mt-1 text-ds-2xs text-[var(--brand-accent)]">Affects: {affects}</p>
           ) : null}
         </div>
       </div>
@@ -189,7 +189,7 @@ function SliderControl({
               className={cn(
                 "rounded-md border px-2 py-0.5 text-ds-2xs font-medium transition-colors",
                 value === preset
-                  ? "border-primary/40 bg-primary/10 text-primary"
+                  ? "border-[color-mix(in_srgb,var(--brand-accent)_40%,transparent)] surface-accent-soft"
                   : "border-border-subtle bg-card text-muted-foreground hover:bg-muted/40",
                 disabled && "pointer-events-none opacity-50",
               )}
@@ -301,7 +301,7 @@ export function BarcodeLabelSetupPanel({
   return (
     <div className={cn("flex min-h-0 flex-col", className)}>
       <div className="flex items-start gap-3">
-        <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+        <div className="flex size-9 shrink-0 items-center justify-center rounded-xl surface-accent-soft">
           <SlidersHorizontal className="size-4" strokeWidth={1.5} />
         </div>
         <div className="min-w-0 flex-1 space-y-1">
@@ -310,7 +310,7 @@ export function BarcodeLabelSetupPanel({
               Step 2
             </span>
             {layoutLocked ? (
-              <span className="inline-flex items-center gap-1 rounded-full border border-primary/25 bg-primary/10 px-2 py-0.5 text-ds-2xs font-medium text-primary">
+              <span className="inline-flex items-center gap-1 rounded-full border border-[color-mix(in_srgb,var(--brand-accent)_30%,transparent)] surface-accent-soft px-2 py-0.5 text-ds-2xs font-medium">
                 <Lock className="size-3" strokeWidth={1.5} aria-hidden />
                 Default locked
               </span>
@@ -355,8 +355,8 @@ export function BarcodeLabelSetupPanel({
       </div>
 
       {layoutLocked ? (
-        <div className="mt-4 flex items-start gap-2 rounded-lg border border-primary/25 bg-primary/5 px-3 py-2.5">
-          <Lock className="mt-0.5 size-3.5 shrink-0 text-primary" strokeWidth={1.5} aria-hidden />
+        <div className="mt-4 flex items-start gap-2 rounded-lg border border-[color-mix(in_srgb,var(--brand-accent)_25%,transparent)] bg-[var(--accent-subtle)] px-3 py-2.5">
+          <Lock className="mt-0.5 size-3.5 shrink-0 text-[var(--brand-accent)]" strokeWidth={1.5} aria-hidden />
           <p className="text-ds-xs leading-relaxed text-foreground">
             Using your saved default layout for every internal print.
           </p>
@@ -392,7 +392,7 @@ export function BarcodeLabelSetupPanel({
                   className={cn(
                     "rounded-xl border px-3 py-3 text-left transition-colors",
                     selected
-                      ? "border-primary/50 bg-primary/10 ring-1 ring-primary/30"
+                      ? "border-[color-mix(in_srgb,var(--brand-accent)_50%,transparent)] surface-accent-soft ring-1 ring-[color-mix(in_srgb,var(--brand-accent)_30%,transparent)]"
                       : "border-border-subtle bg-card hover:bg-muted/30",
                     controlsDisabled && "pointer-events-none opacity-50",
                   )}
@@ -511,7 +511,7 @@ export function BarcodeLabelSetupPanel({
                       className={cn(
                         "min-w-[2.25rem] rounded-md border px-2.5 py-1 text-ds-xs font-semibold transition-colors",
                         config.brandSize === chip.value
-                          ? "border-primary/40 bg-primary/10 text-primary"
+                          ? "border-[color-mix(in_srgb,var(--brand-accent)_40%,transparent)] surface-accent-soft"
                           : "border-border-subtle bg-card text-muted-foreground hover:bg-muted/40",
                         controlsDisabled && "pointer-events-none opacity-50",
                       )}

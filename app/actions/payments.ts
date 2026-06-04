@@ -5,9 +5,14 @@ import { InvoiceMatchStatus, PaymentStatus, Prisma, Role } from "@/lib/prisma-cl
 import { applyPOClosureInTransaction, PO_CLOSURE_TX_OPTS } from "@/lib/poAutoClose";
 import type { Paginated } from "@/lib/pagination";
 import {
-  deriveInvoicePaymentStatus,
-  sumPaymentAmounts,
-} from "@/lib/payment-totals";
+  computeAdvanceBalances,
+  deriveInvoiceSettledStatus,
+  fifoAdvanceAllocationChunks,
+  invoiceRemainingBeforeCash,
+  sumAllocationsForInvoice,
+  sumCashPaidForInvoice,
+  validateAdvanceAllocation,
+} from "@/lib/po-advance";
 import {
   getInvoicePaymentDetail as getInvoicePaymentDetailQuery,
   getPaymentFilterOptions as getPaymentFilterOptionsQuery,
@@ -15,7 +20,6 @@ import {
 } from "@/lib/queries/payments";
 import type {
   InvoicePaymentDetail,
-  PaymentEntry,
   PaymentFilters,
   PaymentListRow,
 } from "@/lib/queries/payments";
@@ -60,6 +64,7 @@ export async function recordPayment(
 
   const invoiceId = String(formData.get("invoiceId") ?? "").trim();
   const amountRaw = String(formData.get("amount") ?? "").trim();
+  const allocationRaw = String(formData.get("advanceAllocation") ?? "").trim();
   const method = String(formData.get("method") ?? "").trim();
   const transactionRef = String(formData.get("transactionRef") ?? "").trim();
   const paidAtRaw = String(formData.get("paidAt") ?? "").trim();
@@ -74,23 +79,35 @@ export async function recordPayment(
     return { ok: false, message: invoiceAccess.message };
   }
 
-  const amount = Number(amountRaw);
-  if (!Number.isFinite(amount) || amount <= 0) {
-    return { ok: false, message: "Enter a valid payment amount greater than zero." };
+  const cashAmount = amountRaw === "" ? 0 : Number(amountRaw);
+  const allocationAmount = allocationRaw === "" ? 0 : Number(allocationRaw);
+
+  if (!Number.isFinite(cashAmount) || cashAmount < 0) {
+    return { ok: false, message: "Enter a valid cash payment amount." };
+  }
+  if (!Number.isFinite(allocationAmount) || allocationAmount < 0) {
+    return { ok: false, message: "Enter a valid advance allocation amount." };
+  }
+  if (cashAmount <= 0 && allocationAmount <= 0) {
+    return {
+      ok: false,
+      message: "Apply advance credit and/or enter a cash payment amount.",
+    };
   }
 
-  if (!transactionRef) {
-    return { ok: false, message: "Transaction reference is required." };
+  if (cashAmount > 0 && !transactionRef) {
+    return { ok: false, message: "Transaction reference is required for cash payment." };
   }
 
-  let paidAt: Date;
-  if (paidAtRaw) {
+  let paidAt: Date | null = null;
+  if (cashAmount > 0) {
+    if (!paidAtRaw) {
+      return { ok: false, message: "Paid date is required when recording cash." };
+    }
     paidAt = new Date(paidAtRaw);
     if (Number.isNaN(paidAt.getTime())) {
       return { ok: false, message: "Invalid paid date." };
     }
-  } else {
-    return { ok: false, message: "Paid date is required." };
   }
 
   const invoice = await prisma.invoice.findUnique({
@@ -101,6 +118,7 @@ export async function recordPayment(
       matchStatus: true,
       paymentStatus: true,
       payments: { select: { amount: true } },
+      advanceAllocations: { select: { amount: true } },
     },
   });
 
@@ -109,7 +127,7 @@ export async function recordPayment(
   }
 
   if (invoice.paymentStatus === PaymentStatus.PAID) {
-    return { ok: false, message: "This invoice is already fully paid." };
+    return { ok: false, message: "This invoice is already fully settled." };
   }
 
   if (invoice.matchStatus === InvoiceMatchStatus.MISMATCH) {
@@ -120,18 +138,60 @@ export async function recordPayment(
   }
 
   const invoiceAmount = Number(invoice.amount);
-  const alreadyPaid = sumPaymentAmounts(invoice.payments);
-  const remaining = invoiceAmount - alreadyPaid;
+  const remainingBeforeCash = invoiceRemainingBeforeCash(invoice);
 
-  if (amount > remaining) {
+  const po = await prisma.purchaseOrder.findUnique({
+    where: { id: invoice.poId },
+    select: {
+      advancePayments: {
+        include: {
+          allocations: { select: { amount: true } },
+        },
+        orderBy: { paidAt: "asc" },
+      },
+    },
+  });
+
+  if (!po) {
+    return { ok: false, message: "Purchase order not found." };
+  }
+
+  const { advanceUnallocated } = computeAdvanceBalances(po.advancePayments);
+
+  const allocCheck = validateAdvanceAllocation(
+    allocationAmount,
+    advanceUnallocated,
+    remainingBeforeCash,
+  );
+  if (!allocCheck.ok) {
+    return { ok: false, message: allocCheck.message };
+  }
+
+  const totalSettlement = allocationAmount + cashAmount;
+  if (totalSettlement > remainingBeforeCash + 0.001) {
     return {
       ok: false,
-      message: `Payment exceeds remaining balance (${remaining.toFixed(2)}).`,
+      message: `Total settlement exceeds remaining invoice balance (${remainingBeforeCash.toFixed(2)}).`,
+    };
+  }
+
+  const fifoPayments = po.advancePayments.map((p) => ({
+    id: p.id,
+    paidAt: p.paidAt,
+    amount: Number(p.amount),
+    allocated: p.allocations.reduce((s, a) => s + Number(a.amount), 0),
+  }));
+  const allocationChunks = fifoAdvanceAllocationChunks(fifoPayments, allocationAmount);
+  const chunkSum = allocationChunks.reduce((s, c) => s + c.amount, 0);
+  if (Math.abs(chunkSum - allocationAmount) > 0.01) {
+    return {
+      ok: false,
+      message: "Not enough unallocated advance on this PO for that allocation.",
     };
   }
 
   let proofUrl: string | undefined;
-  if (proofFile instanceof File && proofFile.size > 0) {
+  if (cashAmount > 0 && proofFile instanceof File && proofFile.size > 0) {
     const bytes = new Uint8Array(await proofFile.arrayBuffer());
     const safeName = proofFile.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120);
     const storagePath = `${invoiceId}/${Date.now()}-${safeName}`;
@@ -147,22 +207,39 @@ export async function recordPayment(
     proofUrl = storagePath;
   }
 
-  const totalPaid = alreadyPaid + amount;
-  const nextStatus = deriveInvoicePaymentStatus(totalPaid, invoiceAmount);
+  const existingCash = sumCashPaidForInvoice(invoice);
+  const existingAlloc = sumAllocationsForInvoice(invoice);
+  const nextStatus = deriveInvoiceSettledStatus(
+    invoiceAmount,
+    existingCash + cashAmount,
+    existingAlloc + allocationAmount,
+  );
 
   await prisma.$transaction(async (tx) => {
-    await tx.payment.create({
-      data: {
-        invoiceId,
-        status: PaymentStatus.PAID,
-        amount: new Prisma.Decimal(amount),
-        method: method || null,
-        transactionRef,
-        paidAt,
-        paidById: user.id,
-        proofUrl: proofUrl ?? null,
-      },
-    });
+    for (const chunk of allocationChunks) {
+      await tx.pOAdvanceAllocation.create({
+        data: {
+          advancePaymentId: chunk.advancePaymentId,
+          invoiceId,
+          amount: new Prisma.Decimal(chunk.amount),
+        },
+      });
+    }
+
+    if (cashAmount > 0) {
+      await tx.payment.create({
+        data: {
+          invoiceId,
+          status: PaymentStatus.PAID,
+          amount: new Prisma.Decimal(cashAmount),
+          method: method || null,
+          transactionRef,
+          paidAt: paidAt!,
+          paidById: user.id,
+          proofUrl: proofUrl ?? null,
+        },
+      });
+    }
 
     await tx.invoice.update({
       where: { id: invoiceId },

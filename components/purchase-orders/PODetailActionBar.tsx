@@ -7,6 +7,7 @@ import * as React from "react";
 import { toast } from "sonner";
 
 import {
+  cancelPO,
   forceClosePO,
   markDeliveryComplete,
 } from "@/app/actions/purchase-orders";
@@ -38,6 +39,7 @@ export function PODetailActionBar({
   const router = useRouter();
   const [pending, startTransition] = React.useTransition();
   const [markDeliveryOpen, setMarkDeliveryOpen] = React.useState(false);
+  const [cancelPoOpen, setCancelPoOpen] = React.useState(false);
   const [forceCloseOpen, setForceCloseOpen] = React.useState(false);
 
   function handleMarkDeliveryComplete() {
@@ -64,10 +66,26 @@ export function PODetailActionBar({
     });
   }
 
+  function handleCancelPo(reason: string) {
+    startTransition(async () => {
+      const res = await cancelPO(poId, reason);
+      if (!res.ok) {
+        toast.error(res.message ?? "Failed to cancel purchase order.");
+        return;
+      }
+      toast.success("Purchase order cancelled.");
+      router.push("/purchase-orders");
+    });
+  }
+
   const runMutateAction = React.useCallback(
     (id: PONextActionId) => {
       if (id === "mark-delivery-complete") {
         setMarkDeliveryOpen(true);
+        return;
+      }
+      if (id === "cancel-po") {
+        setCancelPoOpen(true);
         return;
       }
       if (id === "force-close") {
@@ -91,7 +109,7 @@ export function PODetailActionBar({
   const secondary = actions.filter(
     (a, i) => i !== 0 && a.tone !== "destructive",
   );
-  const destructive = actions.find((a) => a.tone === "destructive");
+  const destructive = actions.filter((a) => a.tone === "destructive");
 
   return (
     <div className="flex w-full min-w-0 items-center justify-between gap-3">
@@ -136,18 +154,23 @@ export function PODetailActionBar({
           ),
         )}
       </div>
-      {destructive ? (
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
-          loading={pending}
-          disabled={pending}
-          onClick={() => runMutateAction(destructive.id)}
-        >
-          {destructive.label}
-        </Button>
+      {destructive.length > 0 ? (
+        <div className="flex shrink-0 items-center gap-1">
+          {destructive.map((action) => (
+            <Button
+              key={action.id}
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+              loading={pending}
+              disabled={pending}
+              onClick={() => runMutateAction(action.id)}
+            >
+              {action.label}
+            </Button>
+          ))}
+        </div>
       ) : null}
 
       <div className="sr-only">
@@ -159,6 +182,17 @@ export function PODetailActionBar({
         confirmLabel="Confirm"
         pending={pending}
         onConfirm={handleMarkDeliveryComplete}
+      />
+
+      <TextareaActionDialog
+        open={cancelPoOpen}
+        onOpenChange={setCancelPoOpen}
+        title="Cancel purchase order"
+        description="This removes the PO before any goods receipt. Lock-tag serial numbers return to the purchase request hold. Line items become available for a new PO."
+        label="Reason"
+        confirmLabel="Cancel PO"
+        pending={pending}
+        onConfirm={(reason) => handleCancelPo(reason)}
       />
 
       <TextareaActionDialog

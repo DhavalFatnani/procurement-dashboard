@@ -193,13 +193,71 @@ export function computeRangeUsedPct(
   return Number((used * BigInt(100)) / total);
 }
 
-/** How the reservation was created — not field usage of individual serials. */
-export type ReservationEventType = "Print" | "Receipt";
+/** How the reservation sits in the procurement lifecycle — not physical consumption. */
+export type ReservationEventType =
+  | "Print"
+  | "Hold"
+  | "Unconfirmed"
+  | "Receipt";
 
+export type SerialRangePhase =
+  | "free"
+  | "internal_print"
+  | "approval_hold"
+  | "po_cancellable"
+  | "po_committed";
+
+export function classifySerialReservation(input: {
+  reservationStatus: "PENDING" | "RESERVED";
+  poId: string | null;
+  prId: string | null;
+  poStatus?: string | null;
+  poHasGrn?: boolean;
+}): ReservationEventType {
+  if (input.poId) {
+    const cancellable =
+      input.poStatus === "OPEN" && input.poHasGrn !== true;
+    return cancellable ? "Unconfirmed" : "Receipt";
+  }
+  if (input.prId && input.reservationStatus === "PENDING") {
+    return "Hold";
+  }
+  return "Print";
+}
+
+export function reservationPhaseFromReservation(input: {
+  reservationStatus: "PENDING" | "RESERVED";
+  poId: string | null;
+  prId: string | null;
+  poStatus?: string | null;
+  poHasGrn?: boolean;
+}): Exclude<SerialRangePhase, "free"> {
+  const event = classifySerialReservation(input);
+  switch (event) {
+    case "Hold":
+      return "approval_hold";
+    case "Unconfirmed":
+      return "po_cancellable";
+    case "Receipt":
+      return "po_committed";
+    case "Print":
+    default:
+      return "internal_print";
+  }
+}
+
+/** @deprecated Prefer {@link classifySerialReservation} with reservation status. */
 export function reservationEventType(
   poId: string | null,
-  _prId: string | null,
+  prId: string | null,
+  reservationStatus: "PENDING" | "RESERVED" = "RESERVED",
+  poMeta?: { status: string | null; hasGrn: boolean },
 ): ReservationEventType {
-  /** PO-linked reservation (vendor purchase / lock tags received via GRN path). */
-  return poId ? "Receipt" : "Print";
+  return classifySerialReservation({
+    reservationStatus,
+    poId,
+    prId,
+    poStatus: poMeta?.status,
+    poHasGrn: poMeta?.hasGrn,
+  });
 }

@@ -16,6 +16,7 @@ import { DateRangeFilter } from "@/components/shared/DateRangeFilter";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { FilterBar } from "@/components/shared/FilterBar";
 import { FilterChipsRow } from "@/components/shared/FilterChipsRow";
+import { FilterSearch } from "@/components/shared/FilterSearch";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { POProgressBar } from "@/components/shared/POProgressBar";
 import { Pagination } from "@/components/shared/Pagination";
@@ -25,6 +26,7 @@ import { FilterSelect } from "@/components/shared/FilterSelect";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { compactChipSpecs, type FilterChipSpec } from "@/lib/filter-chips";
 import type { WarehouseOption } from "@/lib/format-warehouse";
+import { formatProcurementRef } from "@/lib/display-ref";
 import { formatDateMedium } from "@/lib/format-datetime";
 import { listBreadcrumbs } from "@/lib/lineage";
 import type { Paginated } from "@/lib/pagination";
@@ -64,6 +66,7 @@ export function PurchaseOrdersView({
     status: string;
     vendorId: string;
     warehouseId: string;
+    prId: string;
     dateFrom: string;
     dateTo: string;
   };
@@ -84,7 +87,7 @@ export function PurchaseOrdersView({
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
     const params = new URLSearchParams();
-    for (const key of ["status", "vendorId", "warehouseId", "dateFrom", "dateTo"]) {
+    for (const key of ["status", "vendorId", "warehouseId", "prId", "dateFrom", "dateTo"]) {
       const v = String(fd.get(key) ?? "").trim();
       if (v) params.set(key, v);
     }
@@ -203,6 +206,12 @@ export function PurchaseOrdersView({
       label: `Warehouse: ${warehouse.label}`,
       onClear: () => clearFilter("warehouseId"),
     },
+    filters.prId && {
+      key: "prId",
+      tone: "accent",
+      label: `PR: ${formatProcurementRef(filters.prId)}`,
+      onClear: () => clearFilter("prId"),
+    },
     filters.dateFrom && {
       key: "dateFrom",
       tone: "neutral",
@@ -276,6 +285,13 @@ export function PurchaseOrdersView({
             ) : undefined
           }
         >
+          <FilterSearch
+            name="prId"
+            defaultValue={filters.prId}
+            placeholder="PR id"
+            ariaLabel="Purchase request id"
+            width="w-[160px]"
+          />
           <FilterSelect
             name="status"
             defaultValue={filters.status}
@@ -358,6 +374,7 @@ export function PurchaseOrdersView({
               status: filters.status || undefined,
               vendorId: filters.vendorId || undefined,
               warehouseId: filters.warehouseId || undefined,
+              prId: filters.prId || undefined,
               dateFrom: filters.dateFrom || undefined,
               dateTo: filters.dateTo || undefined,
             }}

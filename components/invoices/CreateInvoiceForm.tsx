@@ -215,6 +215,12 @@ export function CreateInvoiceForm() {
                 {selectedPo.unitPrice
                   ? ` · Unit price ${formatInr(Number(selectedPo.unitPrice))}`
                   : " · Unit price not set"}
+                {Number(selectedPo.advanceUnallocatedOnPo) > 0 ? (
+                  <span className="block text-status-info">
+                    {formatInr(selectedPo.advanceUnallocatedOnPo)} advance credit available
+                    on this PO — Finance can apply it when paying this invoice.
+                  </span>
+                ) : null}
               </p>
             ) : null}
           </CardContent>

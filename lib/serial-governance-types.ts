@@ -1,6 +1,9 @@
 import type { SerialSeries } from "@/lib/prisma-enums";
 
-import type { ReservationEventType } from "@/lib/serial-series";
+import type {
+  ReservationEventType,
+  SerialRangePhase,
+} from "@/lib/serial-series";
 
 /** Unified ledger row for serial activity (print + receipt). */
 export type SerialActivityRow = {
@@ -10,12 +13,58 @@ export type SerialActivityRow = {
   rangeEnd: string;
   quantity: number;
   type: ReservationEventType;
+  reservationStatus: "PENDING" | "RESERVED";
   warehouseId: string;
   warehouseName: string;
   linkedPrId: string | null;
   linkedPoId: string | null;
+  poStatus: string | null;
   createdByName: string;
   createdAt: string;
+};
+
+export type SerialRangeMapStats = {
+  totalReserved: number;
+  onApprovalHold: number;
+  poCancellable: number;
+  poCommitted: number;
+  internalPrint: number;
+  freeInView: number;
+  usedPct: number;
+};
+
+export type SerialRangeMapSegment = {
+  id: string;
+  phase: SerialRangePhase;
+  rangeStart: string;
+  rangeEnd: string;
+  quantity: number;
+  leftPct: number;
+  widthPct: number;
+  warehouseId: string;
+  warehouseName: string;
+  linkedPrId: string | null;
+  linkedPoId: string | null;
+  poStatus: string | null;
+  reservationStatus: "PENDING" | "RESERVED" | null;
+  createdByName: string;
+  createdAt: string;
+  contextTitle: string;
+  contextDescription: string;
+  actionHint: string | null;
+  href: string | null;
+};
+
+export type SerialRangeMapData = {
+  series: SerialSeries;
+  displayName: string;
+  seriesStart: string;
+  seriesCeiling: string;
+  viewStart: string;
+  viewEnd: string;
+  totalSpan: number;
+  segments: SerialRangeMapSegment[];
+  stats: SerialRangeMapStats;
 };
 
 /** Per-warehouse snapshot for the By warehouse tab. */

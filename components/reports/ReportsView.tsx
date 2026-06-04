@@ -1,9 +1,11 @@
 "use client";
 
 import {
+  AlertTriangle,
   Building2,
   CalendarClock,
   CheckSquare,
+  HandCoins,
   TrendingUp,
 } from "lucide-react";
 import {
@@ -42,7 +44,7 @@ const tooltipStyle = {
 export function ReportsView({ data }: { data: ReportsData }) {
   return (
     <div className="space-y-6">
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <MetricTile
           label="PRs this month"
           value={data.summary.prsThisMonth}
@@ -70,6 +72,26 @@ export function ReportsView({ data }: { data: ReportsData }) {
           value={formatInr(String(data.summary.openInvoiceValue))}
           icon={Building2}
           iconTone="warning"
+        />
+        <MetricTile
+          label="Pending advances"
+          value={data.summary.pendingAdvanceRequests}
+          icon={HandCoins}
+          iconTone={data.summary.pendingAdvanceRequests > 0 ? "warning" : "neutral"}
+        />
+        <MetricTile
+          label="Pending advance value"
+          value={formatInr(String(data.summary.pendingAdvanceValue))}
+          icon={HandCoins}
+          iconTone="info"
+        />
+        <MetricTile
+          label="Advance over commitment"
+          value={data.summary.advanceOverCommittedPoCount}
+          icon={AlertTriangle}
+          iconTone={
+            data.summary.advanceOverCommittedPoCount > 0 ? "warning" : "success"
+          }
         />
       </div>
 

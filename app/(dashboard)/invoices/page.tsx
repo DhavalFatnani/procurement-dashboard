@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 
 import { InvoicesView } from "@/components/invoices/InvoicesView";
 import { PageTableLoading } from "@/components/shared/PageTableLoading";
+import { FINANCE_ROUTES } from "@/lib/finance-routes";
 import { parseInvoicePageParams } from "@/lib/list-search-params";
 import { getInvoiceFilterOptions, getInvoices } from "@/lib/queries/invoices";
 import { ACCESS } from "@/lib/route-access";
@@ -19,7 +20,7 @@ export default async function InvoicesPage({
 }) {
   const user = assertRole(await getRequestSession(), [...ACCESS.invoices]);
   if (user.role === Role.FINANCE) {
-    redirect("/payments");
+    redirect(FINANCE_ROUTES.invoiceSettlement);
   }
   const sp = await searchParams;
   const parsed = parseInvoicePageParams(sp);

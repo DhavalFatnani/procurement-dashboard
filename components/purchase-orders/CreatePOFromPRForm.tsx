@@ -12,12 +12,18 @@ import {
   linkCatalogItemVendor,
   validatePORateCsvForPR,
 } from "@/app/actions/purchase-requests";
+import {
+  getLockTagsSerialPreviewForPRItems,
+  type LockTagsSerialPreview,
+} from "@/app/actions/serial";
 import { VendorItemComparisonDrawer } from "@/components/purchase-orders/VendorItemComparisonDrawer";
+import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { ProcurementRefLink } from "@/components/shared/ProcurementRef";
 import { Switch } from "@/components/shared/Switch";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Combobox } from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -25,7 +31,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { resolveAdvanceRequestAmount } from "@/lib/po-advance";
+import { lockTagsQtyFromLineItems } from "@/lib/purchase-lines";
 import {
+  computePoOrderBilling,
   defaultGstApplicableForVendor,
   defaultGstRatePercentForVendor,
   STANDARD_GST_RATES,
@@ -33,6 +42,7 @@ import {
 } from "@/lib/po-gst";
 import { formatPrPageTitle, formatProcurementRef } from "@/lib/display-ref";
 import { formatDateMedium, formatInr } from "@/lib/format-datetime";
+import { formatOrderTotalsInline, formatUnitCount } from "@/lib/order-totals-display";
 import type {
   ApprovedPRAwaitingPO,
   ApprovedPRLineItemRow,
@@ -47,6 +57,14 @@ type GroupGstDraft = {
   gstRatePercent: string;
 };
 
+type GroupAdvanceDraft = {
+  enabled: boolean;
+  mode: "amount" | "percent";
+  amount: string;
+  percent: string;
+  reason: string;
+};
+
 type ItemDraft = {
   vendorId: string;
   unitPrice: string;
@@ -58,6 +76,99 @@ function unassignedItems(items: ApprovedPRLineItemRow[]) {
 
 function assignedItems(items: ApprovedPRLineItemRow[]) {
   return items.filter((item) => item.alreadyOnPo);
+}
+
+type RateCompareTone = "lower" | "higher" | "same" | "unknown";
+
+function compareUnitRates(
+  currentRate: number,
+  previousRate: number | null,
+): RateCompareTone {
+  if (
+    previousRate == null ||
+    !Number.isFinite(previousRate) ||
+    previousRate <= 0 ||
+    !Number.isFinite(currentRate) ||
+    currentRate <= 0
+  ) {
+    return "unknown";
+  }
+  if (currentRate < previousRate) {
+    return "lower";
+  }
+  if (currentRate > previousRate) {
+    return "higher";
+  }
+  return "same";
+}
+
+function rateCompareClass(tone: RateCompareTone): string {
+  switch (tone) {
+    case "lower":
+      return "text-[var(--status-success)]";
+    case "higher":
+      return "text-[var(--status-error)]";
+    case "same":
+      return "text-foreground";
+    default:
+      return "text-muted-foreground";
+  }
+}
+
+function LockTagsGroupSerialPreview({
+  prId,
+  items,
+}: {
+  prId: string;
+  items: ApprovedPRLineItemRow[];
+}) {
+  const lockTagsQty = lockTagsQtyFromLineItems(items);
+  const [preview, setPreview] = React.useState<LockTagsSerialPreview | null>(null);
+  const itemKey = items.map((item) => item.prLineItemId).join(",");
+
+  React.useEffect(() => {
+    if (lockTagsQty <= 0) {
+      setPreview(null);
+      return;
+    }
+    let cancelled = false;
+    void getLockTagsSerialPreviewForPRItems(
+      prId,
+      items.map((item) => item.prLineItemId),
+    ).then((result) => {
+      if (!cancelled) {
+        setPreview(result);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [prId, itemKey, lockTagsQty, items]);
+
+  if (lockTagsQty <= 0 || !preview) {
+    return null;
+  }
+
+  return (
+    <div className="rounded-lg border border-dashed border-border-subtle bg-muted/20 p-3 text-ds-sm">
+      <p className="font-medium">Lock tag serial reservation</p>
+      <p className="mt-1 text-ds-xs text-muted-foreground">
+        {preview.isHeld
+          ? `Committed from PR hold when this PO is created (${preview.quantity.toLocaleString("en-IN")} serials).`
+          : `This PO will reserve ${preview.quantity.toLocaleString("en-IN")} serial numbers when created.`}
+      </p>
+      <p className="mt-2 font-mono text-ds-sm">
+        {preview.rangeStart} → {preview.rangeEnd}
+      </p>
+    </div>
+  );
+}
+
+function lineTotal(qty: number, unitPrice: number | null): number | null {
+  if (unitPrice == null || !Number.isFinite(unitPrice) || unitPrice <= 0) {
+    return null;
+  }
+  return qty * unitPrice;
 }
 
 export function CreatePOFromPRForm({
@@ -79,8 +190,15 @@ export function CreatePOFromPRForm({
   );
   const [groupDelivery, setGroupDelivery] = React.useState<Record<string, string>>({});
   const [groupGst, setGroupGst] = React.useState<Record<string, GroupGstDraft>>({});
+  const [groupAdvance, setGroupAdvance] = React.useState<Record<string, GroupAdvanceDraft>>({});
   const [csvErrors, setCsvErrors] = React.useState<string | null>(null);
   const [compareItem, setCompareItem] = React.useState<ApprovedPRLineItemRow | null>(null);
+  const [lockTagsConfirm, setLockTagsConfirm] = React.useState<{
+    vendorId: string;
+    vendorName: string;
+    preview: LockTagsSerialPreview;
+    payload: Parameters<typeof createPOFromPRGroup>[1];
+  } | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   const vendorGroups = React.useMemo(() => {
@@ -138,7 +256,39 @@ export function CreatePOFromPRForm({
     }
   }
 
-  function submitGroup(vendorId: string, items: ApprovedPRLineItemRow[]) {
+  function executeCreatePO(payload: Parameters<typeof createPOFromPRGroup>[1]) {
+    void run(
+      () => createPOFromPRGroup(pr.id, payload),
+      {
+        refresh: false,
+        onSuccess: (result) => {
+          const poId =
+            result && typeof result === "object" && "poId" in result
+              ? (result as { poId?: string; fullyConverted?: boolean }).poId
+              : undefined;
+          const fullyConverted =
+            result &&
+            typeof result === "object" &&
+            "fullyConverted" in result &&
+            (result as { fullyConverted?: boolean }).fullyConverted;
+          if (!poId) {
+            toast.error("Could not create purchase order.");
+            return;
+          }
+          toast.success(`Purchase order ${formatProcurementRef(poId)} created.`);
+          setLockTagsConfirm(null);
+          if (fullyConverted) {
+            router.push(`/purchase-orders/${poId}`);
+          } else {
+            router.refresh();
+          }
+        },
+        onError: (m) => toast.error(m),
+      },
+    );
+  }
+
+  async function submitGroup(vendorId: string, items: ApprovedPRLineItemRow[]) {
     const expectedDelivery = groupDelivery[vendorId] ?? "";
     const itemPrices = items.map((item) => ({
       prLineItemId: item.prLineItemId,
@@ -170,41 +320,74 @@ export function CreatePOFromPRForm({
       return;
     }
 
-    void run(
-      () =>
-        createPOFromPRGroup(pr.id, {
-          vendorId,
-          expectedDelivery,
-          itemPrices,
-          gstApplicable: gstDraft.gstApplicable,
-          gstRatePercent: gstValidated.rate,
-        }),
-      {
-        refresh: false,
-        onSuccess: (result) => {
-          const poId =
-            result && typeof result === "object" && "poId" in result
-              ? (result as { poId?: string; fullyConverted?: boolean }).poId
-              : undefined;
-          const fullyConverted =
-            result &&
-            typeof result === "object" &&
-            "fullyConverted" in result &&
-            (result as { fullyConverted?: boolean }).fullyConverted;
-          if (!poId) {
-            toast.error("Could not create purchase order.");
-            return;
-          }
-          toast.success(`Purchase order ${formatProcurementRef(poId)} created.`);
-          if (fullyConverted) {
-            router.push(`/purchase-orders/${poId}`);
-          } else {
-            router.refresh();
-          }
-        },
-        onError: (m) => toast.error(m),
-      },
-    );
+    const billingLines = itemPrices.map((row) => {
+      const item = items.find((i) => i.prLineItemId === row.prLineItemId)!;
+      return { orderedQty: item.quantity, unitPrice: row.unitPrice };
+    });
+    const committedTotal = computePoOrderBilling(
+      billingLines,
+      gstDraft.gstApplicable,
+      gstValidated.rate != null ? String(gstValidated.rate) : null,
+    ).total;
+
+    const advanceDraft = groupAdvance[vendorId];
+    let advanceRequest:
+      | { amount?: number; percent?: number; reason: string }
+      | null
+      | undefined = undefined;
+    if (advanceDraft?.enabled) {
+      const reason = advanceDraft.reason.trim();
+      if (!reason) {
+        toast.error("Enter a reason for the advance payment request.");
+        return;
+      }
+      const resolved = resolveAdvanceRequestAmount(committedTotal, {
+        amount:
+          advanceDraft.mode === "amount" && advanceDraft.amount
+            ? Number(advanceDraft.amount)
+            : undefined,
+        percent:
+          advanceDraft.mode === "percent" && advanceDraft.percent
+            ? Number(advanceDraft.percent)
+            : undefined,
+      });
+      if (!resolved.ok) {
+        toast.error(resolved.message);
+        return;
+      }
+      advanceRequest = {
+        amount: advanceDraft.mode === "amount" ? resolved.amount : undefined,
+        percent: advanceDraft.mode === "percent" ? resolved.percent ?? undefined : undefined,
+        reason,
+      };
+    }
+
+    const payload = {
+      vendorId,
+      expectedDelivery,
+      itemPrices,
+      gstApplicable: gstDraft.gstApplicable,
+      gstRatePercent: gstValidated.rate,
+      advanceRequest: advanceRequest ?? null,
+    };
+
+    const lockTagsQty = lockTagsQtyFromLineItems(items);
+    if (lockTagsQty > 0) {
+      const preview = await getLockTagsSerialPreviewForPRItems(
+        pr.id,
+        items.map((item) => item.prLineItemId),
+      );
+      if (!preview) {
+        toast.error("Could not preview lock tag serial range.");
+        return;
+      }
+      const vendorName =
+        activeVendors.find((v) => v.id === vendorId)?.businessName ?? vendorId;
+      setLockTagsConfirm({ vendorId, vendorName, preview, payload });
+      return;
+    }
+
+    executeCreatePO(payload);
   }
 
   async function downloadRateCsv() {
@@ -281,7 +464,13 @@ export function CreatePOFromPRForm({
           {pr.lineSummary} · {pr.warehouseName}
         </p>
         <p className="mt-2 text-ds-sm font-medium tabular-nums">
-          {pr.poProgress.assigned} of {pr.poProgress.total} items on purchase orders
+          {pr.poProgress.assigned} of {pr.poProgress.total} catalog items on purchase orders
+          {pr.quantity !== pr.poProgress.total ? (
+            <span className="font-normal text-muted-foreground">
+              {" "}
+              · {formatUnitCount(pr.quantity)} on request
+            </span>
+          ) : null}
         </p>
         {pr.vendorRequestLabel ? (
           <p className="mt-1 text-ds-xs text-status-warning">
@@ -303,7 +492,8 @@ export function CreatePOFromPRForm({
                   <ProcurementRefLink id={po.id} className="font-medium" />
                   <span className="text-muted-foreground"> · {po.vendorName}</span>
                   <span className="block text-ds-xs text-muted-foreground">
-                    {po.itemCount} item(s) · {formatDateMedium(po.createdAt)}
+                    {formatOrderTotalsInline(po.itemCount, po.orderedQty)} ·{" "}
+                    {formatDateMedium(po.createdAt)}
                   </span>
                 </div>
                 <Link href={`/purchase-orders/${po.id}`} className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
@@ -374,7 +564,9 @@ export function CreatePOFromPRForm({
                   <col className="w-[5rem]" />
                   <col className="w-[12rem]" />
                   <col className="w-[6.5rem]" />
-                  <col className="w-[9.5rem]" />
+                  <col className="w-[6.5rem]" />
+                  <col className="w-[7.5rem]" />
+                  <col className="w-[7.5rem]" />
                 </colgroup>
                 <thead>
                   <tr className="border-b border-border-subtle bg-muted/30 text-left text-ds-xs text-muted-foreground">
@@ -384,10 +576,25 @@ export function CreatePOFromPRForm({
                     <th className="px-3 py-2 font-medium">Vendor</th>
                     <th className="px-3 py-2 font-medium text-right">Last rate</th>
                     <th className="px-3 py-2 font-medium text-right">Rate (₹)</th>
+                    <th className="px-3 py-2 font-medium text-right">Last value</th>
+                    <th className="px-3 py-2 font-medium text-right">Current value</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {pendingItems.map((item) => (
+                  {pendingItems.map((item) => {
+                    const currentRate = Number(drafts[item.prLineItemId]?.unitPrice ?? 0);
+                    const previousRate =
+                      item.previousUnitPrice != null
+                        ? Number(item.previousUnitPrice)
+                        : null;
+                    const rateTone = compareUnitRates(currentRate, previousRate);
+                    const lastValue = lineTotal(item.quantity, previousRate);
+                    const currentValue = lineTotal(
+                      item.quantity,
+                      Number.isFinite(currentRate) && currentRate > 0 ? currentRate : null,
+                    );
+
+                    return (
                     <tr key={item.prLineItemId} className="border-b border-border-subtle last:border-0">
                       <td className="px-3 py-2 tabular-nums">
                         {item.lineNumber}.{item.lineItemNumber}
@@ -427,7 +634,10 @@ export function CreatePOFromPRForm({
                             onChange={(e) =>
                               setDraft(item.prLineItemId, { unitPrice: e.target.value })
                             }
-                            className="h-8 w-[88px] text-right tabular-nums"
+                            className={cn(
+                              "h-8 w-[88px] text-right tabular-nums font-medium",
+                              rateTone !== "unknown" && rateCompareClass(rateTone),
+                            )}
                             aria-label={`Unit price for ${item.itemName}`}
                           />
                           <Button
@@ -441,8 +651,22 @@ export function CreatePOFromPRForm({
                           </Button>
                         </div>
                       </td>
+                      <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
+                        {lastValue != null ? formatInr(lastValue) : "—"}
+                      </td>
+                      <td
+                        className={cn(
+                          "px-3 py-2 text-right tabular-nums font-medium",
+                          currentValue != null
+                            ? rateCompareClass(rateTone)
+                            : "text-muted-foreground",
+                        )}
+                      >
+                        {currentValue != null ? formatInr(currentValue) : "—"}
+                      </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -456,6 +680,43 @@ export function CreatePOFromPRForm({
                 ? String(defaultGstRatePercentForVendor(vendor?.gst))
                 : "",
             };
+            const advanceDraft = groupAdvance[group.vendorId] ?? {
+              enabled: false,
+              mode: "amount" as const,
+              amount: "",
+              percent: "",
+              reason: "",
+            };
+            const gstValidatedPreview = validatePoGstInput(
+              gstDraft.gstApplicable,
+              gstDraft.gstApplicable ? Number(gstDraft.gstRatePercent) : null,
+            );
+            const committedPreview =
+              gstValidatedPreview.ok
+                ? computePoOrderBilling(
+                    group.items.map((item) => ({
+                      orderedQty: item.quantity,
+                      unitPrice: Number(drafts[item.prLineItemId]?.unitPrice ?? 0),
+                    })),
+                    gstDraft.gstApplicable,
+                    gstValidatedPreview.rate != null
+                      ? String(gstValidatedPreview.rate)
+                      : null,
+                  ).total
+                : null;
+            const advancePreview =
+              advanceDraft.enabled && committedPreview != null
+                ? resolveAdvanceRequestAmount(committedPreview, {
+                    amount:
+                      advanceDraft.mode === "amount" && advanceDraft.amount
+                        ? Number(advanceDraft.amount)
+                        : undefined,
+                    percent:
+                      advanceDraft.mode === "percent" && advanceDraft.percent
+                        ? Number(advanceDraft.percent)
+                        : undefined,
+                  })
+                : null;
             return (
             <section
               key={group.vendorId}
@@ -548,10 +809,132 @@ export function CreatePOFromPRForm({
                 ) : null}
               </div>
 
+              <div className="rounded-lg border border-border-subtle bg-muted/20 p-3 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-ds-sm font-medium">Request advance payment</p>
+                    <p className="text-ds-xs text-muted-foreground">
+                      Optional. Finance pays after the PO is created.
+                      {committedPreview != null
+                        ? ` Committed PO value (incl. GST when enabled): ${formatInr(committedPreview)}.`
+                        : ""}
+                    </p>
+                  </div>
+                  <Switch
+                    checked={advanceDraft.enabled}
+                    onCheckedChange={(checked) =>
+                      setGroupAdvance((prev) => ({
+                        ...prev,
+                        [group.vendorId]: {
+                          ...advanceDraft,
+                          enabled: checked,
+                        },
+                      }))
+                    }
+                    aria-label="Request advance payment for this purchase order"
+                  />
+                </div>
+                {advanceDraft.enabled ? (
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={advanceDraft.mode === "amount" ? "default" : "outline"}
+                        onClick={() =>
+                          setGroupAdvance((prev) => ({
+                            ...prev,
+                            [group.vendorId]: { ...advanceDraft, mode: "amount", percent: "" },
+                          }))
+                        }
+                      >
+                        Fixed amount
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={advanceDraft.mode === "percent" ? "default" : "outline"}
+                        onClick={() =>
+                          setGroupAdvance((prev) => ({
+                            ...prev,
+                            [group.vendorId]: { ...advanceDraft, mode: "percent", amount: "" },
+                          }))
+                        }
+                      >
+                        % of PO
+                      </Button>
+                    </div>
+                    {advanceDraft.mode === "amount" ? (
+                      <div className="space-y-1.5 max-w-[200px]">
+                        <label className="text-ds-xs font-medium">Advance amount (₹)</label>
+                        <Input
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          value={advanceDraft.amount}
+                          onChange={(e) =>
+                            setGroupAdvance((prev) => ({
+                              ...prev,
+                              [group.vendorId]: { ...advanceDraft, amount: e.target.value },
+                            }))
+                          }
+                          className="h-8"
+                        />
+                      </div>
+                    ) : (
+                      <div className="space-y-1.5 max-w-[200px]">
+                        <label className="text-ds-xs font-medium">Advance (%)</label>
+                        <Input
+                          type="number"
+                          min={0}
+                          max={100}
+                          step="0.01"
+                          value={advanceDraft.percent}
+                          onChange={(e) =>
+                            setGroupAdvance((prev) => ({
+                              ...prev,
+                              [group.vendorId]: { ...advanceDraft, percent: e.target.value },
+                            }))
+                          }
+                          className="h-8"
+                        />
+                      </div>
+                    )}
+                    <div className="space-y-1.5">
+                      <label className="text-ds-xs font-medium">Reason (required)</label>
+                      <Textarea
+                        value={advanceDraft.reason}
+                        onChange={(e) =>
+                          setGroupAdvance((prev) => ({
+                            ...prev,
+                            [group.vendorId]: { ...advanceDraft, reason: e.target.value },
+                          }))
+                        }
+                        rows={2}
+                        placeholder="Why is advance needed before delivery or invoicing?"
+                      />
+                    </div>
+                    {advancePreview && !advancePreview.ok ? (
+                      <p className="text-ds-xs text-status-error">{advancePreview.message}</p>
+                    ) : null}
+                    {advancePreview && advancePreview.ok ? (
+                      <p className="text-ds-xs text-muted-foreground">
+                        Request preview: {formatInr(advancePreview.amount)}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+
+              <LockTagsGroupSerialPreview
+                prId={pr.id}
+                items={group.items}
+              />
+
               <Button
                 type="button"
                 disabled={isPending}
-                onClick={() => submitGroup(group.vendorId, group.items)}
+                onClick={() => void submitGroup(group.vendorId, group.items)}
               >
                 Create PO for {group.vendorName}
               </Button>
@@ -567,6 +950,42 @@ export function CreatePOFromPRForm({
           </Link>
         </p>
       )}
+
+      <ConfirmDialog
+        open={lockTagsConfirm != null}
+        onOpenChange={(open) => {
+          if (!open && !isPending) {
+            setLockTagsConfirm(null);
+          }
+        }}
+        title="Reserve lock tag serial range?"
+        closeOnConfirm={false}
+        pending={isPending}
+        confirmLabel="Reserve range and create PO"
+        body={
+          lockTagsConfirm ? (
+            <div className="space-y-2">
+              <p>
+                Creating a PO for {lockTagsConfirm.vendorName} will atomically reserve{" "}
+                {lockTagsConfirm.preview.quantity.toLocaleString("en-IN")} lock tag serial
+                numbers:
+              </p>
+              <p className="font-mono font-medium text-foreground">
+                {lockTagsConfirm.preview.rangeStart} → {lockTagsConfirm.preview.rangeEnd}
+              </p>
+              <p>
+                Share this range with the vendor for printing. If reservation fails, the PO
+                will not be created.
+              </p>
+            </div>
+          ) : null
+        }
+        onConfirm={() => {
+          if (lockTagsConfirm) {
+            executeCreatePO(lockTagsConfirm.payload);
+          }
+        }}
+      />
 
       <VendorItemComparisonDrawer
         open={compareItem != null}

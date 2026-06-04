@@ -14,6 +14,7 @@ import { ProcurementRefLink } from "@/components/shared/ProcurementRef";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { formatPrPageTitle } from "@/lib/display-ref";
 import { formatDateMedium } from "@/lib/format-datetime";
+import { formatItemCount, formatUnitCount } from "@/lib/order-totals-display";
 import { listBreadcrumbs } from "@/lib/lineage";
 import type { ApprovedPRAwaitingPO } from "@/lib/queries/purchase-orders";
 import { cn } from "@/lib/utils";
@@ -43,9 +44,15 @@ export function PendingConfigurePOListView({
         }),
     },
     {
+      id: "items",
+      header: "Items",
+      cell: (pr) => formatItemCount(pr.itemCount),
+      variant: "numeric",
+    },
+    {
       id: "quantity",
-      header: "Qty",
-      cell: (pr) => pr.quantity,
+      header: "Units",
+      cell: (pr) => formatUnitCount(pr.quantity),
       variant: "numeric",
     },
     {
@@ -75,13 +82,13 @@ export function PendingConfigurePOListView({
         if (assigned < total) {
           return (
             <span className="text-status-warning">
-              Partial ({assigned}/{total})
+              Partial ({assigned}/{total} items)
             </span>
           );
         }
         return (
           <span className="text-muted-foreground">
-            {assigned}/{total}
+            {assigned}/{total} items
           </span>
         );
       },

@@ -1,6 +1,7 @@
 import {
   InvoiceMatchStatus,
   PaymentStatus,
+  POAdvanceRequestStatus,
   POStatus,
   PRStatus,
   VendorStatus,
@@ -50,6 +51,13 @@ const vendorTone: Record<VendorStatus, ChipTone> = {
   [VendorStatus.INACTIVE]: "neutral",
 };
 
+const advanceRequestTone: Record<POAdvanceRequestStatus, ChipTone> = {
+  [POAdvanceRequestStatus.PENDING]: "warning",
+  [POAdvanceRequestStatus.FULFILLED]: "success",
+  [POAdvanceRequestStatus.CANCELLED]: "neutral",
+  [POAdvanceRequestStatus.REJECTED]: "error",
+};
+
 export type StatusBadgeProps =
   | {
       kind: "PRStatus";
@@ -60,7 +68,8 @@ export type StatusBadgeProps =
   | { kind: "POStatus"; status: POStatus }
   | { kind: "PaymentStatus"; status: PaymentStatus }
   | { kind: "InvoiceMatchStatus"; status: InvoiceMatchStatus }
-  | { kind: "VendorStatus"; status: VendorStatus };
+  | { kind: "VendorStatus"; status: VendorStatus }
+  | { kind: "POAdvanceRequestStatus"; status: POAdvanceRequestStatus };
 
 function formatStatus(status: string) {
   return status.replaceAll("_", " ");
@@ -105,6 +114,12 @@ export const StatusBadge = memo(function StatusBadge(props: StatusBadgeProps) {
     case "VendorStatus":
       return (
         <Chip tone={vendorTone[props.status]} showDot>
+          {formatStatus(props.status)}
+        </Chip>
+      );
+    case "POAdvanceRequestStatus":
+      return (
+        <Chip tone={advanceRequestTone[props.status]} showDot>
           {formatStatus(props.status)}
         </Chip>
       );

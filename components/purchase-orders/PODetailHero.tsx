@@ -6,6 +6,7 @@ import { ProcurementRefText } from "@/components/shared/ProcurementRef";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { formatPoPageTitle } from "@/lib/display-ref";
 import { formatDateMedium, formatInr } from "@/lib/format-datetime";
+import { formatOrderTotalsInline } from "@/lib/order-totals-display";
 import { computePoOrderBilling } from "@/lib/po-gst";
 import type { PODetail } from "@/lib/queries/purchase-orders";
 
@@ -48,7 +49,7 @@ export function PODetailHero({ po }: { po: PODetail }) {
           })}
         </h1>
         <p className="text-ds-sm text-muted-foreground">
-          {po.lineSummary} · {po.orderedQty} ordered ·{" "}
+          {po.lineSummary} · {formatOrderTotalsInline(po.itemCount, po.orderedQty)} ·{" "}
           {po.gstApplicable && po.gstRatePercent
             ? `Total ${formatInr(String(billing.total))} (incl. ${po.gstRatePercent}% GST)`
             : `Value ${formatInr(String(billing.total))}`}

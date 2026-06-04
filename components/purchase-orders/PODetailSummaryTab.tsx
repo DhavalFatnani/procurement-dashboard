@@ -7,6 +7,7 @@ import { toast } from "sonner";
 
 import { updatePOExpectedDelivery } from "@/app/actions/purchase-orders";
 import { ProcurementRefLink } from "@/components/shared/ProcurementRef";
+import { OrderTotalsLabel } from "@/components/shared/OrderTotalsLabel";
 import {
   SurfaceCard,
   SurfaceCardDescription,
@@ -49,9 +50,13 @@ export function PODetailSummaryTab({
           <MetaCell label="PR">
             <ProcurementRefLink id={po.prId} className="text-primary" />
           </MetaCell>
-          <MetaCell label="Items">{po.lineSummary}</MetaCell>
-          <MetaCell label="Ordered qty">
-            <span className="font-tabular">{po.orderedQty}</span>
+          <MetaCell label="Catalog items">
+            <OrderTotalsLabel
+              itemCount={po.itemCount}
+              totalQty={po.orderedQty}
+              variant="stacked"
+            />
+            <span className="mt-1 block text-ds-xs text-muted-foreground">{po.lineSummary}</span>
           </MetaCell>
           <MetaCell label="Tax basis">
             {po.gstApplicable && po.gstRatePercent ? (
@@ -106,8 +111,8 @@ export function PODetailSummaryTab({
                 <tr className="border-b border-border-subtle text-left text-ds-xs text-muted-foreground">
                   <th className="pb-2 pr-3 font-medium">#</th>
                   <th className="pb-2 pr-3 font-medium">Item</th>
-                  <th className="pb-2 pr-3 font-medium text-right">Ordered</th>
-                  <th className="pb-2 pr-3 font-medium text-right">Received</th>
+                  <th className="pb-2 pr-3 font-medium text-right">Units</th>
+                  <th className="pb-2 pr-3 font-medium text-right">Accepted</th>
                   <th className="pb-2 pr-3 font-medium text-right">
                     Unit price
                   </th>
@@ -119,10 +124,10 @@ export function PODetailSummaryTab({
                   ? po.lineItems.map((line) => {
                       const lineValue =
                         line.orderedQty * Number(line.unitPrice);
+                      const effective = line.effectiveOrderedQty;
+                      const hasAdjustment = effective !== line.orderedQty;
                       const ratio =
-                        line.orderedQty > 0
-                          ? line.receivedQty / line.orderedQty
-                          : 0;
+                        effective > 0 ? line.receivedQty / effective : 0;
                       return (
                         <tr
                           key={line.id}
@@ -138,7 +143,17 @@ export function PODetailSummaryTab({
                             </span>
                           </td>
                           <td className="py-2 pr-3 text-right tabular-nums">
-                            {line.orderedQty}
+                            {hasAdjustment ? (
+                              <span className="inline-flex items-baseline justify-end gap-1">
+                                <span className="text-muted-foreground line-through">
+                                  {line.orderedQty}
+                                </span>
+                                <span aria-hidden>→</span>
+                                <span>{effective}</span>
+                              </span>
+                            ) : (
+                              line.orderedQty
+                            )}
                           </td>
                           <td className="py-2 pr-3 text-right">
                             <span className="inline-flex items-baseline gap-1.5">
@@ -171,10 +186,10 @@ export function PODetailSummaryTab({
                   : po.lines.map((line) => {
                   const lineValue =
                     line.orderedQty * Number(line.unitPrice);
+                  const effective = line.effectiveOrderedQty;
+                  const hasAdjustment = effective !== line.orderedQty;
                   const ratio =
-                    line.orderedQty > 0
-                      ? line.receivedQty / line.orderedQty
-                      : 0;
+                    effective > 0 ? line.receivedQty / effective : 0;
                   return (
                     <tr
                       key={line.id}
@@ -185,7 +200,17 @@ export function PODetailSummaryTab({
                         {line.categoryName} / {line.subcategoryName}
                       </td>
                       <td className="py-2 pr-3 text-right tabular-nums">
-                        {line.orderedQty}
+                        {hasAdjustment ? (
+                          <span className="inline-flex items-baseline justify-end gap-1">
+                            <span className="text-muted-foreground line-through">
+                              {line.orderedQty}
+                            </span>
+                            <span aria-hidden>→</span>
+                            <span>{effective}</span>
+                          </span>
+                        ) : (
+                          line.orderedQty
+                        )}
                       </td>
                       <td className="py-2 pr-3 text-right">
                         <span className="inline-flex items-baseline gap-1.5">

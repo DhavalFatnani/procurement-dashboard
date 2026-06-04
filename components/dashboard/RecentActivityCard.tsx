@@ -25,17 +25,27 @@ const KIND_ICONS: Record<RecentActivityItem["kind"], LucideIcon> = {
   payment: Wallet,
 };
 
-export function RecentActivityCard({ items }: { items: RecentActivityItem[] }) {
+export function RecentActivityCard({
+  items,
+  title = "Recent activity",
+  emptyTitle = "No activity yet",
+  emptyDescription = "Approvals and updates will appear here.",
+}: {
+  items: RecentActivityItem[];
+  title?: string;
+  emptyTitle?: string;
+  emptyDescription?: string;
+}) {
   return (
-    <SurfaceCard size="md">
-      <SurfaceCardTitle>Recent activity</SurfaceCardTitle>
+    <SurfaceCard size="md" className="w-full flex-1">
+      <SurfaceCardTitle>{title}</SurfaceCardTitle>
       <div className="mt-4">
         {items.length === 0 ? (
           <EmptyState
             size="sm"
             variant="onboarding"
-            title="No activity yet"
-            description="Approvals and updates will appear here."
+            title={emptyTitle}
+            description={emptyDescription}
           />
         ) : (
           <ul className="space-y-2">

@@ -33,6 +33,7 @@ export type POLineRow = {
   subcategoryId: string;
   subcategoryName: string;
   orderedQty: number;
+  effectiveOrderedQty: number;
   unitPrice: string;
   receivedQty: number;
 };
@@ -56,7 +57,8 @@ export type GRNLineItemInput = {
 
 export type POLineItemRow = {
   id: string;
-  prLineItemId: string;
+  prLineItemId: string | null;
+  isDisputeSplitLine?: boolean;
   lineNumber: number;
   lineItemNumber: number;
   categoryId: string;
@@ -67,6 +69,7 @@ export type POLineItemRow = {
   sku: string | null;
   unit: string;
   orderedQty: number;
+  effectiveOrderedQty: number;
   unitPrice: string;
   receivedQty: number;
 };
@@ -183,6 +186,37 @@ export function lockTagsOrderedQty(
   return lines
     .filter((line) => isLockTagsCategoryName(line.categoryName))
     .reduce((sum, line) => sum + line.orderedQty, 0);
+}
+
+/** Sum lock-tag item quantities included in a PO line-item selection. */
+export function lockTagsQtyFromSelectedItems(
+  lines: { categoryName: string; items: { id: string; quantity: number }[] }[],
+  selectedItemIds: ReadonlySet<string>,
+): number {
+  return lines
+    .filter((line) => isLockTagsCategoryName(line.categoryName))
+    .flatMap((line) => line.items)
+    .filter((item) => selectedItemIds.has(item.id))
+    .reduce((sum, item) => sum + item.quantity, 0);
+}
+
+export function hasLockTagsInSelectedItems(
+  lines: { categoryName: string; items: { id: string }[] }[],
+  selectedItemIds: ReadonlySet<string>,
+): boolean {
+  return lines.some(
+    (line) =>
+      isLockTagsCategoryName(line.categoryName) &&
+      line.items.some((item) => selectedItemIds.has(item.id)),
+  );
+}
+
+export function lockTagsQtyFromLineItems(
+  items: { categoryName: string; quantity: number }[],
+): number {
+  return items
+    .filter((item) => isLockTagsCategoryName(item.categoryName))
+    .reduce((sum, item) => sum + item.quantity, 0);
 }
 
 export function hasLockTagsLines(

@@ -5,9 +5,20 @@ import {
   type Prisma,
 } from "@/lib/prisma-client";
 
+import {
+  computeAdvanceBalances,
+  invoiceTotalSettled,
+} from "@/lib/po-advance";
 import { applyGstToSubtotal } from "@/lib/po-gst";
-import { sumPaymentAmounts } from "@/lib/payment-totals";
-import { sumOrderedQty } from "@/lib/purchase-lines";
+import {
+  buildEffectiveLineMap,
+  effectiveOrderedQtyForLegacyLine,
+  effectiveOrderedQtyForLineItem,
+  effectiveUnitPriceForLegacyLine,
+  effectiveUnitPriceForLineItem,
+  sumEffectiveOrderedQty,
+} from "@/lib/po-line-effective";
+import { hasPendingReplacement } from "@/lib/po-replacement-pending";
 
 export type POClosureSnapshot = {
   poId: string;
@@ -16,6 +27,8 @@ export type POClosureSnapshot = {
   receivedQty: number;
   invoicedAmount: number;
   paidAmount: number;
+  advancePaid: number;
+  settledAmount: number;
   deliveryComplete: boolean;
   unitPrice: number | null;
   expectedInvoicedAmount: number | null;
@@ -24,6 +37,7 @@ export type POClosureSnapshot = {
     invoicedMatchesReceived: boolean;
     allInvoicesPaid: boolean;
     noOpenDisputes: boolean;
+    noPendingReplacement: boolean;
   };
 };
 
@@ -39,7 +53,27 @@ export const PO_WITH_RELATIONS = {
     },
   },
   grns: { include: { exceptions: true } },
-  invoices: { include: { payments: { select: { amount: true } } } },
+  invoices: {
+    include: {
+      payments: { select: { amount: true } },
+      advanceAllocations: { select: { amount: true } },
+    },
+  },
+  advancePayments: {
+    include: { allocations: { select: { amount: true } } },
+  },
+  lineAdjustments: {
+    orderBy: { createdAt: "asc" },
+    select: {
+      poLineItemId: true,
+      poLineId: true,
+      originalOrderedQty: true,
+      effectiveOrderedQty: true,
+      originalUnitPrice: true,
+      effectiveUnitPrice: true,
+      createdAt: true,
+    },
+  },
 } satisfies Prisma.PurchaseOrderInclude;
 
 export type POWithRelations = Prisma.PurchaseOrderGetPayload<{
@@ -47,15 +81,15 @@ export type POWithRelations = Prisma.PurchaseOrderGetPayload<{
 }>;
 
 function resolveOrderedQty(po: POWithRelations): number {
+  const effectiveMap = buildEffectiveLineMap(po.lineAdjustments ?? []);
   const lineItems = po.lineItems ?? [];
   const lines = po.lines ?? [];
-  if (lineItems.length > 0) {
-    return lineItems.reduce((sum, line) => sum + line.orderedQty, 0);
-  }
-  if (lines.length > 0) {
-    return sumOrderedQty(lines);
-  }
-  return po.orderedQty ?? 0;
+  return sumEffectiveOrderedQty(
+    lineItems.map((l) => ({ id: l.id, orderedQty: l.orderedQty })),
+    lines.map((l) => ({ id: l.id, orderedQty: l.orderedQty })),
+    effectiveMap,
+    po.orderedQty,
+  );
 }
 
 function sumAcceptedQty(grns: POWithRelations["grns"]): number {
@@ -72,6 +106,7 @@ function acceptedQtyByPoLine(po: POWithRelations): Map<string, number> {
 }
 
 function computeExpectedInvoicedSubtotal(po: POWithRelations): number | null {
+  const effectiveMap = buildEffectiveLineMap(po.lineAdjustments ?? []);
   const lineItems = po.lineItems ?? [];
   const lines = po.lines ?? [];
   if (lineItems.length > 0) {
@@ -81,7 +116,12 @@ function computeExpectedInvoicedSubtotal(po: POWithRelations): number | null {
         (s, grl) => s + grl.acceptedQty,
         0,
       );
-      total += accepted * Number(line.unitPrice);
+      const price = effectiveUnitPriceForLineItem(
+        line.id,
+        Number(line.unitPrice),
+        effectiveMap,
+      );
+      total += accepted * price;
     }
     return total;
   }
@@ -98,7 +138,12 @@ function computeExpectedInvoicedSubtotal(po: POWithRelations): number | null {
   let total = 0;
   for (const line of lines) {
     const accepted = acceptedByLine.get(line.id) ?? 0;
-    total += accepted * Number(line.unitPrice);
+    const price = effectiveUnitPriceForLegacyLine(
+      line.id,
+      Number(line.unitPrice),
+      effectiveMap,
+    );
+    total += accepted * price;
   }
   return total;
 }
@@ -120,11 +165,8 @@ function sumInvoicedAmount(invoices: POWithRelations["invoices"]): number {
   return invoices.reduce((sum, inv) => sum + Number(inv.amount), 0);
 }
 
-function sumPaidAmount(invoices: POWithRelations["invoices"]): number {
-  return invoices.reduce(
-    (sum, inv) => sum + sumPaymentAmounts(inv.payments),
-    0,
-  );
+function sumSettledOnInvoices(invoices: POWithRelations["invoices"]): number {
+  return invoices.reduce((sum, inv) => sum + invoiceTotalSettled(inv), 0);
 }
 
 function hasOpenDisputes(grns: POWithRelations["grns"]): boolean {
@@ -178,7 +220,9 @@ export function buildClosureSnapshot(po: POWithRelations): POClosureSnapshot {
   const orderedQty = resolveOrderedQty(po);
   const receivedQty = sumAcceptedQty(po.grns);
   const invoicedAmount = sumInvoicedAmount(po.invoices);
-  const paidAmount = sumPaidAmount(po.invoices);
+  const settledAmount = sumSettledOnInvoices(po.invoices);
+  const { advancePaid } = computeAdvanceBalances(po.advancePayments ?? []);
+  const paidAmount = settledAmount;
   const expectedInvoicedAmount = computeExpectedInvoicedAmount(po);
   const deliveryCheck = po.deliveryComplete || receivedQty >= orderedQty;
   const invoicedCheck = invoicedWithinTolerance(
@@ -189,14 +233,38 @@ export function buildClosureSnapshot(po: POWithRelations): POClosureSnapshot {
   const allInvoicesPaid =
     po.invoices.length > 0 &&
     po.invoices.every((inv) => inv.paymentStatus === PaymentStatus.PAID) &&
-    paidAmount >= invoicedAmount;
+    settledAmount >= invoicedAmount;
   const noOpenDisputes = !hasOpenDisputes(po.grns);
 
+  const effectiveMap = buildEffectiveLineMap(po.lineAdjustments ?? []);
+  const acceptedByLineItem = new Map<string, number>();
+  for (const line of po.lineItems ?? []) {
+    const accepted = line.goodsReceiptLineItems.reduce(
+      (s, grl) => s + grl.acceptedQty,
+      0,
+    );
+    acceptedByLineItem.set(line.id, accepted);
+  }
+  const effectiveOrderedByLineItem = new Map<string, number>();
+  for (const line of po.lineItems ?? []) {
+    effectiveOrderedByLineItem.set(
+      line.id,
+      effectiveOrderedQtyForLineItem(line.id, line.orderedQty, effectiveMap),
+    );
+  }
+  const allExceptions = po.grns.flatMap((g) => g.exceptions);
+  const noPendingReplacement = !hasPendingReplacement(
+    allExceptions,
+    acceptedByLineItem,
+    effectiveOrderedByLineItem,
+  );
+
   const checks = {
-    deliveryComplete: deliveryCheck,
+    deliveryComplete: deliveryCheck && noPendingReplacement,
     invoicedMatchesReceived: invoicedCheck,
     allInvoicesPaid,
     noOpenDisputes,
+    noPendingReplacement,
   };
 
   let status = po.status;
@@ -205,13 +273,15 @@ export function buildClosureSnapshot(po: POWithRelations): POClosureSnapshot {
       checks.deliveryComplete &&
       checks.invoicedMatchesReceived &&
       checks.allInvoicesPaid &&
-      checks.noOpenDisputes
+      checks.noOpenDisputes &&
+      checks.noPendingReplacement
     ) {
       status = POStatus.CLOSED;
     } else if (
       checks.invoicedMatchesReceived &&
       checks.allInvoicesPaid &&
       checks.noOpenDisputes &&
+      checks.noPendingReplacement &&
       !checks.deliveryComplete
     ) {
       status = POStatus.PARTIALLY_CLOSED;
@@ -235,6 +305,8 @@ export function buildClosureSnapshot(po: POWithRelations): POClosureSnapshot {
     receivedQty,
     invoicedAmount,
     paidAmount,
+    advancePaid,
+    settledAmount,
     deliveryComplete: po.deliveryComplete,
     unitPrice: legacyUnitPrice,
     expectedInvoicedAmount,

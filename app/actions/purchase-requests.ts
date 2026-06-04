@@ -3,6 +3,7 @@
 import { revalidatePath, revalidateTag } from "next/cache";
 import {
   ExecutionType,
+  POAdvanceRequestStatus,
   POStatus,
   PRStatus,
   Prisma,
@@ -22,8 +23,15 @@ import {
   validatePORateCsvAgainstPR,
   type PORateCsvExportRow,
 } from "@/lib/po-rate-csv";
-import { validatePoGstInput } from "@/lib/po-gst";
-import { hasLockTagsLines, LOCK_TAGS_SERIES, sumItemQuantities } from "@/lib/purchase-lines";
+import {
+  resolveAdvanceRequestAmount,
+  sumPendingAndFulfilledAdvanceRequests,
+} from "@/lib/po-advance";
+import { computePoOrderBilling, validatePoGstInput } from "@/lib/po-gst";
+import {
+  lockTagsQtyFromSelectedItems,
+  sumItemQuantities,
+} from "@/lib/purchase-lines";
 import {
   approvePendingCatalogItems,
   headerFromFirstLine,
@@ -44,19 +52,29 @@ import {
 } from "@/lib/pr-line-persistence";
 import type { PendingCatalogItemRow } from "@/lib/queries/purchase-requests";
 import {
+  revalidateAdvanceRequestsCache,
   revalidateCreatePOFromPR,
   revalidatePRStatusChange,
   revalidatePurchaseRequestMutation,
+  revalidateSerialGovernance,
 } from "@/lib/revalidate-tags";
 import { LIST_CACHE_TAGS } from "@/lib/list-cache";
 import { timed } from "@/lib/server-timing";
-import { atomicReserveSerialRange } from "@/lib/serialReservation";
+import {
+  SERIAL_RESERVE_TX_OPTS,
+} from "@/lib/serialReservation";
+import {
+  commitVendorLockTagsHoldToPo,
+  createVendorLockTagsApprovalHold,
+  releaseVendorLockTagsApprovalHold,
+} from "@/lib/vendor-lock-tags-serial";
 import { requireRoles } from "@/lib/server-action-guard";
 import {
   assertSessionPurchaseRequestAccess,
   assertUserWarehouseAccess,
 } from "@/lib/warehouse-access";
 import { assertSessionCanAccessWarehouse } from "@/lib/warehouse-scope";
+import { canRevisePurchaseRequest, canUpdatePurchaseRequestLines } from "@/lib/pr-access";
 import { getWarehousesAssignedToUser } from "@/lib/queries/warehouses";
 import {
   recordVendorCatalogItemPrices,
@@ -166,8 +184,14 @@ export async function updatePR(
   if (!pr || (pr.status !== PRStatus.DRAFT && pr.status !== PRStatus.REVISION_REQUIRED)) {
     return { ok: false, message: "PR cannot be edited in its current status." };
   }
-  if (user.role === Role.SM && pr.createdById !== user.id) {
-    return { ok: false, message: "You can only edit your own purchase requests." };
+  if (
+    !canUpdatePurchaseRequestLines(user, {
+      status: pr.status,
+      warehouseId: pr.warehouseId,
+      createdById: pr.createdById,
+    })
+  ) {
+    return { ok: false, message: "You cannot edit this purchase request." };
   }
 
   const warehouseAccess = await assertSessionPurchaseRequestAccess(user, prId);
@@ -483,7 +507,7 @@ export async function resubmitPR(
   prId: string,
   data: PRFormData,
 ): Promise<MutationResult> {
-  const user = await requireRoles([Role.SM]);
+  const user = await requireRoles([Role.SM, Role.OPS_HEAD]);
   const pr = await prisma.purchaseRequest.findUnique({
     where: { id: prId },
     include: { lines: { orderBy: { lineNumber: "asc" } } },
@@ -491,8 +515,14 @@ export async function resubmitPR(
   if (!pr || pr.status !== PRStatus.REVISION_REQUIRED) {
     return { ok: false, message: "PR is not awaiting revision." };
   }
-  if (pr.createdById !== user.id) {
-    return { ok: false, message: "You can only resubmit your own purchase requests." };
+  if (
+    !canRevisePurchaseRequest(user, {
+      status: pr.status,
+      warehouseId: pr.warehouseId,
+      createdById: pr.createdById,
+    })
+  ) {
+    return { ok: false, message: "You cannot resubmit this purchase request." };
   }
 
   const warehouseAccess = await assertSessionPurchaseRequestAccess(user, prId);
@@ -732,15 +762,52 @@ export async function createPOFromPRGroup(
     return { ok: false, message: gstValidated.message };
   }
 
+  const billingLines = selectedItems.map((item) => ({
+    orderedQty: item.quantity,
+    unitPrice: priceByItemId.get(item.id)!,
+  }));
+  const committedTotal = computePoOrderBilling(
+    billingLines,
+    gstApplicable,
+    gstValidated.rate != null ? String(gstValidated.rate) : null,
+  ).total;
+
+  let advanceToCreate: {
+    amount: number;
+    percent: number | null;
+    reason: string;
+  } | null = null;
+  const advanceInput = input.advanceRequest;
+  if (advanceInput?.reason?.trim()) {
+    const resolved = resolveAdvanceRequestAmount(committedTotal, {
+      amount: advanceInput.amount,
+      percent: advanceInput.percent,
+    });
+    if (!resolved.ok) {
+      return { ok: false, message: resolved.message };
+    }
+    advanceToCreate = {
+      amount: resolved.amount,
+      percent: resolved.percent,
+      reason: advanceInput.reason.trim(),
+    };
+  }
+
   const totalOrderedQty = sumItemQuantities(selectedItems);
   const firstItemPrice = priceByItemId.get(selectedItems[0]!.id)!;
   const poId = newPurchaseOrderId();
-  const lockTagsQty = pr.lines
-    .filter((l) => l.category.name === "Lock Tags")
-    .reduce((s, l) => s + sumItemQuantities(l.items), 0);
+  const selectedItemIds = new Set(selectedItems.map((item) => item.id));
+  const lockTagsQty = lockTagsQtyFromSelectedItems(
+    pr.lines.map((line) => ({
+      categoryName: line.category.name,
+      items: line.items.map((item) => ({ id: item.id, quantity: item.quantity })),
+    })),
+    selectedItemIds,
+  );
 
-  await prisma.$transaction(
-    async (tx) => {
+  try {
+    await prisma.$transaction(
+      async (tx) => {
       await tx.purchaseOrder.create({
         data: {
           id: poId,
@@ -792,6 +859,47 @@ export async function createPOFromPRGroup(
           recordedById: user.id,
         })),
       );
+
+      if (lockTagsQty > 0) {
+        await commitVendorLockTagsHoldToPo(tx, {
+          prId: pr.id,
+          poId,
+          quantity: lockTagsQty,
+          warehouseId: pr.warehouseId,
+          createdById: user.id,
+        });
+      }
+
+      if (advanceToCreate) {
+        const existingRequests = await tx.pOAdvanceRequest.findMany({
+          where: {
+            poId,
+            status: {
+              in: [POAdvanceRequestStatus.PENDING, POAdvanceRequestStatus.FULFILLED],
+            },
+          },
+          select: { status: true, requestedAmount: true },
+        });
+        const reserved = sumPendingAndFulfilledAdvanceRequests(existingRequests);
+        if (reserved + advanceToCreate.amount > committedTotal + 0.001) {
+          throw new Error(
+            `Total advance requests would exceed PO committed value (${committedTotal.toFixed(2)}).`,
+          );
+        }
+        await tx.pOAdvanceRequest.create({
+          data: {
+            poId,
+            requestedAmount: new Prisma.Decimal(advanceToCreate.amount),
+            requestedPercent:
+              advanceToCreate.percent != null
+                ? new Prisma.Decimal(advanceToCreate.percent)
+                : null,
+            reason: advanceToCreate.reason,
+            status: POAdvanceRequestStatus.PENDING,
+            requestedById: user.id,
+          },
+        });
+      }
 
       const remainingUnassigned = await tx.purchaseRequestLineItem.count({
         where: {
@@ -849,32 +957,37 @@ export async function createPOFromPRGroup(
         });
       }
     },
-    PR_LINE_MUTATION_TX_OPTIONS,
-  );
+    lockTagsQty > 0
+      ? {
+          ...PR_LINE_MUTATION_TX_OPTIONS,
+          isolationLevel: SERIAL_RESERVE_TX_OPTS.isolationLevel,
+        }
+      : PR_LINE_MUTATION_TX_OPTIONS,
+    );
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Could not create purchase order.";
+    if (message.includes("ceiling")) {
+      return {
+        ok: false,
+        message:
+          "Serial range ceiling reached for lock tags. Contact Ops Head to update the ceiling.",
+      };
+    }
+    return { ok: false, message };
+  }
 
   const remainingAfter = await prisma.purchaseRequestLineItem.count({
     where: { prLine: { prId }, poLineItem: null },
   });
   const fullyConverted = remainingAfter === 0;
 
-  if (fullyConverted && lockTagsQty > 0 && hasLockTagsLines(pr.lines.map((l) => ({ categoryName: l.category.name })))) {
-    const reservation = await atomicReserveSerialRange({
-      series: LOCK_TAGS_SERIES,
-      quantity: lockTagsQty,
-      warehouseId: pr.warehouseId,
-      createdById: user.id,
-      prId: pr.id,
-      idempotencyKey: `po-${poId}-lock-tags`,
-    });
-    if (reservation.success) {
-      await prisma.serialReservation.update({
-        where: { id: reservation.reservation.id },
-        data: { poId },
-      });
-    }
-  }
-
   revalidateCreatePOFromPR(prId, poId);
+  if (lockTagsQty > 0) {
+    revalidateSerialGovernance();
+  }
+  if (advanceToCreate) {
+    revalidateAdvanceRequestsCache();
+  }
   revalidateTag(LIST_CACHE_TAGS.vendorItems);
   for (const item of selectedItems) {
     revalidateTag(`${LIST_CACHE_TAGS.vendorItems}:${item.catalogItemId}`);
@@ -1038,7 +1151,18 @@ export async function approvePR(
   return timed("action.approvePR", async () => {
     const user = await requireRoles([Role.OPS_HEAD]);
 
-    const pr = await prisma.purchaseRequest.findUnique({ where: { id: prId } });
+    const pr = await prisma.purchaseRequest.findUnique({
+      where: { id: prId },
+      include: {
+        lines: {
+          orderBy: { lineNumber: "asc" },
+          include: {
+            category: { select: { name: true } },
+            items: { select: { id: true, quantity: true } },
+          },
+        },
+      },
+    });
     if (!pr) {
       return { ok: false, message: "Purchase request not found." };
     }
@@ -1057,6 +1181,17 @@ export async function approvePR(
     } catch (e) {
       return { ok: false, message: e instanceof Error ? e.message : "Invalid status." };
     }
+
+    const allItemIds = new Set(
+      pr.lines.flatMap((line) => line.items.map((item) => item.id)),
+    );
+    const lockTagsQty = lockTagsQtyFromSelectedItems(
+      pr.lines.map((line) => ({
+        categoryName: line.category.name,
+        items: line.items,
+      })),
+      allItemIds,
+    );
 
     const catalogResult = await prisma.$transaction(
       async (tx) => {
@@ -1086,9 +1221,24 @@ export async function approvePR(
             },
           },
         });
+
+        if (lockTagsQty > 0) {
+          await createVendorLockTagsApprovalHold(tx, {
+            prId,
+            quantity: lockTagsQty,
+            warehouseId: pr.warehouseId,
+            createdById: user.id,
+          });
+        }
+
         return { ok: true as const };
       },
-      PR_LINE_MUTATION_TX_OPTIONS,
+      lockTagsQty > 0
+        ? {
+            ...PR_LINE_MUTATION_TX_OPTIONS,
+            isolationLevel: SERIAL_RESERVE_TX_OPTS.isolationLevel,
+          }
+        : PR_LINE_MUTATION_TX_OPTIONS,
     );
 
     if (!catalogResult.ok) {
@@ -1102,6 +1252,9 @@ export async function approvePR(
       affectsAwaitingPo: true,
       affectsCatalog: hasCatalogDecisions,
     });
+    if (lockTagsQty > 0) {
+      revalidateSerialGovernance();
+    }
     return { ok: true };
   });
 }
@@ -1204,5 +1357,83 @@ export async function sendForRevision(
   );
 
   revalidatePRStatusChange(prId);
+  return { ok: true };
+}
+
+export async function revertPRApproval(
+  prId: string,
+  reason: string,
+): Promise<MutationResult> {
+  const user = await requireRoles([Role.OPS_HEAD]);
+  const trimmed = reason.trim();
+  if (!trimmed) {
+    return { ok: false, message: "Reason is required." };
+  }
+
+  const pr = await prisma.purchaseRequest.findUnique({
+    where: { id: prId },
+    include: {
+      lines: { include: { items: { include: { poLineItem: { select: { id: true } } } } } },
+      purchaseOrders: { select: { id: true } },
+    },
+  });
+  if (!pr) {
+    return { ok: false, message: "Purchase request not found." };
+  }
+
+  const warehouseAccess = await assertSessionPurchaseRequestAccess(user, prId);
+  if (!warehouseAccess.ok) {
+    return { ok: false, message: warehouseAccess.message };
+  }
+
+  if (pr.executionType !== ExecutionType.VENDOR_PURCHASE) {
+    return { ok: false, message: "Only vendor purchase requests can be reverted." };
+  }
+
+  try {
+    assertPRStatusTransition(pr.status, PRStatus.PENDING_APPROVAL);
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : "Invalid status." };
+  }
+
+  if (pr.purchaseOrders.length > 0) {
+    return {
+      ok: false,
+      message: "Cannot revert approval after a purchase order has been created.",
+    };
+  }
+
+  const assignedLineItems = pr.lines
+    .flatMap((line) => line.items)
+    .filter((item) => item.poLineItem != null).length;
+  if (assignedLineItems > 0) {
+    return {
+      ok: false,
+      message: "Cannot revert approval while line items are assigned to a purchase order.",
+    };
+  }
+
+  await prisma.$transaction(
+    async (tx) => {
+      await releaseVendorLockTagsApprovalHold(tx, prId);
+      await tx.purchaseRequest.update({
+        where: { id: prId },
+        data: { status: PRStatus.PENDING_APPROVAL },
+      });
+      await tx.pRVersion.create({
+        data: {
+          prId,
+          versionNumber: pr.currentVersion,
+          changedById: user.id,
+          revisionComment: trimmed,
+          diffSnapshot: { action: "REVERT_APPROVAL", reason: trimmed },
+        },
+      });
+    },
+    PR_LINE_MUTATION_TX_OPTIONS,
+  );
+
+  revalidatePRStatusChange(prId, { affectsAwaitingPo: true });
+  revalidateSerialGovernance();
   return { ok: true };
 }

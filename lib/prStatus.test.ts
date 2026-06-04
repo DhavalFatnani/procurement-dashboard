@@ -27,7 +27,7 @@ const ALLOWED: Record<string, PRStatus[]> = {
     PRStatus.PENDING_APPROVAL,
     PRStatus.FORCE_CANCELLED,
   ],
-  [PRStatus.APPROVED]: [PRStatus.CONVERTED_TO_PO],
+  [PRStatus.APPROVED]: [PRStatus.CONVERTED_TO_PO, PRStatus.PENDING_APPROVAL],
 };
 
 describe("canTransitionPRStatus", () => {
@@ -76,6 +76,9 @@ describe("evaluatePRStatus", () => {
     expect(
       evaluatePRStatus({ status: PRStatus.APPROVED }, PRStatus.CONVERTED_TO_PO),
     ).toBe(PRStatus.CONVERTED_TO_PO);
+    expect(
+      evaluatePRStatus({ status: PRStatus.APPROVED }, PRStatus.PENDING_APPROVAL),
+    ).toBe(PRStatus.PENDING_APPROVAL);
     expect(evaluatePRStatus({ status: PRStatus.DRAFT }, PRStatus.CANCELLED)).toBe(
       PRStatus.CANCELLED,
     );

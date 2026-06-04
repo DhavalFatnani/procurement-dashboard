@@ -1,28 +1,46 @@
 import { CreateGRNForm } from "@/components/goods-receipt/CreateGRNForm";
+import { getPOForGRNById } from "@/lib/queries/grn";
 import { ACCESS } from "@/lib/route-access";
 import { assertRole, getRequestSession } from "@/lib/session";
-import { prisma } from "@/lib/prisma";
+import { assertSessionPurchaseOrderAccess } from "@/lib/warehouse-access";
+import { assignedWarehouseIds } from "@/lib/warehouse-scope";
 
 type SearchParams = Promise<{ poId?: string }>;
 
-export default async function NewGoodsReceiptPage({ searchParams }: { searchParams: SearchParams }) {
-  const user = assertRole(await getRequestSession(), [...ACCESS.goodsReceipt]);
-  const { poId: initialPoId } = await searchParams;
-  const dbUser = await prisma.user.findUnique({
-    where: { id: user.id },
-    select: { name: true },
-  });
+function receivedByNameFromSession(user: Awaited<ReturnType<typeof getRequestSession>>) {
+  if (!user) {
+    return "User";
+  }
+  const metaName = user.user_metadata?.name;
+  if (typeof metaName === "string" && metaName.trim()) {
+    return metaName.trim();
+  }
+  return user.email ?? "User";
+}
 
-  const receivedByName =
-    dbUser?.name ??
-    (typeof user.user_metadata?.name === "string" ? user.user_metadata.name : null) ??
-    user.email ??
-    "User";
+export default async function NewGoodsReceiptPage({
+  searchParams,
+}: {
+  searchParams: SearchParams;
+}) {
+  const user = assertRole(await getRequestSession(), [...ACCESS.goodsReceipt]);
+  const { poId: initialPoIdRaw } = await searchParams;
+  const initialPoId = initialPoIdRaw?.trim() || undefined;
+
+  let initialPo: Awaited<ReturnType<typeof getPOForGRNById>> | undefined;
+  if (initialPoId) {
+    const access = await assertSessionPurchaseOrderAccess(user, initialPoId);
+    initialPo = access.ok
+      ? await getPOForGRNById(initialPoId, assignedWarehouseIds(user))
+      : null;
+  }
 
   return (
     <CreateGRNForm
-      receivedByName={receivedByName}
-      initialPoId={initialPoId?.trim() || undefined}
+      receivedByName={receivedByNameFromSession(user)}
+      initialPoId={initialPoId}
+      initialPo={initialPo}
+      initialPoPrefetched={initialPoId != null}
     />
   );
 }

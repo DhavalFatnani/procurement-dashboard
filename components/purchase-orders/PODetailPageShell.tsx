@@ -38,9 +38,12 @@ const TABS: { id: TabId; label: string }[] = [
   { id: "activity", label: "Activity" },
 ];
 
-function parseTab(value: string | null | undefined): TabId {
+function parseTab(value: string | null | undefined, role: Role): TabId {
   if (value === "summary" || value === "fulfillment" || value === "financials" || value === "activity") {
     return value;
+  }
+  if (role === Role.FINANCE) {
+    return "financials";
   }
   return "summary";
 }
@@ -61,24 +64,24 @@ export function PODetailPageShell({
   role: Role;
   initialTab?: string | null;
 }) {
-  const [activeTab, setActiveTab] = React.useState<TabId>(() => parseTab(initialTab));
+  const [activeTab, setActiveTab] = React.useState<TabId>(() => parseTab(initialTab, role));
   const [visitedTabs, setVisitedTabs] = React.useState<Set<TabId>>(
-    () => new Set([parseTab(initialTab)]),
+    () => new Set([parseTab(initialTab, role)]),
   );
 
   React.useEffect(() => {
     function onPopState() {
       const params = new URLSearchParams(window.location.search);
-      const tab = parseTab(params.get("tab"));
+      const tab = parseTab(params.get("tab"), role);
       setActiveTab(tab);
       setVisitedTabs((prev) => new Set(prev).add(tab));
     }
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
-  }, []);
+  }, [role]);
 
   function setTab(next: string) {
-    const tab = parseTab(next);
+    const tab = parseTab(next, role);
     setActiveTab(tab);
     setVisitedTabs((prev) => new Set(prev).add(tab));
     window.history.replaceState(null, "", poDetailTabUrl(po.id, tab));

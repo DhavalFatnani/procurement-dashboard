@@ -1,12 +1,30 @@
 import { revalidatePath, revalidateTag } from "next/cache";
 
+import { FINANCE_ROUTES } from "@/lib/finance-routes";
 import { LIST_CACHE_TAGS } from "@/lib/list-cache";
+
+const FINANCE_LIST_PATHS = [
+  FINANCE_ROUTES.invoiceSettlement,
+  FINANCE_ROUTES.vendorAdvances,
+  FINANCE_ROUTES.paymentRegister,
+] as const;
+
+function revalidateFinanceListPaths() {
+  for (const path of FINANCE_LIST_PATHS) {
+    revalidatePath(path);
+  }
+}
 
 /** Invalidate cached dashboard metric counts after procurement mutations. */
 export function revalidateCatalogCache() {
   revalidateTag("catalog-items");
   revalidateTag(LIST_CACHE_TAGS.catalog);
   revalidatePath("/admin/catalog");
+}
+
+export function revalidateSerialGovernance() {
+  revalidatePath("/serial-governance");
+  revalidatePath("/serial-governance/range-map");
 }
 
 export function revalidateDashboardMetrics() {
@@ -122,6 +140,7 @@ export function revalidateGRNMutation(poId: string) {
 export function revalidateInvoiceMutation(poId: string) {
   revalidatePath("/invoices");
   revalidatePath("/payments");
+  revalidateFinanceListPaths();
   revalidatePath(`/purchase-orders/${poId}`);
   revalidateInvoicesCache();
   revalidatePaymentsCache();
@@ -131,12 +150,21 @@ export function revalidateInvoiceMutation(poId: string) {
 
 export function revalidatePaymentMutation(poId: string) {
   revalidatePath("/payments");
+  revalidateFinanceListPaths();
   revalidatePath("/invoices");
   revalidatePath(`/purchase-orders/${poId}`);
   revalidatePaymentsCache();
   revalidateInvoicesCache();
   revalidatePurchaseOrdersCache(poId);
+  revalidateAdvanceRequestsCache();
   revalidateDashboardMetrics();
+}
+
+export function revalidateAdvanceRequestsCache() {
+  revalidateTag(LIST_CACHE_TAGS.advanceRequests);
+  revalidateTag(LIST_CACHE_TAGS.inbox);
+  revalidatePath("/payments");
+  revalidateFinanceListPaths();
 }
 
 export function revalidatePOMutation(poId: string, prId?: string) {
@@ -164,6 +192,7 @@ export function revalidateProcurementLists(prId?: string, poId?: string, vendorI
   revalidatePath("/goods-receipt");
   revalidatePath("/invoices");
   revalidatePath("/payments");
+  revalidateFinanceListPaths();
   revalidatePath("/vendors");
   if (prId) {
     revalidatePath(`/purchase-requests/${prId}`);

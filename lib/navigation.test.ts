@@ -1,6 +1,7 @@
 import { Role } from "@/lib/prisma-enums";
 import { describe, expect, it } from "vitest";
 
+import { FINANCE_ROUTES } from "@/lib/finance-routes";
 import {
   defaultLandingFor,
   getNavGroupsForRole,
@@ -8,10 +9,13 @@ import {
 } from "@/lib/navigation";
 
 describe("defaultLandingFor", () => {
-  it("sends every role to /dashboard", () => {
+  it("sends SM and Ops Head to /dashboard", () => {
     expect(defaultLandingFor(Role.SM)).toBe("/dashboard");
     expect(defaultLandingFor(Role.OPS_HEAD)).toBe("/dashboard");
-    expect(defaultLandingFor(Role.FINANCE)).toBe("/dashboard");
+  });
+
+  it("sends Finance to invoice settlement", () => {
+    expect(defaultLandingFor(Role.FINANCE)).toBe(FINANCE_ROUTES.invoiceSettlement);
   });
 });
 
@@ -21,6 +25,11 @@ describe("getNavGroupsForRole", () => {
     expect(sm).toEqual(["insights", "work", "governance"]);
     const ops = getNavGroupsForRole(Role.OPS_HEAD).map((g) => g.id);
     expect(ops).toEqual(["insights", "work", "governance", "admin"]);
+  });
+
+  it("returns Payables + Insights + Work for Finance", () => {
+    const groups = getNavGroupsForRole(Role.FINANCE).map((g) => g.id);
+    expect(groups).toEqual(["payables", "insights", "work"]);
   });
 
   it("scopes Admin to Ops Head only", () => {
@@ -42,21 +51,26 @@ describe("getNavGroupsForRole", () => {
 
   it("omits Governance for Finance (vendors + serial-governance not accessible)", () => {
     const groups = getNavGroupsForRole(Role.FINANCE).map((g) => g.id);
-    expect(groups).toEqual(["insights", "work"]);
+    expect(groups).not.toContain("governance");
   });
 
-  it("includes Inbox at the top of Work for every role", () => {
-    for (const role of [Role.SM, Role.OPS_HEAD, Role.FINANCE]) {
+  it("includes Inbox at the top of Work for SM and Ops Head", () => {
+    for (const role of [Role.SM, Role.OPS_HEAD]) {
       const work = getNavGroupsForRole(role).find((g) => g.id === "work")!;
       expect(work.items[0]?.href).toBe("/inbox");
     }
   });
 
+  it("includes Inbox at the top of Payables for Finance", () => {
+    const payables = getNavGroupsForRole(Role.FINANCE).find((g) => g.id === "payables")!;
+    expect(payables.items[0]?.href).toBe("/inbox");
+  });
+
   it("opens with Dashboard at the top of Insights", () => {
     for (const role of [Role.SM, Role.OPS_HEAD, Role.FINANCE]) {
       const groups = getNavGroupsForRole(role);
-      expect(groups[0]?.id).toBe("insights");
-      expect(groups[0]?.items[0]?.href).toBe("/dashboard");
+      const insights = groups.find((g) => g.id === "insights")!;
+      expect(insights.items[0]?.href).toBe("/dashboard");
     }
   });
 });
@@ -97,7 +111,7 @@ describe("PO-centric procurement nav", () => {
     expect(po?.children?.map((c) => c.href)).toEqual([
       "/goods-receipt",
       "/invoices",
-      "/payments",
+      FINANCE_ROUTES.invoiceSettlement,
     ]);
   });
 
@@ -106,40 +120,43 @@ describe("PO-centric procurement nav", () => {
     expect(work.label).toBe("Procurement");
   });
 
-  it("keeps Finance fulfillment under PO as invoices & payments only", () => {
+  it("keeps Finance PO hub without nested fulfillment children", () => {
     const work = getNavGroupsForRole(Role.FINANCE).find((g) => g.id === "work")!;
-    expect(work.items.map((i) => i.href)).toEqual(["/inbox", "/purchase-orders"]);
+    expect(work.items.map((i) => i.href)).toEqual(["/purchase-orders"]);
     const po = work.items.find((i) => i.href === "/purchase-orders");
-    expect(po?.children?.map((c) => c.href)).toEqual(["/payments"]);
-    expect(po?.children?.[0]?.label).toBe("Invoices & payments");
+    expect(po?.children).toBeUndefined();
   });
 });
 
-describe("Finance merged Invoices & payments entry", () => {
+describe("Finance payables IA", () => {
+  it("exposes payables routes for Finance", () => {
+    const payables = getNavGroupsForRole(Role.FINANCE).find((g) => g.id === "payables")!;
+    expect(payables.label).toBe("Payables");
+    expect(payables.items.map((i) => i.href)).toEqual([
+      "/inbox",
+      FINANCE_ROUTES.invoiceSettlement,
+      FINANCE_ROUTES.vendorAdvances,
+      FINANCE_ROUTES.paymentRegister,
+    ]);
+  });
+
   it("omits a standalone Invoices nav item for Finance", () => {
     const hrefs = getNavItemsForRole(Role.FINANCE).map((i) => i.href);
     expect(hrefs).not.toContain("/invoices");
+    expect(hrefs).not.toContain("/payments");
   });
 
-  it("exposes a single /payments entry labelled 'Invoices & payments' under PO", () => {
-    const work = getNavGroupsForRole(Role.FINANCE).find((g) => g.id === "work")!;
-    const po = work.items.find((i) => i.href === "/purchase-orders");
-    const item = po?.children?.find((i) => i.href === "/payments");
-    expect(item).toBeDefined();
-    expect(item?.label).toBe("Invoices & payments");
-  });
-
-  it("keeps Ops Head's separate Invoices and Payments entries under PO", () => {
+  it("keeps Ops Head's separate Invoices and invoice settlement under PO", () => {
     const hrefs = getNavItemsForRole(Role.OPS_HEAD).map((i) => i.href);
     expect(hrefs).toContain("/purchase-orders");
     expect(hrefs).toContain("/purchase-orders/configure");
     expect(hrefs).toContain("/invoices");
-    expect(hrefs).toContain("/payments");
+    expect(hrefs).toContain(FINANCE_ROUTES.invoiceSettlement);
   });
 
   it("keeps SM's Invoices entry under PO", () => {
     const hrefs = getNavItemsForRole(Role.SM).map((i) => i.href);
     expect(hrefs).toContain("/invoices");
-    expect(hrefs).not.toContain("/payments");
+    expect(hrefs).not.toContain(FINANCE_ROUTES.invoiceSettlement);
   });
 });

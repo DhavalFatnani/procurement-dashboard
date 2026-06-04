@@ -73,7 +73,7 @@ export function ReserveSerialRangeDialog({
       >
         <header className="shrink-0 border-b border-border-subtle bg-gradient-to-br from-card via-card to-muted/30 px-5 py-5 sm:px-6">
           <div className="flex items-start gap-4">
-            <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary shadow-ds">
+            <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl surface-accent-soft shadow-ds">
               <ShieldCheck className="size-5" strokeWidth={1.5} aria-hidden />
             </div>
             <div className="min-w-0 flex-1 space-y-1.5">

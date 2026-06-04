@@ -11,7 +11,7 @@ const VARIANT_CONFIG = {
   },
   onboarding: {
     icon: Sparkles,
-    iconBg: "bg-[color-mix(in_srgb,var(--brand-accent)_12%,transparent)]",
+    iconBg: "surface-accent-soft",
     iconColor: "text-[var(--brand-accent)]",
   },
   filtered: {

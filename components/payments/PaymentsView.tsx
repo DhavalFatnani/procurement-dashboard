@@ -2,73 +2,39 @@
 
 import { InvoiceMatchStatus, PaymentStatus, Role } from "@/lib/prisma-enums";
 import { useSearchParams } from "next/navigation";
-import { AlertTriangle, FileText } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import * as React from "react";
-import { toast } from "sonner";
 
-import type { InvoicePaymentDetail, PaymentListRow } from "@/lib/queries/payments";
-import { getInvoicePaymentDetail, recordPayment } from "@/app/actions/payments";
+import type { PaymentListRow } from "@/lib/queries/payments";
+import type { AdvancePaymentHistoryRow, AdvanceRequestListRow } from "@/lib/queries/po-advance";
+import { getInvoicePaymentDetail } from "@/app/actions/payments";
+import { AdvancePaymentsPanel } from "@/components/payments/AdvancePaymentsPanel";
+import { InvoiceSettlementDrawer } from "@/components/payments/InvoiceSettlementDrawer";
 import { Chip } from "@/components/shared/Chip";
 import { DataTable, type DataTableColumn } from "@/components/shared/DataTable";
 import { DateRangeFilter } from "@/components/shared/DateRangeFilter";
-import { FormDrawer } from "@/components/shared/Drawer";
 import { EmptyState } from "@/components/shared/EmptyState";
-import { Field } from "@/components/shared/Field";
 import { FilterBar } from "@/components/shared/FilterBar";
 import { FilterChipsRow } from "@/components/shared/FilterChipsRow";
 import { FilterSearch } from "@/components/shared/FilterSearch";
 import { FilterSelect } from "@/components/shared/FilterSelect";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Pagination } from "@/components/shared/Pagination";
-import { ProgressRing } from "@/components/shared/ProgressRing";
-import { SheetSection } from "@/components/shared/SheetSection";
+import { ProcurementRefLink } from "@/components/shared/ProcurementRef";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { compactChipSpecs, type FilterChipSpec } from "@/lib/filter-chips";
-import { listBreadcrumbs } from "@/lib/lineage";
 import {
   formatGrnReceiptsSummary,
   formatProcurementRef,
 } from "@/lib/display-ref";
 import type { Paginated } from "@/lib/pagination";
+import { settlementCompositionLabel } from "@/lib/settlement-helpers";
 import { useListNavigation } from "@/lib/use-list-navigation";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { ProcurementRefLink } from "@/components/shared/ProcurementRef";
 import { formatDateMedium, formatInr } from "@/lib/format-datetime";
+import { listBreadcrumbs } from "@/lib/lineage";
 
 const getPaymentRowKey = (r: PaymentListRow) => r.invoiceId;
-
-/** Bank channels supported for vendor disbursement. */
-const PAYMENT_METHOD_OPTIONS = [
-  { value: "NEFT", label: "NEFT" },
-  { value: "RTGS", label: "RTGS" },
-  { value: "IMPS", label: "IMPS" },
-  { value: "UPI", label: "UPI" },
-  { value: "Cheque", label: "Cheque" },
-  { value: "Cash", label: "Cash" },
-  { value: "Other", label: "Other" },
-] as const;
-
-function resetPaymentForm(
-  setAmount: (v: string) => void,
-  setMethod: (v: string) => void,
-  setTransactionRef: (v: string) => void,
-  setPaidAt: (v: string) => void,
-  setProofFile: (v: File | null) => void,
-) {
-  setAmount("");
-  setMethod("");
-  setTransactionRef("");
-  setPaidAt("");
-  setProofFile(null);
-}
 
 type PaymentsFilters = {
   paymentStatus: string;
@@ -84,35 +50,49 @@ type FilterScalarKey = keyof PaymentsFilters;
 export function PaymentsView({
   role,
   initialRows,
+  advanceRows,
+  advanceHistoryRows,
+  view = "invoices",
   filters,
   filterOptions,
   initialInvoiceId,
+  initialAdvanceRequestId,
 }: {
   role: Role;
   initialRows: Paginated<PaymentListRow>;
+  advanceRows: AdvanceRequestListRow[];
+  advanceHistoryRows: AdvancePaymentHistoryRow[];
+  view?: "invoices" | "advance";
   filters: PaymentsFilters;
   filterOptions: { vendors: { id: string; businessName: string }[] };
-  /** When set (typically from inbox deep-links), auto-open the drawer for this invoice. */
   initialInvoiceId?: string;
+  initialAdvanceRequestId?: string;
 }) {
   const searchParams = useSearchParams();
   const { navigate, refresh } = useListNavigation();
   const isFinance = role === Role.FINANCE;
   const rows = initialRows;
   const [sheetOpen, setSheetOpen] = React.useState(false);
-  const [detail, setDetail] = React.useState<InvoicePaymentDetail | null>(null);
+  const [detail, setDetail] = React.useState<
+    Awaited<ReturnType<typeof getInvoicePaymentDetail>>
+  >(null);
   const [loadingDetail, setLoadingDetail] = React.useState(false);
-  const [submitting, setSubmitting] = React.useState(false);
 
-  const [amount, setAmount] = React.useState("");
-  const [method, setMethod] = React.useState("");
-  const [transactionRef, setTransactionRef] = React.useState("");
-  const [paidAt, setPaidAt] = React.useState("");
-  const [proofFile, setProofFile] = React.useState<File | null>(null);
-  const paymentFormRef = React.useRef<HTMLFormElement>(null);
-
-  const paymentGated =
-    detail?.matchStatus === InvoiceMatchStatus.MISMATCH && !detail.overrideReason;
+  const activeView = view;
+  const setView = React.useCallback(
+    (next: "invoices" | "advance") => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (next === "advance") {
+        params.set("view", "advance");
+      } else {
+        params.delete("view");
+      }
+      params.delete("page");
+      const qs = params.toString();
+      navigate(qs ? `/payments?${qs}` : "/payments");
+    },
+    [navigate, searchParams],
+  );
 
   const setFilter = React.useCallback(
     (key: FilterScalarKey, value: string) => {
@@ -205,13 +185,6 @@ export function PaymentsView({
   const loadDetail = React.useCallback(async (invoiceId: string) => {
     const d = await getInvoicePaymentDetail(invoiceId);
     setDetail(d);
-    if (d) {
-      setAmount(d.remaining);
-      setMethod("");
-      setTransactionRef("");
-      setPaidAt("");
-      setProofFile(null);
-    }
     return d;
   }, []);
 
@@ -229,8 +202,6 @@ export function PaymentsView({
     [isFinance, loadDetail],
   );
 
-  // Auto-open the drawer when an inbox deep-link supplies `?invoiceId=...`.
-  // Uses a ref so we don't re-open after the user has closed it manually.
   const autoOpenedRef = React.useRef<string | null>(null);
   React.useEffect(() => {
     if (!isFinance) return;
@@ -248,37 +219,6 @@ export function PaymentsView({
     },
     [openPaymentSheet],
   );
-
-  async function handleSave(e: React.FormEvent) {
-    e.preventDefault();
-    if (!detail) return;
-    if (!method) {
-      toast.error("Select a payment method.");
-      return;
-    }
-    const fd = new FormData();
-    fd.set("invoiceId", detail.invoiceId);
-    fd.set("amount", amount);
-    fd.set("method", method);
-    fd.set("transactionRef", transactionRef);
-    fd.set("paidAt", paidAt);
-    if (proofFile) fd.set("proof", proofFile);
-
-    setSubmitting(true);
-    const res = await recordPayment(fd);
-    setSubmitting(false);
-    if (!res.ok) {
-      toast.error(res.message ?? "Failed to record payment.");
-      return;
-    }
-    toast.success("Payment recorded.");
-    const updated = await loadDetail(detail.invoiceId);
-    refresh();
-    if (updated?.paymentStatus === PaymentStatus.PAID) {
-      setSheetOpen(false);
-      resetPaymentForm(setAmount, setMethod, setTransactionRef, setPaidAt, setProofFile);
-    }
-  }
 
   const columns: DataTableColumn<PaymentListRow>[] = React.useMemo(() => {
     const invoiceCol: DataTableColumn<PaymentListRow> = {
@@ -341,10 +281,7 @@ export function PaymentsView({
               </span>
               <span className="text-muted-foreground"> / {formatInr(r.invoiceAmount)}</span>
             </span>
-            <span
-              className="h-1 w-28 overflow-hidden rounded-full bg-muted"
-              aria-hidden
-            >
+            <span className="h-1 w-28 overflow-hidden rounded-full bg-muted" aria-hidden>
               <span
                 className="block h-full rounded-full bg-[var(--status-warning)] transition-all duration-slow"
                 style={{ width: `${pct}%` }}
@@ -385,6 +322,43 @@ export function PaymentsView({
         header: "Expected",
         variant: "numeric",
         cell: (r) => (r.expectedAmount ? formatInr(r.expectedAmount) : "—"),
+      };
+
+      const advanceCol: DataTableColumn<PaymentListRow> = {
+        id: "advance",
+        header: "Advance on PO",
+        variant: "numeric",
+        cell: (r) => {
+          const unallocated = Number(r.advanceUnallocatedOnPo);
+          if (unallocated > 0) {
+            return (
+              <span className="font-semibold tabular-nums text-[var(--status-info)]">
+                {formatInr(r.advanceUnallocatedOnPo)}
+              </span>
+            );
+          }
+          if (r.hasPendingAdvanceRequest) {
+            return (
+              <Chip tone="warning" size="sm" variant="soft">
+                Requested
+              </Chip>
+            );
+          }
+          return <span className="text-muted-foreground">—</span>;
+        },
+      };
+
+      const settledViaCol: DataTableColumn<PaymentListRow> = {
+        id: "settledVia",
+        header: "Settled via",
+        cell: (r) =>
+          r.settledVia === "unpaid" ? (
+            <span className="text-muted-foreground">—</span>
+          ) : (
+            <Chip tone="neutral" size="sm" variant="soft">
+              {settlementCompositionLabel(r.settledVia)}
+            </Chip>
+          ),
       };
 
       const uploadedByCol: DataTableColumn<PaymentListRow> = {
@@ -432,7 +406,7 @@ export function PaymentsView({
                 void openPaymentSheet(r.invoiceId);
               }}
             >
-              {r.paymentStatus === PaymentStatus.PARTIALLY_PAID ? "Add payment" : "Record"}
+              {r.paymentStatus === PaymentStatus.PARTIALLY_PAID ? "Settle" : "Settle"}
             </Button>
           ),
       };
@@ -444,15 +418,16 @@ export function PaymentsView({
         receiptsCol,
         amountCol,
         expectedCol,
+        advanceCol,
         matchCol,
         paymentCol,
+        settledViaCol,
         uploadedByCol,
         latestCol,
         actionsCol,
       ];
     }
 
-    // Ops (read-only) — original column set.
     return [
       invoiceCol,
       poCol,
@@ -479,481 +454,153 @@ export function PaymentsView({
         title={isFinance ? "Invoices & payments" : "Payments"}
         subtitle={
           isFinance
-            ? "Browse every invoice and record payments in one place. Partial payments can be split across multiple transactions."
+            ? "Pay vendor advances, then settle invoices using advance credit and bank transfer."
             : "Read-only payment status across invoices."
+        }
+        action={
+          isFinance ? (
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant={activeView === "invoices" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setView("invoices")}
+              >
+                Invoice settlement
+              </Button>
+              <Button
+                type="button"
+                variant={activeView === "advance" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setView("advance")}
+              >
+                Vendor advances
+                {advanceRows.length > 0 ? ` (${advanceRows.length} pending)` : ""}
+              </Button>
+            </div>
+          ) : undefined
         }
       />
 
-      <FilterBar
-        resultCount={rows.total ?? undefined}
-        activeChips={
-          chipSpecs.length > 0 ? (
-            <FilterChipsRow chips={chipSpecs} onClearAll={clearAllFilters} />
-          ) : undefined
-        }
-      >
-        {isFinance ? (
-          <form onSubmit={handlePoSearchSubmit} className="inline-flex">
-            <FilterSearch
-              name="poId"
-              defaultValue={filters.poId}
-              placeholder="PO id"
-              ariaLabel="Purchase order id"
-              width="w-[160px]"
-            />
-          </form>
-        ) : null}
-        <FilterSelect
-          name="paymentStatus"
-          defaultValue={filters.paymentStatus}
-          placeholder="All payment"
-          ariaLabel="Payment status"
-          triggerClassName="w-[160px]"
-          onValueChange={(v) => setFilter("paymentStatus", v)}
-          options={Object.values(PaymentStatus).map((s) => ({
-            value: s,
-            label: s.replaceAll("_", " "),
-          }))}
+      {activeView === "advance" ? (
+        <AdvancePaymentsPanel
+          role={role}
+          rows={advanceRows}
+          historyRows={advanceHistoryRows}
+          initialRequestId={initialAdvanceRequestId}
         />
-        <FilterSelect
-          name="matchStatus"
-          defaultValue={filters.matchStatus}
-          placeholder="All match"
-          ariaLabel="Match status"
-          triggerClassName="w-[160px]"
-          onValueChange={(v) => setFilter("matchStatus", v)}
-          options={Object.values(InvoiceMatchStatus).map((s) => ({
-            value: s,
-            label: s.replaceAll("_", " "),
-          }))}
-        />
-        <FilterSelect
-          name="vendorId"
-          defaultValue={filters.vendorId}
-          placeholder="All vendors"
-          ariaLabel="Vendor"
-          triggerClassName="w-[180px]"
-          onValueChange={(v) => setFilter("vendorId", v)}
-          options={filterOptions.vendors.map((v) => ({
-            value: v.id,
-            label: v.businessName,
-          }))}
-        />
-        <DateRangeFilter
-          defaultFrom={filters.dateFrom}
-          defaultTo={filters.dateTo}
-          onFromChange={(v) => setFilter("dateFrom", v)}
-          onToChange={(v) => setFilter("dateTo", v)}
-        />
-      </FilterBar>
+      ) : null}
 
-      {rows.items.length === 0 ? (
-        <EmptyState
-          title="No invoices to show"
-          description="No invoices match these filters."
-        />
-      ) : (
+      {activeView === "invoices" ? (
         <>
-          <DataTable
-            columns={columns}
-            data={rows.items}
-            getRowKey={getPaymentRowKey}
-            onRowClick={isFinance ? handleRowClick : undefined}
-          />
-          <Pagination
-            basePath="/payments"
-            page={rows.page}
-            pageSize={rows.pageSize}
-            total={rows.total}
-            totalPages={rows.totalPages}
-            hasNextPage={rows.hasNextPage}
-            onPageChange={handlePageChange}
-            searchParams={{
-              paymentStatus: filters.paymentStatus || undefined,
-              matchStatus: filters.matchStatus || undefined,
-              vendorId: filters.vendorId || undefined,
-              poId: filters.poId || undefined,
-              dateFrom: filters.dateFrom || undefined,
-              dateTo: filters.dateTo || undefined,
-            }}
-          />
-        </>
-      )}
+          <FilterBar
+            resultCount={rows.total ?? undefined}
+            activeChips={
+              chipSpecs.length > 0 ? (
+                <FilterChipsRow chips={chipSpecs} onClearAll={clearAllFilters} />
+              ) : undefined
+            }
+          >
+            {isFinance ? (
+              <form onSubmit={handlePoSearchSubmit} className="inline-flex">
+                <FilterSearch
+                  name="poId"
+                  defaultValue={filters.poId}
+                  placeholder="PO id"
+                  ariaLabel="Purchase order id"
+                  width="w-[160px]"
+                />
+              </form>
+            ) : null}
+            <FilterSelect
+              name="paymentStatus"
+              defaultValue={filters.paymentStatus}
+              placeholder="All payment"
+              ariaLabel="Payment status"
+              triggerClassName="w-[160px]"
+              onValueChange={(v) => setFilter("paymentStatus", v)}
+              options={Object.values(PaymentStatus).map((s) => ({
+                value: s,
+                label: s.replaceAll("_", " "),
+              }))}
+            />
+            <FilterSelect
+              name="matchStatus"
+              defaultValue={filters.matchStatus}
+              placeholder="All match"
+              ariaLabel="Match status"
+              triggerClassName="w-[160px]"
+              onValueChange={(v) => setFilter("matchStatus", v)}
+              options={Object.values(InvoiceMatchStatus).map((s) => ({
+                value: s,
+                label: s.replaceAll("_", " "),
+              }))}
+            />
+            <FilterSelect
+              name="vendorId"
+              defaultValue={filters.vendorId}
+              placeholder="All vendors"
+              ariaLabel="Vendor"
+              triggerClassName="w-[180px]"
+              onValueChange={(v) => setFilter("vendorId", v)}
+              options={filterOptions.vendors.map((v) => ({
+                value: v.id,
+                label: v.businessName,
+              }))}
+            />
+            <DateRangeFilter
+              defaultFrom={filters.dateFrom}
+              defaultTo={filters.dateTo}
+              onFromChange={(v) => setFilter("dateFrom", v)}
+              onToChange={(v) => setFilter("dateTo", v)}
+            />
+          </FilterBar>
 
-      {isFinance ? (
-        <FormDrawer
+          {rows.items.length === 0 ? (
+            <EmptyState
+              title="No invoices to show"
+              description="No invoices match these filters."
+            />
+          ) : (
+            <>
+              <DataTable
+                columns={columns}
+                data={rows.items}
+                getRowKey={getPaymentRowKey}
+                onRowClick={isFinance ? handleRowClick : undefined}
+              />
+              <Pagination
+                basePath="/payments"
+                page={rows.page}
+                pageSize={rows.pageSize}
+                total={rows.total}
+                totalPages={rows.totalPages}
+                hasNextPage={rows.hasNextPage}
+                onPageChange={handlePageChange}
+                searchParams={{
+                  paymentStatus: filters.paymentStatus || undefined,
+                  matchStatus: filters.matchStatus || undefined,
+                  vendorId: filters.vendorId || undefined,
+                  poId: filters.poId || undefined,
+                  dateFrom: filters.dateFrom || undefined,
+                  dateTo: filters.dateTo || undefined,
+                }}
+              />
+            </>
+          )}
+        </>
+      ) : null}
+
+      {isFinance && activeView === "invoices" ? (
+        <InvoiceSettlementDrawer
           open={sheetOpen}
           onOpenChange={setSheetOpen}
-          title={detail ? `Invoice ${detail.invoiceNumber}` : "Invoice details"}
-          description={detail?.vendorName}
-          footer={
-            detail && Number(detail.remaining) > 0 ? (
-              <>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setSheetOpen(false)}
-                >
-                  Close
-                </Button>
-                <Button
-                  type="button"
-                  disabled={submitting || paymentGated}
-                  onClick={() => paymentFormRef.current?.requestSubmit()}
-                >
-                  {submitting ? "Saving…" : "Record payment"}
-                </Button>
-              </>
-            ) : detail ? (
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setSheetOpen(false)}
-              >
-                Close
-              </Button>
-            ) : null
-          }
-        >
-          {loadingDetail ? (
-            <p className="text-ds-sm text-muted-foreground">Loading…</p>
-          ) : detail ? (
-            <form
-              ref={paymentFormRef}
-              data-submit-shortcut
-              onSubmit={handleSave}
-              className="space-y-5"
-            >
-              {paymentGated ? (
-                <div className="rounded-lg border border-[var(--status-error-border)] bg-[var(--status-error-bg)] px-3 py-2 text-ds-sm text-[var(--status-error)]">
-                  Payment is gated — invoice has a match mismatch. An Ops Head override is
-                  required before you can record a payment.
-                </div>
-              ) : null}
-
-              <SheetSection
-                title="Invoice details"
-                description="Read-only audit context for this invoice."
-              >
-                <dl className="grid grid-cols-2 gap-x-4 gap-y-2 rounded-lg border border-border-subtle bg-card p-3 text-ds-sm">
-                  <DetailRow label="Purchase order">
-                    <ProcurementRefLink id={detail.poId} className="font-medium" />
-                  </DetailRow>
-                  <DetailRow label="Invoice date">
-                    {formatDateMedium(detail.invoiceDate)}
-                  </DetailRow>
-                  <DetailRow label="Uploaded by">
-                    {detail.uploadedByName}
-                  </DetailRow>
-                  <DetailRow label="Uploaded on">
-                    {formatDateMedium(detail.createdAt)}
-                  </DetailRow>
-                  <DetailRow label="Amount">
-                    <span className="font-semibold tabular-nums">
-                      {formatInr(detail.amount)}
-                    </span>
-                  </DetailRow>
-                  <DetailRow label="Expected">
-                    {detail.expectedAmount ? (
-                      <span className="font-semibold tabular-nums">
-                        {formatInr(detail.expectedAmount)}
-                      </span>
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )}
-                  </DetailRow>
-                  {detail.variance != null ? (
-                    <DetailRow label="Variance" wide>
-                      <span
-                        className={
-                          detail.variance === 0
-                            ? "text-status-success"
-                            : "text-status-warning"
-                        }
-                      >
-                        {formatInr(String(detail.variance))}
-                        {detail.variancePct != null
-                          ? ` (${detail.variancePct.toFixed(1)}%)`
-                          : ""}
-                      </span>
-                    </DetailRow>
-                  ) : null}
-                  {detail.overrideReason ? (
-                    <DetailRow label="Override reason" wide>
-                      <span className="text-ds-xs text-muted-foreground">
-                        {detail.overrideReason}
-                      </span>
-                    </DetailRow>
-                  ) : null}
-                </dl>
-                {detail.grns.length > 0 ? (
-                  <div className="mt-3 rounded-lg border border-border-subtle bg-card p-3 text-ds-sm">
-                    <p className="mb-2 text-ds-2xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      Linked goods receipts ({detail.grns.length})
-                    </p>
-                    <ul className="space-y-1.5">
-                      {detail.grns.map((g) => (
-                        <li
-                          key={g.id}
-                          className="flex items-center justify-between gap-3"
-                        >
-                          <span>{formatDateMedium(g.receivedAt)}</span>
-                          <span className="text-ds-xs text-muted-foreground">
-                            {g.acceptedQty} accepted
-                            {g.disputedQty > 0
-                              ? ` · ${g.disputedQty} disputed`
-                              : ""}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null}
-                {detail.fileSignedUrl ? (
-                  <a
-                    href={detail.fileSignedUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="mt-3 inline-flex items-center gap-1.5 text-ds-xs text-primary hover:underline"
-                  >
-                    <FileText className="size-3.5" strokeWidth={1.5} aria-hidden />
-                    View invoice file
-                  </a>
-                ) : null}
-              </SheetSection>
-
-              <section className="flex items-start gap-4 rounded-xl border border-border-subtle bg-card p-4 text-ds-sm">
-                <ProgressRing
-                  value={Number(detail.paidTotal)}
-                  total={Number(detail.amount)}
-                  size={64}
-                  strokeWidth={6}
-                  tone={
-                    Number(detail.remaining) === 0
-                      ? "success"
-                      : detail.paymentStatus === PaymentStatus.PARTIALLY_PAID
-                        ? "warning"
-                        : "accent"
-                  }
-                  label={
-                    <span className="text-ds-2xs font-semibold">
-                      {Number(detail.amount) > 0
-                        ? `${Math.round((Number(detail.paidTotal) / Number(detail.amount)) * 100)}%`
-                        : "0%"}
-                    </span>
-                  }
-                />
-                <div className="min-w-0 flex-1 space-y-1">
-                  <p className="font-medium text-foreground">Payment summary</p>
-                  <p>
-                    <span className="text-muted-foreground">Invoice:</span>{" "}
-                    <span className="font-semibold tabular-nums">
-                      {formatInr(detail.amount)}
-                    </span>
-                  </p>
-                  <p>
-                    <span className="text-muted-foreground">Paid:</span>{" "}
-                    <span className="font-semibold tabular-nums text-[var(--status-success)]">
-                      {formatInr(detail.paidTotal)}
-                    </span>
-                  </p>
-                  <p>
-                    <span className="text-muted-foreground">Remaining:</span>{" "}
-                    <span className="font-semibold tabular-nums text-[var(--status-warning)]">
-                      {formatInr(detail.remaining)}
-                    </span>
-                  </p>
-                  <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                    <StatusBadge kind="InvoiceMatchStatus" status={detail.matchStatus} />
-                    <StatusBadge kind="PaymentStatus" status={detail.paymentStatus} />
-                    {detail.expectedAmount &&
-                    Number(detail.amount) !== Number(detail.expectedAmount) ? (
-                      <Chip tone="warning" size="sm">
-                        Expected {formatInr(detail.expectedAmount)}
-                      </Chip>
-                    ) : null}
-                  </div>
-                </div>
-              </section>
-
-              {detail.payments.length > 0 ? (
-                <SheetSection title="Payment history">
-                  <ol className="space-y-2">
-                    {detail.payments.map((p) => (
-                      <li
-                        key={p.id}
-                        className="flex items-start gap-3 rounded-lg border border-border-subtle bg-card p-3 text-ds-sm"
-                      >
-                        <span
-                          className="mt-1 size-2 shrink-0 rounded-full bg-[var(--status-success)]"
-                          aria-hidden
-                        />
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-baseline justify-between gap-2">
-                            <span className="font-semibold tabular-nums text-foreground">
-                              {formatInr(p.amount)}
-                            </span>
-                            <span className="text-ds-xs text-muted-foreground">
-                              {formatDateMedium(p.paidAt)}
-                            </span>
-                          </div>
-                          <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-ds-xs text-muted-foreground">
-                            <span>
-                              Txn{" "}
-                              <span className="font-mono text-foreground">
-                                {p.transactionRef ?? "—"}
-                              </span>
-                            </span>
-                            {p.method ? <span>· {p.method}</span> : null}
-                            {p.paidByName ? <span>· {p.paidByName}</span> : null}
-                          </div>
-                          {p.proofSignedUrl ? (
-                            <a
-                              href={p.proofSignedUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="mt-1 inline-block text-ds-xs text-primary hover:underline"
-                            >
-                              View proof →
-                            </a>
-                          ) : null}
-                        </div>
-                      </li>
-                    ))}
-                  </ol>
-                </SheetSection>
-              ) : null}
-
-              <SheetSection
-                title="Bank details verification"
-                description="Verify these details match the invoice before recording payment."
-              >
-                <dl className="grid grid-cols-2 gap-2 rounded-lg border border-border-subtle bg-card p-3 text-ds-sm">
-                  <div>
-                    <dt className="text-ds-xs text-muted-foreground">Account name</dt>
-                    <dd className="font-medium">{detail.vendorBank.accountName}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-ds-xs text-muted-foreground">Account</dt>
-                    <dd className="font-mono">••••{detail.vendorBank.accountLast4}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-ds-xs text-muted-foreground">IFSC</dt>
-                    <dd className="font-mono">{detail.vendorBank.ifsc}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-ds-xs text-muted-foreground">Bank</dt>
-                    <dd>{detail.vendorBank.bankName}</dd>
-                  </div>
-                </dl>
-              </SheetSection>
-
-              {Number(detail.remaining) > 0 ? (
-                <SheetSection
-                  title={
-                    detail.paymentStatus === PaymentStatus.PARTIALLY_PAID
-                      ? "Add another payment"
-                      : "Record payment"
-                  }
-                >
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <Field
-                      label="Amount"
-                      htmlFor="payment-amount"
-                      hint={`Up to ${formatInr(detail.remaining)} remaining`}
-                      required
-                    >
-                      <Input
-                        id="payment-amount"
-                        type="number"
-                        step="0.01"
-                        min="0.01"
-                        max={detail.remaining}
-                        value={amount}
-                        onChange={(e) => setAmount(e.target.value)}
-                        disabled={paymentGated}
-                        required
-                      />
-                    </Field>
-                    <Field label="Payment method" htmlFor="payment-method" required>
-                      <Select
-                        value={method}
-                        onValueChange={setMethod}
-                        disabled={paymentGated}
-                      >
-                        <SelectTrigger
-                          id="payment-method"
-                          aria-label="Payment method"
-                        >
-                          <SelectValue placeholder="Select method" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {PAYMENT_METHOD_OPTIONS.map((m) => (
-                            <SelectItem key={m.value} value={m.value}>
-                              {m.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </Field>
-                    <Field
-                      label="Transaction reference"
-                      htmlFor="payment-txn"
-                      className="sm:col-span-2"
-                      required
-                    >
-                      <Input
-                        id="payment-txn"
-                        placeholder="Reference number from the bank"
-                        value={transactionRef}
-                        onChange={(e) => setTransactionRef(e.target.value)}
-                        disabled={paymentGated}
-                        required
-                      />
-                    </Field>
-                    <Field label="Paid date" htmlFor="payment-paid-at" required>
-                      <Input
-                        id="payment-paid-at"
-                        type="date"
-                        value={paidAt}
-                        onChange={(e) => setPaidAt(e.target.value)}
-                        disabled={paymentGated}
-                        required
-                      />
-                    </Field>
-                    <Field label="Proof" htmlFor="payment-proof" hint="PDF or image">
-                      <Input
-                        id="payment-proof"
-                        type="file"
-                        accept=".pdf,image/*"
-                        disabled={paymentGated}
-                        onChange={(e) => setProofFile(e.target.files?.[0] ?? null)}
-                      />
-                    </Field>
-                  </div>
-                </SheetSection>
-              ) : null}
-            </form>
-          ) : null}
-        </FormDrawer>
+          detail={detail}
+          loading={loadingDetail}
+          onDetailReload={loadDetail}
+          onSuccess={refresh}
+        />
       ) : null}
-    </div>
-  );
-}
-
-function DetailRow({
-  label,
-  children,
-  wide,
-}: {
-  label: string;
-  children: React.ReactNode;
-  wide?: boolean;
-}) {
-  return (
-    <div className={wide ? "col-span-2" : undefined}>
-      <dt className="text-ds-xs text-muted-foreground">{label}</dt>
-      <dd className="mt-0.5">{children}</dd>
     </div>
   );
 }

@@ -3,7 +3,12 @@ import { Role } from "@/lib/prisma-enums";
 
 import { SurfaceCard } from "@/components/shared/SurfaceCard";
 import { Button } from "@/components/ui/button";
-import type { DashboardMetrics } from "@/lib/queries/dashboard";
+import { FINANCE_ROUTES } from "@/lib/finance-routes";
+import type {
+  DashboardMetrics,
+  FinanceDashboardMetrics,
+  OpsDashboardMetrics,
+} from "@/lib/queries/dashboard";
 import { ROLE_LABELS } from "@/lib/navigation";
 
 const PENDING_LINKS: Partial<Record<Role, { href: string; label: string }>> = {
@@ -12,14 +17,46 @@ const PENDING_LINKS: Partial<Record<Role, { href: string; label: string }>> = {
     label: "Review pending approvals",
   },
   [Role.SM]: {
-    href: "/purchase-requests?status=PENDING_APPROVAL",
-    label: "View submitted requests",
+    href: "/inbox",
+    label: "Open inbox",
   },
   [Role.FINANCE]: {
-    href: "/payments?paymentStatus=UNPAID",
+    href: `${FINANCE_ROUTES.invoiceSettlement}?paymentStatus=UNPAID`,
     label: "Open unpaid invoices",
   },
 };
+
+function isFinanceMetrics(
+  metrics: DashboardMetrics | FinanceDashboardMetrics | OpsDashboardMetrics,
+): metrics is FinanceDashboardMetrics {
+  return "paymentAgeing" in metrics;
+}
+
+function isOpsMetrics(
+  metrics: DashboardMetrics | FinanceDashboardMetrics | OpsDashboardMetrics,
+): metrics is OpsDashboardMetrics {
+  return "openGrnExceptions" in metrics;
+}
+
+function attentionCount(
+  role: Role,
+  metrics: DashboardMetrics | FinanceDashboardMetrics | OpsDashboardMetrics,
+): number {
+  if (isFinanceMetrics(metrics)) {
+    return metrics.unpaidInvoices.count;
+  }
+  if (isOpsMetrics(metrics)) {
+    return (
+      metrics.pendingApprovals +
+      metrics.pendingVendorRequests +
+      metrics.prsAwaitingPo +
+      metrics.openGrnExceptions +
+      metrics.matchExceptions
+    );
+  }
+  const sm = metrics as DashboardMetrics;
+  return sm.draftPurchaseRequests + sm.pendingApprovals + sm.posAwaitingReceipt;
+}
 
 export function DashboardWelcomeStrip({
   displayName,
@@ -28,14 +65,18 @@ export function DashboardWelcomeStrip({
 }: {
   displayName: string;
   role: Role;
-  metrics: DashboardMetrics;
+  metrics: DashboardMetrics | FinanceDashboardMetrics | OpsDashboardMetrics;
 }) {
   const firstName = displayName.split(/\s+/)[0] ?? displayName;
-  const pendingCount =
-    role === Role.FINANCE
-      ? metrics.unpaidInvoices
-      : metrics.pendingApprovals;
+  const pendingCount = attentionCount(role, metrics);
   const pendingLink = PENDING_LINKS[role];
+
+  const attentionHint =
+    role === Role.SM && !isFinanceMetrics(metrics) && !isOpsMetrics(metrics)
+      ? `${metrics.draftPurchaseRequests} draft · ${metrics.pendingApprovals} pending · ${metrics.posAwaitingReceipt} to receive`
+      : role === Role.OPS_HEAD && isOpsMetrics(metrics)
+        ? `${metrics.pendingApprovals} approvals · ${metrics.prsAwaitingPo} configure PO · ${metrics.openGrnExceptions + metrics.matchExceptions} exceptions`
+        : null;
 
   return (
     <SurfaceCard variant="accent" size="lg" className="surface-glow">
@@ -49,9 +90,16 @@ export function DashboardWelcomeStrip({
           </h1>
           <p className="text-ds-sm text-muted-foreground">
             {pendingCount > 0
-              ? `${pendingCount} item${pendingCount === 1 ? "" : "s"} need${pendingCount === 1 ? "s" : ""} attention today.`
-              : "You're all caught up on pending work."}
+              ? `${pendingCount} item${pendingCount === 1 ? "" : "s"} need${pendingCount === 1 ? "s" : ""} attention across your scope.`
+              : role === Role.FINANCE
+                ? "You're all caught up on payables."
+                : role === Role.OPS_HEAD
+                  ? "You're all caught up on governance and exceptions."
+                  : "You're all caught up on pending work."}
           </p>
+          {pendingCount > 0 && attentionHint ? (
+            <p className="text-ds-xs text-muted-foreground">{attentionHint}</p>
+          ) : null}
         </div>
         {pendingLink && pendingCount > 0 ? (
           <Button variant="gradient" size="sm" render={<Link href={pendingLink.href} />}>

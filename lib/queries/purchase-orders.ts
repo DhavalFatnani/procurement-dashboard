@@ -17,7 +17,10 @@ import {
   toGrnExceptionSnapshot,
   type GrnExceptionSnapshot,
 } from "@/lib/grn-exception-lines";
+import { formatGrnReceiptLabel } from "@/lib/display-ref";
+import { isVisibleGrnReceipt } from "@/lib/grn-pending-qty";
 import { formatWarehouseLabel, warehouseOptionsFromRows } from "@/lib/format-warehouse";
+import { STORAGE_BUCKETS } from "@/lib/storage";
 import { mapPrLinesFromDb, prLinesAwaitingPoSelect } from "@/lib/map-pr-lines";
 import { cachedQuery, LIST_CACHE_TAGS, stableFilterKey } from "@/lib/list-cache";
 import {
@@ -26,6 +29,23 @@ import {
   buildClosureSnapshot,
   deliveryStatusLabel,
 } from "@/lib/poAutoClose";
+import {
+  buildEffectiveLineMap,
+  effectiveOrderedQtyForLegacyLine,
+  effectiveOrderedQtyForLineItem,
+  normalizePoLineAdjustments,
+  type POLineAdjustmentRow,
+} from "@/lib/po-line-effective";
+import {
+  hasPendingReplacement,
+  pendingReplacementByPoLine,
+} from "@/lib/po-replacement-pending";
+import {
+  buildReceivingLineRows,
+  filterAttentionLines,
+  type POReceiptContext,
+  type POReceivingLineRow,
+} from "@/lib/po-receiving-lines";
 import { paginatedListQuery, type Paginated } from "@/lib/pagination";
 import { prisma } from "@/lib/prisma";
 import { timed } from "@/lib/server-timing";
@@ -49,6 +69,7 @@ export type PurchaseOrderFilters = {
   status?: POStatus;
   vendorId?: string;
   warehouseId?: string;
+  prId?: string;
   /** When set, restricts results to these assigned warehouses (from session). */
   scopeWarehouseIds?: string[];
   dateFrom?: string;
@@ -97,6 +118,16 @@ export type POGRNRow = {
   lines: POGRNLineRow[];
 };
 
+export type POInvoicePaymentRow = {
+  id: string;
+  amount: string;
+  method: string | null;
+  transactionRef: string | null;
+  paidAt: string | null;
+  paidByName: string | null;
+  proofSignedUrl: string | null;
+};
+
 export type POInvoiceRow = {
   id: string;
   invoiceNumber: string;
@@ -107,6 +138,7 @@ export type POInvoiceRow = {
   paymentStatus: PaymentStatus;
   uploadedByName: string;
   createdAt: string;
+  payments: POInvoicePaymentRow[];
 };
 
 export type PODetail = {
@@ -116,6 +148,7 @@ export type PODetail = {
   subcategoryName: string;
   lineSummary: string;
   isLockTags: boolean;
+  itemCount: number;
   orderedQty: number;
   unitPrice: string | null;
   lines: POLineRow[];
@@ -141,10 +174,16 @@ export type PODetail = {
     rangeEnd: string;
     status: string;
   } | null;
+  /** Count of GRNException rows with no resolution on this PO. */
+  openDisputeCount: number;
+  /** True when every exception on the PO is resolved (invoicing allowed). */
+  readyForInvoice: boolean;
   reconciliation: {
     ordered: number;
     received: number;
     invoiced: number;
+    advanced: number;
+    settled: number;
     paid: number;
     checks: {
       id: string;
@@ -154,6 +193,14 @@ export type PODetail = {
   };
   grns: POGRNRow[];
   invoices: POInvoiceRow[];
+  /** Lines with open dispute, pending receipt, or short-ship — Fulfillment attention table. */
+  attentionLines: POReceivingLineRow[];
+  /** Resolved replace outcomes still awaiting replacement GRN. */
+  pendingReplacements: {
+    poLineItemId: string;
+    label: string;
+    pendingQty: number;
+  }[];
 };
 
 export async function getPurchaseOrders(
@@ -180,6 +227,9 @@ async function fetchPurchaseOrders(
   }
   if (filters.vendorId) {
     clauses.push({ vendorId: filters.vendorId });
+  }
+  if (filters.prId) {
+    clauses.push({ prId: filters.prId });
   }
   if (filters.scopeWarehouseIds !== undefined) {
     clauses.push(purchaseOrderWhereFromScopeIds(filters.scopeWarehouseIds));
@@ -256,44 +306,53 @@ async function fetchPurchaseOrders(
     invoicesByPo.set(inv.poId, list);
   }
 
-  return {
-    ...paginated,
-    items: paginated.items.map((po) => {
-      const receivedQty = receivedByPo.get(po.id) ?? 0;
-      const invoices = invoicesByPo.get(po.id) ?? [];
-      const orderedQty = po.orderedQty ?? 0;
-      return {
-        id: po.id,
-        prId: po.prId,
-        vendorName: po.vendor.businessName,
-        warehouseName: formatWarehouseLabel(
-          po.purchaseRequest.warehouse.name,
-          po.purchaseRequest.warehouse.location,
-        ),
-        deliveryStatus: deliveryStatusLabel(
-          orderedQty,
-          receivedQty,
-          po.deliveryComplete,
-        ),
-        invoiceMatchStatus: aggregateInvoiceMatchStatus(invoices),
-        paymentStatus: aggregatePaymentStatus(invoices),
-        poStatus: po.status,
-        expectedDelivery: po.expectedDelivery?.toISOString() ?? null,
+  const items: PurchaseOrderListRow[] = paginated.items.map((po) => {
+    const receivedQty = receivedByPo.get(po.id) ?? 0;
+    const invoices = invoicesByPo.get(po.id) ?? [];
+    const orderedQty = po.orderedQty ?? 0;
+    return {
+      id: po.id,
+      prId: po.prId,
+      vendorName: po.vendor.businessName,
+      warehouseName: formatWarehouseLabel(
+        po.purchaseRequest.warehouse.name,
+        po.purchaseRequest.warehouse.location,
+      ),
+      deliveryStatus: deliveryStatusLabel(
         orderedQty,
         receivedQty,
-        createdAt: po.createdAt.toISOString(),
-      };
-    }),
+        po.deliveryComplete,
+      ),
+      invoiceMatchStatus: aggregateInvoiceMatchStatus(invoices),
+      paymentStatus: aggregatePaymentStatus(invoices),
+      poStatus: po.status,
+      expectedDelivery: po.expectedDelivery?.toISOString() ?? null,
+      orderedQty,
+      receivedQty,
+      createdAt: po.createdAt.toISOString(),
+    };
+  });
+
+  return {
+    ...paginated,
+    items,
   };
 }
 
 export const getPOById = cache(async (id: string): Promise<PODetail | null> => {
-  return cachedQuery(
+  const po = await cachedQuery(
     LIST_CACHE_TAGS.poDetail,
     [id],
     () => fetchPOById(id),
     { tags: [LIST_CACHE_TAGS.poDetail, `${LIST_CACHE_TAGS.poDetail}:${id}`] },
   );
+  if (!po) {
+    return null;
+  }
+  return {
+    ...po,
+    attentionLines: po.attentionLines ?? [],
+  };
 });
 
 /** One lightweight access check, then cached PO detail (avoids extra pooler round-trips). */
@@ -315,7 +374,45 @@ export async function getPOByIdForPage(
   if (!access.ok) {
     return null;
   }
-  return getPOById(id);
+  const po = await getPOById(id);
+  if (!po) {
+    return null;
+  }
+  return hydratePoPaymentProofSignedUrls(po);
+}
+
+async function hydratePoPaymentProofSignedUrls(po: PODetail): Promise<PODetail> {
+  const rows = await prisma.payment.findMany({
+    where: {
+      invoice: { poId: po.id },
+      proofUrl: { not: null },
+    },
+    select: { id: true, proofUrl: true },
+  });
+  if (rows.length === 0) {
+    return po;
+  }
+  const { createStorageSignedUrl } = await import("@/lib/upload-storage");
+  const signedEntries = await Promise.all(
+    rows.map(async (row) => {
+      const url = await createStorageSignedUrl(
+        STORAGE_BUCKETS.paymentProofs,
+        row.proofUrl!,
+      );
+      return [row.id, url] as const;
+    }),
+  );
+  const signedById = new Map(signedEntries);
+  return {
+    ...po,
+    invoices: po.invoices.map((inv) => ({
+      ...inv,
+      payments: inv.payments.map((payment) => ({
+        ...payment,
+        proofSignedUrl: signedById.get(payment.id) ?? payment.proofSignedUrl,
+      })),
+    })),
+  };
 }
 
 async function fetchPOById(id: string): Promise<PODetail | null> {
@@ -398,7 +495,35 @@ async function fetchPOById(id: string): Promise<PODetail | null> {
         include: {
           uploadedBy: { select: { name: true } },
           grnLinks: { select: { grnId: true } },
-          payments: { select: { amount: true } },
+          payments: {
+            orderBy: { paidAt: "desc" },
+            select: {
+              id: true,
+              amount: true,
+              method: true,
+              transactionRef: true,
+              paidAt: true,
+              proofUrl: true,
+              paidBy: { select: { name: true } },
+            },
+          },
+          advanceAllocations: { select: { amount: true } },
+        },
+      },
+      advancePayments: {
+        include: { allocations: { select: { amount: true } } },
+      },
+      lineAdjustments: {
+        orderBy: { createdAt: "asc" },
+        select: {
+          poLineItemId: true,
+          poLineId: true,
+          originalOrderedQty: true,
+          effectiveOrderedQty: true,
+          originalUnitPrice: true,
+          effectiveUnitPrice: true,
+          createdAt: true,
+          grnException: { select: { resolutionOutcome: true } },
         },
       },
     },
@@ -422,12 +547,20 @@ async function fetchPOById(id: string): Promise<PODetail | null> {
         })
       : [];
 
+  const lineAdjustments = normalizePoLineAdjustments(po.lineAdjustments);
+
   const poForClosure = {
     ...po,
     lines: legacyLines,
+    lineAdjustments,
   };
 
   const snapshot = buildClosureSnapshot(poForClosure);
+
+  const openDisputeCount = po.grns.reduce(
+    (sum, g) => sum + g.exceptions.filter((e) => e.resolutionStatus == null).length,
+    0,
+  );
 
   const closureLabels: { id: string; label: string; done: boolean }[] = [
     {
@@ -442,7 +575,7 @@ async function fetchPOById(id: string): Promise<PODetail | null> {
     },
     {
       id: "paid",
-      label: "All invoices paid",
+      label: "All invoices settled",
       done: snapshot.checks.allInvoicesPaid,
     },
     {
@@ -450,21 +583,50 @@ async function fetchPOById(id: string): Promise<PODetail | null> {
       label: "No open GRN disputes",
       done: snapshot.checks.noOpenDisputes,
     },
+    {
+      id: "replacement",
+      label: "No pending replacement receipts",
+      done: snapshot.checks.noPendingReplacement,
+    },
   ];
 
   const sortedLineItems = sortPoLineItems(po.lineItems);
+  const effectiveMap = buildEffectiveLineMap(lineAdjustments);
+
+  const allExceptions = po.grns.flatMap((g) => g.exceptions);
+  const acceptedByLineItem = new Map(
+    sortedLineItems.map((line) => [
+      line.id,
+      line.goodsReceiptLineItems.reduce((s, grl) => s + grl.acceptedQty, 0),
+    ]),
+  );
+  const effectiveOrderedByLineItem = new Map(
+    sortedLineItems.map((line) => [
+      line.id,
+      effectiveOrderedQtyForLineItem(line.id, line.orderedQty, effectiveMap),
+    ]),
+  );
+  const pendingReplacementLines = pendingReplacementByPoLine(
+    allExceptions,
+    acceptedByLineItem,
+    effectiveOrderedByLineItem,
+  );
+  const pendingReplacement = pendingReplacementLines.length > 0;
 
   const lineItemRows: POLineItemRow[] = sortedLineItems.flatMap((line) => {
-    const prLine = line.prLineItem?.prLine;
-    if (!prLine || !line.category || !line.subcategory || !line.catalogItem) {
+    if (!line.category || !line.subcategory || !line.catalogItem) {
       return [];
     }
+    const prLine = line.prLineItem?.prLine;
+    const lineNumber = prLine?.lineNumber ?? 0;
+    const lineItemNumber = line.prLineItem?.lineItemNumber ?? 0;
     return [
       {
         id: line.id,
         prLineItemId: line.prLineItemId,
-        lineNumber: prLine.lineNumber,
-        lineItemNumber: line.prLineItem.lineItemNumber,
+        isDisputeSplitLine: line.prLineItemId == null,
+        lineNumber,
+        lineItemNumber,
         categoryId: line.categoryId,
         categoryName: line.category.name,
         subcategoryId: line.subcategoryId,
@@ -473,10 +635,26 @@ async function fetchPOById(id: string): Promise<PODetail | null> {
         sku: line.catalogItem.sku,
         unit: line.catalogItem.unit,
         orderedQty: line.orderedQty,
+        effectiveOrderedQty: effectiveOrderedQtyForLineItem(
+          line.id,
+          line.orderedQty,
+          effectiveMap,
+        ),
         unitPrice: line.unitPrice.toString(),
         receivedQty: line.goodsReceiptLineItems.reduce((s, grl) => s + grl.acceptedQty, 0),
       },
     ];
+  });
+
+  const pendingReplacements = pendingReplacementLines.map((p) => {
+    const line = lineItemRows.find((l) => l.id === p.poLineItemId);
+    return {
+      poLineItemId: p.poLineItemId,
+      label: line
+        ? `Line ${line.lineNumber}${line.lineItemNumber > 1 ? `.${line.lineItemNumber}` : ""}: ${line.itemName}`
+        : p.poLineItemId,
+      pendingQty: p.pendingQty,
+    };
   });
 
   const lineRows: POLineRow[] = legacyLines.map((line) => ({
@@ -488,6 +666,11 @@ async function fetchPOById(id: string): Promise<PODetail | null> {
     subcategoryId: line.subcategoryId,
     subcategoryName: line.subcategory.name,
     orderedQty: line.orderedQty,
+    effectiveOrderedQty: effectiveOrderedQtyForLegacyLine(
+      line.id,
+      line.orderedQty,
+      effectiveMap,
+    ),
     unitPrice: line.unitPrice.toString(),
     receivedQty: line.goodsReceiptLines.reduce((s, grl) => s + grl.acceptedQty, 0),
   }));
@@ -497,12 +680,76 @@ async function fetchPOById(id: string): Promise<PODetail | null> {
   );
 
   const displayLines = lineItemRows.length > 0 ? lineItemRows : lineRows;
-  const orderedQty =
-    lineItemRows.length > 0
-      ? lineItemRows.reduce((s, l) => s + l.orderedQty, 0)
-      : lineRows.length > 0
-        ? sumOrderedQty(lineRows)
-        : (po.orderedQty ?? 0);
+  const grnRows: POGRNRow[] = po.grns.filter(isVisibleGrnReceipt).map((g) => {
+    const grnLines: POGRNLineRow[] =
+      g.lineItems.length > 0
+        ? sortGrnLineItems(g.lineItems).flatMap((line) => {
+            const poLine = line.purchaseOrderLineItem;
+            if (!poLine || !poLine.category || !poLine.subcategory || !poLine.catalogItem) {
+              return [];
+            }
+            const prLine = poLine.prLineItem?.prLine;
+            const exception = resolveExceptionForLineItem(
+              g.exceptions,
+              line.poLineItemId,
+              line.disputedQty,
+            );
+            return [
+              {
+                poLineItemId: line.poLineItemId,
+                lineNumber: prLine?.lineNumber ?? 0,
+                lineItemNumber: poLine.prLineItem?.lineItemNumber ?? 0,
+                label: `${poLine.category.name} / ${poLine.subcategory.name} · ${poLine.catalogItem.name}`,
+                receivedQty: line.receivedQty,
+                acceptedQty: line.acceptedQty,
+                disputedQty: line.disputedQty,
+                exception,
+              },
+            ];
+          })
+        : sortGrnLegacyLines(g.lines).flatMap((line) => {
+            const poLine = line.purchaseOrderLine;
+            if (!poLine?.prLine || !poLine.category || !poLine.subcategory) {
+              return [];
+            }
+            const exception = resolveExceptionForLegacyLine(
+              g.exceptions,
+              line.poLineId,
+              line.disputedQty,
+            );
+            return [
+              {
+                poLineItemId: line.poLineId,
+                lineNumber: poLine.prLine.lineNumber,
+                lineItemNumber: 1,
+                label: `${poLine.category.name} / ${poLine.subcategory.name}`,
+                receivedQty: line.receivedQty,
+                acceptedQty: line.acceptedQty,
+                disputedQty: line.disputedQty,
+                exception,
+              },
+            ];
+          });
+
+    const openExceptions = g.exceptions
+      .filter((e) => e.resolutionStatus == null)
+      .map(toGrnExceptionSnapshot);
+
+    return {
+      id: g.id,
+      receivedQty: g.receivedQty,
+      acceptedQty: g.acceptedQty,
+      disputedQty: g.disputedQty,
+      receivedByName: g.receivedBy.name,
+      receivedAt: g.receivedAt.toISOString(),
+      hasOpenDispute: openExceptions.length > 0,
+      openExceptions,
+      lines: grnLines,
+    };
+  });
+  const orderedQty = snapshot.orderedQty;
+  const itemCount =
+    lineItemRows.length > 0 ? lineItemRows.length : lineRows.length;
   const isLockTags =
     displayLines.length > 0
       ? hasLockTagsLines(
@@ -519,6 +766,7 @@ async function fetchPOById(id: string): Promise<PODetail | null> {
     subcategoryName: lineRows[0]?.subcategoryName ?? po.purchaseRequest.subcategory?.name ?? "—",
     lineSummary: prLineSummary.summary,
     isLockTags,
+    itemCount,
     orderedQty,
     unitPrice:
       lineItemRows.length === 1
@@ -544,80 +792,27 @@ async function fetchPOById(id: string): Promise<PODetail | null> {
           status: po.serialReservation.status,
         }
       : null,
+    openDisputeCount,
+    readyForInvoice: openDisputeCount === 0 && !pendingReplacement,
     reconciliation: {
       ordered: snapshot.orderedQty,
       received: snapshot.receivedQty,
       invoiced: snapshot.invoicedAmount,
-      paid: snapshot.paidAmount,
+      advanced: snapshot.advancePaid,
+      settled: snapshot.settledAmount,
+      paid: snapshot.settledAmount,
       checks: closureLabels,
     },
-    grns: po.grns.map((g) => {
-      const grnLines: POGRNLineRow[] =
-        g.lineItems.length > 0
-          ? sortGrnLineItems(g.lineItems).flatMap((line) => {
-              const poLine = line.purchaseOrderLineItem;
-              const prLine = poLine?.prLineItem?.prLine;
-              if (!poLine || !prLine || !poLine.category || !poLine.subcategory || !poLine.catalogItem) {
-                return [];
-              }
-              const exception = resolveExceptionForLineItem(
-                g.exceptions,
-                line.poLineItemId,
-                line.disputedQty,
-              );
-              return [
-                {
-                  poLineItemId: line.poLineItemId,
-                  lineNumber: prLine.lineNumber,
-                  lineItemNumber: poLine.prLineItem.lineItemNumber,
-                  label: `${poLine.category.name} / ${poLine.subcategory.name} · ${poLine.catalogItem.name}`,
-                  receivedQty: line.receivedQty,
-                  acceptedQty: line.acceptedQty,
-                  disputedQty: line.disputedQty,
-                  exception,
-                },
-              ];
-            })
-          : sortGrnLegacyLines(g.lines).flatMap((line) => {
-              const poLine = line.purchaseOrderLine;
-              if (!poLine?.prLine || !poLine.category || !poLine.subcategory) {
-                return [];
-              }
-              const exception = resolveExceptionForLegacyLine(
-                g.exceptions,
-                line.poLineId,
-                line.disputedQty,
-              );
-              return [
-                {
-                  poLineItemId: line.poLineId,
-                  lineNumber: poLine.prLine.lineNumber,
-                  lineItemNumber: 1,
-                  label: `${poLine.category.name} / ${poLine.subcategory.name}`,
-                  receivedQty: line.receivedQty,
-                  acceptedQty: line.acceptedQty,
-                  disputedQty: line.disputedQty,
-                  exception,
-                },
-              ];
-            });
-
-      const openExceptions = g.exceptions
-        .filter((e) => e.resolutionStatus == null)
-        .map(toGrnExceptionSnapshot);
-
-      return {
-        id: g.id,
-        receivedQty: g.receivedQty,
-        acceptedQty: g.acceptedQty,
-        disputedQty: g.disputedQty,
-        receivedByName: g.receivedBy.name,
-        receivedAt: g.receivedAt.toISOString(),
-        hasOpenDispute: openExceptions.length > 0,
-        openExceptions,
-        lines: grnLines,
-      };
-    }),
+    grns: grnRows,
+    attentionLines: buildPoAttentionLines(
+      po.id,
+      grnRows,
+      lineItemRows,
+      lineRows,
+      lineAdjustments,
+      po.status,
+    ),
+    pendingReplacements,
     invoices: po.invoices.map((inv) => ({
       id: inv.id,
       invoiceNumber: inv.invoiceNumber,
@@ -628,34 +823,165 @@ async function fetchPOById(id: string): Promise<PODetail | null> {
       paymentStatus: inv.paymentStatus,
       uploadedByName: inv.uploadedBy.name,
       createdAt: inv.createdAt.toISOString(),
+      payments: inv.payments.map((payment) => ({
+        id: payment.id,
+        amount: payment.amount?.toString() ?? "0",
+        method: payment.method,
+        transactionRef: payment.transactionRef,
+        paidAt: payment.paidAt?.toISOString() ?? null,
+        paidByName: payment.paidBy?.name ?? null,
+        proofSignedUrl: null,
+      })),
     })),
   };
   });
 }
 
+function receiptContextForOpenException(
+  poId: string,
+  grnRows: POGRNRow[],
+  lineId: string,
+  openException: GrnExceptionSnapshot,
+): POReceiptContext | null {
+  for (const g of grnRows) {
+    for (const gl of g.lines) {
+      if (
+        gl.poLineItemId === lineId &&
+        gl.exception?.id === openException.id
+      ) {
+        return {
+          grnId: g.id,
+          receiptLabel: formatGrnReceiptLabel(
+            poId,
+            g.receivedAt,
+            g.receivedByName,
+          ),
+          receivedQty: gl.receivedQty,
+          acceptedQty: gl.acceptedQty,
+          disputedQty: gl.disputedQty,
+          exceptionQty: openException.exceptionQty,
+        };
+      }
+    }
+  }
+  return null;
+}
+
+function buildPoAttentionLines(
+  poId: string,
+  grnRows: POGRNRow[],
+  lineItemRows: POLineItemRow[],
+  lineRows: POLineRow[],
+  lineAdjustments: POLineAdjustmentRow[],
+  poStatus: POStatus,
+): POReceivingLineRow[] {
+  const receivingInputs =
+    lineItemRows.length > 0
+      ? lineItemRows.map((line) => {
+          const grnIdsWithOpenDispute: string[] = [];
+          let openException: GrnExceptionSnapshot | null = null;
+          for (const g of grnRows) {
+            for (const gl of g.lines) {
+              if (
+                gl.poLineItemId === line.id &&
+                gl.exception &&
+                !gl.exception.resolutionStatus
+              ) {
+                openException = gl.exception;
+                grnIdsWithOpenDispute.push(g.id);
+              }
+            }
+          }
+          return {
+            lineKey: `item:${line.id}`,
+            lineId: line.id,
+            lineNumber: line.lineNumber,
+            lineItemNumber: line.lineItemNumber,
+            label: line.itemName,
+            originalOrderedQty: line.orderedQty,
+            acceptedQty: line.receivedQty,
+            unitPrice: line.unitPrice,
+            openException,
+            grnIdsWithOpenDispute,
+            receiptContext: openException
+              ? receiptContextForOpenException(poId, grnRows, line.id, openException)
+              : null,
+          };
+        })
+      : lineRows.map((line) => {
+          const grnIdsWithOpenDispute: string[] = [];
+          let openException: GrnExceptionSnapshot | null = null;
+          for (const g of grnRows) {
+            for (const gl of g.lines) {
+              if (
+                gl.poLineItemId === line.id &&
+                gl.exception &&
+                !gl.exception.resolutionStatus
+              ) {
+                openException = gl.exception;
+                grnIdsWithOpenDispute.push(g.id);
+              }
+            }
+          }
+          return {
+            lineKey: `line:${line.id}`,
+            lineId: line.id,
+            lineNumber: line.lineNumber,
+            lineItemNumber: 1,
+            label: `${line.categoryName} / ${line.subcategoryName}`,
+            originalOrderedQty: line.orderedQty,
+            acceptedQty: line.receivedQty,
+            unitPrice: line.unitPrice,
+            openException,
+            grnIdsWithOpenDispute,
+            receiptContext: openException
+              ? receiptContextForOpenException(poId, grnRows, line.id, openException)
+              : null,
+          };
+        });
+
+  return filterAttentionLines(
+    buildReceivingLineRows(receivingInputs, lineAdjustments, poStatus),
+  );
+}
+
 function sortPoLineItems<
   T extends {
-    prLineItem: { prLine: { lineNumber: number }; lineItemNumber: number };
+    prLineItem: {
+      prLine: { lineNumber: number };
+      lineItemNumber: number;
+    } | null;
   },
 >(items: T[]): T[] {
   return [...items].sort((a, b) => {
-    const byLine = a.prLineItem.prLine.lineNumber - b.prLineItem.prLine.lineNumber;
-    return byLine !== 0 ? byLine : a.prLineItem.lineItemNumber - b.prLineItem.lineItemNumber;
+    const aLine = a.prLineItem?.prLine.lineNumber ?? 9999;
+    const bLine = b.prLineItem?.prLine.lineNumber ?? 9999;
+    const byLine = aLine - bLine;
+    if (byLine !== 0) {
+      return byLine;
+    }
+    return (
+      (a.prLineItem?.lineItemNumber ?? 0) - (b.prLineItem?.lineItemNumber ?? 0)
+    );
   });
 }
 
 function sortGrnLineItems<
   T extends {
     purchaseOrderLineItem: {
-      prLineItem: { prLine: { lineNumber: number }; lineItemNumber: number };
+      prLineItem: {
+        prLine: { lineNumber: number };
+        lineItemNumber: number;
+      } | null;
     };
   },
 >(items: T[]): T[] {
   return [...items].sort((a, b) => {
     const aLine = a.purchaseOrderLineItem.prLineItem;
     const bLine = b.purchaseOrderLineItem.prLineItem;
-    const byLine = aLine.prLine.lineNumber - bLine.prLine.lineNumber;
-    return byLine !== 0 ? byLine : aLine.lineItemNumber - bLine.lineItemNumber;
+    const byLine =
+      (aLine?.prLine.lineNumber ?? 9999) - (bLine?.prLine.lineNumber ?? 9999);
+    return byLine !== 0 ? byLine : (aLine?.lineItemNumber ?? 0) - (bLine?.lineItemNumber ?? 0);
   });
 }
 
@@ -714,6 +1040,7 @@ export type ApprovedPRPurchaseOrderSummary = {
   id: string;
   vendorName: string;
   itemCount: number;
+  orderedQty: number;
   createdAt: string;
 };
 
@@ -723,6 +1050,7 @@ export type ApprovedPRAwaitingPO = {
   subcategoryName: string;
   lineSummary: string;
   warehouseName: string;
+  itemCount: number;
   quantity: number;
   lines: PRLineRow[];
   lineItems: ApprovedPRLineItemRow[];
@@ -868,6 +1196,7 @@ function mapAwaitingPoRow(
     subcategoryName: primary?.subcategoryName ?? pr.subcategory?.name ?? "—",
     lineSummary: summary.summary,
     warehouseName: formatWarehouseLabel(pr.warehouse.name, pr.warehouse.location),
+    itemCount: lineItems.length,
     quantity: totalQty,
     lines,
     lineItems,
@@ -884,6 +1213,7 @@ function mapAwaitingPoRow(
       id: po.id,
       vendorName: po.vendor.businessName,
       itemCount: po.lineItems.length,
+      orderedQty: po.orderedQty ?? 0,
       createdAt: po.createdAt.toISOString(),
     })),
   };

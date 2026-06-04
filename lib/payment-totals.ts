@@ -28,3 +28,12 @@ export function deriveInvoicePaymentStatus(
 export function computeRemaining(invoiceAmount: number, totalPaid: number): number {
   return Math.max(0, invoiceAmount - totalPaid);
 }
+
+/** Remaining after cash payments and advance allocations. */
+export function computeRemainingSettled(
+  invoiceAmount: number,
+  cashPaid: number,
+  allocated: number,
+): number {
+  return Math.max(0, invoiceAmount - cashPaid - allocated);
+}

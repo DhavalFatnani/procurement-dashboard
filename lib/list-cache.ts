@@ -43,4 +43,5 @@ export const LIST_CACHE_TAGS = {
   awaitingPo: "awaiting-po-list",
   vendorItems: "vendor-items",
   inbox: "inbox",
+  advanceRequests: "advance-requests",
 } as const;

@@ -86,6 +86,23 @@ Subcategory `executionType` (from seed / catalog) splits the product into two pa
 
 **Screen checklist:** `/purchase-requests` · `/purchase-requests/new` · `/purchase-requests/[id]` · `/purchase-orders` · `/purchase-orders/[id]` · `/goods-receipt/new` · `/invoices/new` · `/payments`
 
+### Lock tags — vendor-purchased serial governance
+
+Lock tags carry printed serial numbers from the shared `LOCK_TAGS` series (100000–9999999), but the vendor prints them — not in-house print.
+
+| Phase | When | Behaviour |
+|-------|------|-----------|
+| Soft preview (create) | SM creates a Lock Tags PR | Create PR form shows next suggested range for requested qty — **no ledger write** |
+| Approval hold (approve) | Ops approves PR | **PENDING** hold blocks the serial range on the PR — PR detail shows held range |
+| Hard commit (PO create) | Ops creates PO from approved PR | Selected lock-tag qty moves from PR hold to **RESERVED** on the PO; PO creation **fails** if commit fails |
+| Release (revert approval) | Ops reverts approval before any PO | PENDING hold deleted — range freed |
+| Release (cancel PO) | Ops cancels OPEN PO with no GRN | PO deleted, RESERVED serials freed; unassigned lock-tag qty gets a fresh PR approval hold |
+| Vendor handoff | After PO created | Ops downloads serial CSV from PO detail and sends range to vendor for printing |
+| GRN | SM records receipt | GRN form shows PO serial range for cross-checking physical tags |
+| Range map | `/serial-governance/range-map` | Interactive band view — approval holds (pulse), cancellable POs (dashed), committed, and free pool |
+
+Partial POs: each PO that includes lock-tag line items gets its own contiguous reserved range at creation time.
+
 ### PR status machine (vendor path)
 
 Enforced in `lib/prStatus.ts`.
@@ -174,7 +191,21 @@ If invoiced + paid but delivery incomplete → `PARTIALLY_CLOSED`.
 | Match | `computeInvoiceMatch`: accepted GRN qty × PO `unitPrice` vs invoice amount, default ±2.5% |
 | `MATCHED` | Finance may pay |
 | `MISMATCH` | `updatePayment` blocked for paid/partial until OPS `overrideInvoiceMatch` |
-| Pay | `updatePayment` — FINANCE only; txn ref required when paid/partial |
+| Pay | `recordPayment` — FINANCE only; cash portion needs method + proof; advance credit optional |
+
+### Advance payments (PO configure → Finance pay → invoice settle)
+
+| Step | Actor | Detail |
+|------|-------|--------|
+| Request | OPS (at PO configure) | Optional toggle per vendor group: fixed ₹ or % of committed PO (incl. GST when enabled), required reason → `POAdvanceRequest` `PENDING` |
+| Cap | Server | Σ pending + fulfilled requests ≤ committed PO total (`computePoOrderBilling`) |
+| Fulfill | FINANCE | Payments → Advance requests; pay full request amount; proof upload → `POAdvancePayment`, request `FULFILLED` (blocked if paid total would exceed **current** committed) |
+| Reject | FINANCE | Pending request → `REJECTED` with `reviewReason` (e.g. commitment dropped after short-ship) |
+| Cancel | OPS_HEAD | Pending request only, before Finance pays |
+| Over-commitment | UI + Reports | When Σ advance paid + pending > committed (after line adjustments), warn on PO Financials, pay sheet, and Reports “Advance over commitment” |
+| Invoice upload | SM / OPS | No auto-settlement; UI shows unallocated advance hint on PO |
+| Invoice pay | FINANCE | Hybrid: suggest `min(unallocated advance, invoice remaining)`; creates `POAdvanceAllocation` + cash `Payment`; `MISMATCH` blocks both until OPS override |
+| Closure | System | PO does not close on advance alone; “all invoices settled” = cash + allocations ≥ invoice amount |
 
 ---
 
@@ -194,10 +225,35 @@ Duplicate checks on phone / email / GST; similar-name warning (Jaro–Winkler) o
 | Step | Detail |
 |------|--------|
 | Create | `createGRN` on PO in `OPEN` or `PARTIALLY_RECEIVED` |
-| Qty | `receivedQty`, `acceptedQty`, `disputedQty`; cannot exceed pending on PO |
-| Exception | Optional `GRNException` + note |
-| Resolve | OPS `resolveGRNException` — blocks auto-close until resolved |
-| After | `evaluatePOClosure` |
+| Qty | `receivedQty`, `acceptedQty`, `disputedQty`; cannot exceed pending on effective ordered qty |
+| Exception | Per-line `GRNException` + note (receipt-level legacy exceptions cannot be resolved in-app) |
+| Invoicing gate | **Blocked** while any `GRNException.resolutionStatus` is null on the PO |
+| Resolve | OPS `resolveGRNException` with resolution-specific effects (see below) |
+| After | `evaluatePOClosure` — uses effective ordered qty / prices from `PurchaseOrderLineAdjustment` |
+
+### SM receipt vs exception
+
+| Situation | SM action | `GRNException`? |
+|-----------|-----------|-----------------|
+| Short vs PO (less than pending) | Enter actual **qty received this delivery** | **No** — partial receipt only |
+| Condition dispute on a delivery | Flag **Damaged**, **Wrong item**, or **Quality rejection** + qty + note | **Yes** |
+
+`QUANTITY_SHORT` is legacy-only (not offered on new GRNs).
+
+### Resolution (four scenarios)
+
+Ops picks one outcome per open dispute on the Fulfillment workbench:
+
+| Outcome | Effect |
+|---------|--------|
+| **Accept at PO price** | Disputed qty → accepted on same PO line at original unit price |
+| **Accept at new price** | Only **Damaged** / **Quality rejection** — splits PO line; auto-creates disputed catalog variant; disputed qty invoiced at agreed price |
+| **Return and settle** | Disputed off receipt; PO commitment → accepted qty only |
+| **Replace (await GRN)** | Disputed off receipt; PO commitment unchanged; invoice blocked until replacement GRN |
+
+Stored: `resolutionOutcome`, `pendingReplacementQty` (replace), `disputeVariantCatalogItemId` (repriced accept), plus legacy `resolutionDisposition` / `resolutionStatus` for reports.
+
+Staged UX: open disputes → resolve all → ready for invoice upload.
 
 ---
 
@@ -225,6 +281,8 @@ Duplicate checks on phone / email / GST; similar-name warning (Jaro–Winkler) o
 | GRN | `app/actions/grn.ts` |
 | Invoices | `app/actions/invoices.ts` |
 | Payments | `app/actions/payments.ts` |
+| PO advance ledger | `lib/po-advance.ts` |
+| Advance requests / pay | `app/actions/advance-payments.ts` |
 | Serial / print | `app/actions/serial.ts` |
 | Vendors | `app/actions/vendors.ts` |
 | Nav by role | `lib/navigation.ts` |

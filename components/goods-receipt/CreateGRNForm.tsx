@@ -1,6 +1,11 @@
 "use client";
 
 import { GRNExceptionType } from "@/lib/prisma-enums";
+
+import {
+  SM_GRN_EXCEPTION_TYPE_LABELS,
+  SM_GRN_EXCEPTION_TYPES,
+} from "@/lib/grn-exception-outcomes";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import * as React from "react";
@@ -22,13 +27,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 
-const EXCEPTION_TYPES: { value: GRNExceptionType; label: string }[] = [
-  { value: "DAMAGED", label: "Damaged" },
-  { value: "WRONG_ITEM", label: "Wrong item received" },
-  { value: "QUANTITY_SHORT", label: "Quantity short of delivery note" },
-  { value: "QUALITY_REJECTION", label: "Quality rejection" },
-];
+const EXCEPTION_TYPES = SM_GRN_EXCEPTION_TYPES.map((value) => ({
+  value,
+  label: SM_GRN_EXCEPTION_TYPE_LABELS[value],
+}));
 
 type LineExceptionDraft = {
   flagged: boolean;
@@ -46,12 +50,41 @@ function emptyLineException(): LineExceptionDraft {
   };
 }
 
+function CreateGRNFormSkeleton({ lineCount = 2 }: { lineCount?: number }) {
+  return (
+    <>
+      <div className="rounded-lg border border-border-subtle bg-muted/30 p-4 space-y-2">
+        <Skeleton className="h-4 w-3/5" />
+        <Skeleton className="h-4 w-2/5" />
+        <Skeleton className="h-4 w-1/2" />
+        <Skeleton className="h-4 w-1/3" />
+      </div>
+      <div className="space-y-3">
+        {Array.from({ length: lineCount }, (_, i) => (
+          <div
+            key={i}
+            className="space-y-3 rounded-lg border border-border-subtle p-3"
+          >
+            <Skeleton className="h-4 w-4/5" />
+            <Skeleton className="h-3 w-1/2" />
+            <Skeleton className="h-9 max-w-[10rem]" />
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
 export function CreateGRNForm({
   receivedByName,
   initialPoId,
+  initialPo,
+  initialPoPrefetched = false,
 }: {
   receivedByName: string;
   initialPoId?: string;
+  initialPo?: POForGRNOption | null;
+  initialPoPrefetched?: boolean;
 }) {
   const router = useRouter();
   const today = new Date().toISOString().slice(0, 10);
@@ -59,9 +92,13 @@ export function CreateGRNForm({
 
   const [poId, setPoId] = React.useState(initialPoId ?? "");
   const [poOptions, setPoOptions] = React.useState<POForGRNOption[]>([]);
-  const [selected, setSelected] = React.useState<POForGRNOption | null>(null);
-  const [loadingPoOptions, setLoadingPoOptions] = React.useState(true);
-  const [loadingSelected, setLoadingSelected] = React.useState(false);
+  const [selected, setSelected] = React.useState<POForGRNOption | null>(
+    initialPoPrefetched ? (initialPo ?? null) : null,
+  );
+  const [loadingPoOptions, setLoadingPoOptions] = React.useState(!poLocked);
+  const [loadingSelected, setLoadingSelected] = React.useState(
+    Boolean(initialPoId) && !initialPoPrefetched,
+  );
   const [lineQty, setLineQty] = React.useState<Record<string, string>>({});
   const [lineException, setLineException] = React.useState<Record<string, LineExceptionDraft>>(
     {},
@@ -69,6 +106,7 @@ export function CreateGRNForm({
   const [receivedAt, setReceivedAt] = React.useState(today);
   const [deliveryNoteRef, setDeliveryNoteRef] = React.useState("");
   const [submitting, setSubmitting] = React.useState(false);
+  const submitInFlight = React.useRef(false);
 
   // Prefetch-on-intent: hovering/focusing a PO option warms its detail (and the
   // server cache) so selection is instant; the selection effect reuses it.
@@ -98,6 +136,12 @@ export function CreateGRNForm({
   React.useEffect(() => {
     if (!poId) {
       setSelected(null);
+      setLoadingSelected(false);
+      return;
+    }
+    if (initialPoPrefetched && poId === initialPoId) {
+      setSelected(initialPo ?? null);
+      setLoadingSelected(false);
       return;
     }
     let cancelled = false;
@@ -116,7 +160,7 @@ export function CreateGRNForm({
     return () => {
       cancelled = true;
     };
-  }, [poId]);
+  }, [poId, initialPoId, initialPo, initialPoPrefetched]);
 
   React.useEffect(() => {
     if (!selected) {
@@ -157,6 +201,10 @@ export function CreateGRNForm({
       toast.error("Select a purchase order.");
       return;
     }
+    if (submitInFlight.current || submitting) {
+      return;
+    }
+    submitInFlight.current = true;
     setSubmitting(true);
     const res = await createGRN({
       poId,
@@ -182,11 +230,28 @@ export function CreateGRNForm({
       deliveryNoteRef: deliveryNoteRef.trim() || undefined,
     });
     setSubmitting(false);
+    submitInFlight.current = false;
     if (!res.ok) {
       toast.error(res.message ?? "Failed to create GRN.");
       return;
     }
-    toast.success("Goods receipt recorded.");
+    const partialLines = selected.lines.filter((line) => {
+      const receivedQty = Number(lineQty[line.poLineItemId]) || 0;
+      const draft = lineException[line.poLineItemId];
+      return receivedQty > 0 && receivedQty < line.pendingQty && !draft?.flagged;
+    });
+    if (partialLines.length > 0) {
+      const remaining = partialLines.reduce(
+        (sum, line) =>
+          sum + line.pendingQty - (Number(lineQty[line.poLineItemId]) || 0),
+        0,
+      );
+      toast.success(
+        `Goods receipt recorded. Partial receipt — ${remaining} unit${remaining === 1 ? "" : "s"} still expected on this PO unless the vendor confirms otherwise.`,
+      );
+    } else {
+      toast.success("Goods receipt recorded.");
+    }
     router.push(`/purchase-orders/${poId}?tab=fulfillment`);
   }
 
@@ -241,7 +306,12 @@ export function CreateGRNForm({
               </div>
             )}
             {loadingSelected ? (
-              <p className="text-ds-sm text-muted-foreground">Loading PO details…</p>
+              <div className="rounded-lg border border-border-subtle bg-muted/30 p-4 space-y-2">
+                <Skeleton className="h-4 w-3/5" />
+                <Skeleton className="h-4 w-2/5" />
+                <Skeleton className="h-4 w-1/2" />
+                <Skeleton className="h-4 w-1/3" />
+              </div>
             ) : null}
             {poLocked && !loadingSelected && !selected ? (
               <p className="text-ds-sm text-[var(--status-error)]">
@@ -284,7 +354,9 @@ export function CreateGRNForm({
             <CardTitle className="text-base">2. Receipt entry</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {selected ? (
+            {loadingSelected ? (
+              <CreateGRNFormSkeleton lineCount={3} />
+            ) : selected ? (
               <div className="space-y-3">
                 {selected.lines.map((line) => {
                   const lineReceived = Number(lineQty[line.poLineItemId]) || 0;
@@ -299,13 +371,15 @@ export function CreateGRNForm({
                         {line.lineItemNumber > 1 ? `.${line.lineItemNumber}` : ""}: {line.label}
                       </p>
                       <p className="text-ds-xs text-muted-foreground">
-                        Pending {line.pendingQty} of {line.orderedQty} ordered
+                        Pending {line.pendingQty} of {line.orderedQty} ordered.
+                        If the vendor delivered less than pending, enter the actual
+                        qty received — do not flag an exception for a short delivery.
                       </p>
                       <label
                         htmlFor={`line-qty-${line.poLineItemId}`}
                         className="block text-ds-sm font-medium"
                       >
-                        Received qty
+                        Qty received this delivery
                       </label>
                       <QuantityInput
                         id={`line-qty-${line.poLineItemId}`}
@@ -347,6 +421,21 @@ export function CreateGRNForm({
                           </label>
                           {draft.flagged ? (
                             <div className="space-y-3 pl-1">
+                              <p className="text-ds-xs text-muted-foreground">
+                                Accepted on this line:{" "}
+                                <span className="font-medium text-[var(--status-success)]">
+                                  {Math.max(0, lineReceived - (Number(draft.exceptionQty) || 0))}
+                                </span>
+                                {Number(draft.exceptionQty) > 0 ? (
+                                  <>
+                                    {" "}
+                                    · Disputed:{" "}
+                                    <span className="font-medium text-[var(--status-warning)]">
+                                      {draft.exceptionQty}
+                                    </span>
+                                  </>
+                                ) : null}
+                              </p>
                               <div className="space-y-1">
                                 <label
                                   htmlFor={`exception-type-${line.poLineItemId}`}

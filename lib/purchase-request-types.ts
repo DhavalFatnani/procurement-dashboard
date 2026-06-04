@@ -15,12 +15,19 @@ export type CreatePOItemPriceInput = {
 /** @deprecated Use itemPrices */
 export type CreatePOLinePriceInput = CreatePOItemPriceInput;
 
+export type CreatePOAdvanceRequestInput = {
+  amount?: number;
+  percent?: number;
+  reason: string;
+};
+
 export type CreatePOFromPRInput = {
   vendorId: string;
   itemPrices: CreatePOItemPriceInput[];
   expectedDelivery: string;
   gstApplicable: boolean;
   gstRatePercent?: number | null;
+  advanceRequest?: CreatePOAdvanceRequestInput | null;
 };
 
 export type CreatePOFromPRGroupInput = CreatePOFromPRInput;

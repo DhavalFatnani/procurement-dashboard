@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/shared/PageHeader";
 import { dbParallel } from "@/lib/db-parallel";
 import { getFilterOptions } from "@/lib/queries/purchase-requests";
 import { getWarehousesAssignedToUser } from "@/lib/queries/warehouses";
+import { Role } from "@/lib/prisma-enums";
 import { ACCESS } from "@/lib/route-access";
 import { assertRole, getRequestSession } from "@/lib/session";
 import { buttonVariants } from "@/components/ui/button";
@@ -35,11 +36,12 @@ export default async function NewPurchaseRequestPage() {
 
   return (
     <CreatePRForm
+      role={user.role}
       categories={filterOptions.categories}
       subcategories={filterOptions.subcategories}
       catalogItems={filterOptions.catalogItems}
       warehouses={assignedWarehouses}
-      defaultWarehouseId={assignedWarehouses[0]!.id}
+      defaultWarehouseId={user.role === Role.OPS_HEAD ? "" : assignedWarehouses[0]!.id}
     />
   );
 }

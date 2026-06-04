@@ -29,7 +29,7 @@ export default async function PurchaseOrdersPage({
   return (
     <Suspense
       fallback={<PageTableLoading columns={9} rows={10} />}
-      key={`${parsed.status}-${parsed.vendorId}-${parsed.warehouseId}-${parsed.dateFrom}-${parsed.dateTo}-${parsed.page}`}
+      key={`${parsed.status}-${parsed.vendorId}-${parsed.warehouseId}-${parsed.prId}-${parsed.dateFrom}-${parsed.dateTo}-${parsed.page}`}
     >
       <PurchaseOrdersTableLoader user={user} parsed={parsed} />
     </Suspense>
@@ -52,6 +52,7 @@ async function PurchaseOrdersTableLoader({
           status: parsed.status || undefined,
           vendorId: parsed.vendorId || undefined,
           warehouseId: parsed.warehouseId || undefined,
+          prId: parsed.prId || undefined,
           scopeWarehouseIds,
           dateFrom: parsed.dateFrom || undefined,
           dateTo: parsed.dateTo || undefined,
@@ -70,6 +71,7 @@ async function PurchaseOrdersTableLoader({
         status: parsed.status,
         vendorId: parsed.vendorId,
         warehouseId: parsed.warehouseId,
+        prId: parsed.prId,
         dateFrom: parsed.dateFrom,
         dateTo: parsed.dateTo,
       }}

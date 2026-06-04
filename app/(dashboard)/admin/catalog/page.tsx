@@ -26,6 +26,7 @@ export default async function AdminCatalogPage({
   const statusRaw = str(sp.status);
   const categoryId = str(sp.categoryId);
   const subcategoryId = str(sp.subcategoryId);
+  const disputedVariantsOnly = str(sp.disputed) === "1";
   const page = Math.max(1, Number(str(sp.page)) || 1);
   const includeExactCount = str(sp.exactCount) === "1" || page === 1;
 
@@ -42,6 +43,7 @@ export default async function AdminCatalogPage({
         status,
         categoryId: categoryId || undefined,
         subcategoryId: subcategoryId || undefined,
+        disputedVariantsOnly: disputedVariantsOnly || undefined,
         page,
         includeExactCount,
       }),
@@ -61,6 +63,7 @@ export default async function AdminCatalogPage({
         status: statusRaw,
         categoryId,
         subcategoryId,
+        disputedVariantsOnly,
       }}
     />
   );

@@ -46,10 +46,10 @@ function LabelPrepLoader({
         : "Sending labels to the printer…";
 
   return (
-    <Card size="sm" className="border-primary/20 bg-primary/5">
+    <Card size="sm" className="border-[color-mix(in_srgb,var(--brand-accent)_25%,transparent)] bg-[var(--accent-subtle)]">
       <CardContent className="space-y-4 pt-5">
         <div className="flex items-start gap-4">
-          <div className="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary/10">
+          <div className="flex size-11 shrink-0 items-center justify-center rounded-full surface-accent-soft">
             <Loader2 className="size-5 animate-spin text-primary" strokeWidth={1.5} />
           </div>
           <div className="min-w-0 space-y-1">

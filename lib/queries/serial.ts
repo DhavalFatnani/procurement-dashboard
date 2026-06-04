@@ -10,12 +10,14 @@ import { paginatedListQuery, type Paginated } from "@/lib/pagination";
 import { prisma } from "@/lib/prisma";
 import type {
   SerialActivityRow,
+  SerialRangeMapData,
   SerialSearchResult,
   SeriesConfigSummary,
   SeriesUsageSummary,
   WarehouseSeriesRow,
   WarehouseSeriesSnapshot,
 } from "@/lib/serial-governance-types";
+import { buildSerialRangeMap, type RawSerialReservationRow } from "@/lib/serial-range-map";
 import {
   computeNextRangeStart,
   computeRangeUsedPct,
@@ -36,6 +38,7 @@ import {
 
 export type {
   SerialActivityRow,
+  SerialRangeMapData,
   SerialSearchResult,
   SeriesConfigSummary,
   SeriesUsageSummary,
@@ -63,9 +66,22 @@ function buildSerialActivityWhere(filters: SerialActivityFilters): Prisma.Serial
     clauses.push({ warehouseId: filters.warehouseId });
   }
   if (filters.type === "Receipt") {
-    clauses.push({ poId: { not: null } });
+    clauses.push({
+      poId: { not: null },
+      OR: [
+        { po: { status: { not: "OPEN" } } },
+        { po: { grns: { some: {} } } },
+      ],
+    });
+  } else if (filters.type === "Unconfirmed") {
+    clauses.push({
+      poId: { not: null },
+      po: { status: "OPEN", grns: { none: {} } },
+    });
+  } else if (filters.type === "Hold") {
+    clauses.push({ prId: { not: null }, poId: null, status: "PENDING" });
   } else if (filters.type === "Print") {
-    clauses.push({ prId: { not: null }, poId: null });
+    clauses.push({ prId: { not: null }, poId: null, status: "RESERVED" });
   }
   if (filters.dateFrom) {
     clauses.push({ createdAt: { gte: new Date(filters.dateFrom) } });
@@ -102,12 +118,19 @@ export async function getSerialActivity(
             rangeStart: true,
             rangeEnd: true,
             quantity: true,
+            status: true,
             prId: true,
             poId: true,
             warehouseId: true,
             createdAt: true,
             createdBy: { select: { name: true } },
             warehouse: { select: { name: true, location: true } },
+            po: {
+              select: {
+                status: true,
+                _count: { select: { grns: true } },
+              },
+            },
           },
         })
         .then((rows) =>
@@ -117,7 +140,11 @@ export async function getSerialActivity(
             rangeStart: formatSerialNumberForSeries(r.series, r.rangeStart),
             rangeEnd: formatSerialNumberForSeries(r.series, r.rangeEnd),
             quantity: r.quantity,
-            type: reservationEventType(r.poId, r.prId),
+            type: reservationEventType(r.poId, r.prId, r.status, {
+              status: r.po?.status ?? null,
+              hasGrn: (r.po?._count.grns ?? 0) > 0,
+            }),
+            reservationStatus: r.status,
             warehouseId: r.warehouseId,
             warehouseName: formatWarehouseLabel(
               r.warehouse.name,
@@ -125,6 +152,7 @@ export async function getSerialActivity(
             ),
             linkedPrId: r.prId,
             linkedPoId: r.poId,
+            poStatus: r.po?.status ?? null,
             createdByName: r.createdBy.name,
             createdAt: r.createdAt.toISOString(),
           })),
@@ -173,8 +201,15 @@ export async function getSeriesUsageSummary(): Promise<SeriesUsageSummary[]> {
         orderBy: { createdAt: "desc" },
         select: {
           createdAt: true,
+          status: true,
           poId: true,
           prId: true,
+          po: {
+            select: {
+              status: true,
+              _count: { select: { grns: true } },
+            },
+          },
           createdBy: { select: { name: true } },
         },
       }),
@@ -206,7 +241,10 @@ export async function getSeriesUsageSummary(): Promise<SeriesUsageSummary[]> {
       reservationCount: agg._count._all,
       usedPct: computeRangeUsedPct(series, lastEnd, ceiling),
       lastEventType: latest
-        ? reservationEventType(latest.poId, latest.prId)
+        ? reservationEventType(latest.poId, latest.prId, latest.status, {
+            status: latest.po?.status ?? null,
+            hasGrn: (latest.po?._count.grns ?? 0) > 0,
+          })
         : null,
       lastEventAt: latest?.createdAt.toISOString() ?? null,
       lastEventBy: latest?.createdBy.name ?? null,
@@ -372,6 +410,72 @@ export async function searchSerialNumber(
 export async function getSerialGovernanceFilterOptions() {
   const warehouses = await getCachedWarehouses();
   return { warehouses: warehouseOptionsFromRows(warehouses) };
+}
+
+export async function getSerialRangeMap(input: {
+  series: SerialSeries;
+  zoomToActive?: boolean;
+}): Promise<SerialRangeMapData> {
+  const configs = await getCachedSeriesConfigs();
+  const config = configs.find((c) => c.series === input.series);
+  const ceiling = resolveSeriesCeiling(
+    input.series,
+    config ? BigInt(config.ceilingNumber) : undefined,
+  );
+
+  const rows = await prisma.serialReservation.findMany({
+    where: validReservationsForSeriesWhere(input.series),
+    orderBy: { rangeStart: "asc" },
+    select: {
+      id: true,
+      rangeStart: true,
+      rangeEnd: true,
+      quantity: true,
+      status: true,
+      prId: true,
+      poId: true,
+      warehouseId: true,
+      createdAt: true,
+      createdBy: { select: { name: true } },
+      warehouse: { select: { name: true, location: true } },
+      po: {
+        select: {
+          status: true,
+          _count: { select: { grns: true } },
+        },
+      },
+    },
+  });
+
+  const reservations: RawSerialReservationRow[] = rows.map((r) => ({
+    id: r.id,
+    rangeStart: r.rangeStart,
+    rangeEnd: r.rangeEnd,
+    quantity: r.quantity,
+    status: r.status,
+    prId: r.prId,
+    poId: r.poId,
+    warehouseId: r.warehouseId,
+    warehouseName: formatWarehouseLabel(r.warehouse.name, r.warehouse.location),
+    createdByName: r.createdBy.name,
+    createdAt: r.createdAt.toISOString(),
+    poStatus: r.po?.status ?? null,
+    poHasGrn: (r.po?._count.grns ?? 0) > 0,
+  }));
+
+  const built = buildSerialRangeMap({
+    series: input.series,
+    displayName: getSeriesDisplayName(input.series),
+    ceiling,
+    reservations,
+    zoomToActive: input.zoomToActive,
+  });
+
+  return {
+    series: input.series,
+    displayName: getSeriesDisplayName(input.series),
+    ...built,
+  };
 }
 
 /** @deprecated Use getSerialActivity */

@@ -14,13 +14,13 @@ const buttonVariants = cva(
     "active:translate-y-px active:not-aria-[haspopup]:scale-[0.98]",
     "disabled:pointer-events-none disabled:opacity-40",
     "aria-invalid:border-destructive aria-invalid:ring-2 aria-invalid:ring-destructive/30",
-    "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5",
+    "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:text-current [&_svg:not([class*='size-'])]:size-3.5",
   ].join(" "),
   {
     variants: {
       variant: {
         default:
-          "bg-primary text-primary-foreground shadow-ds hover:bg-[var(--accent-hover)] hover:shadow-ds-2",
+          "bg-primary text-primary-foreground shadow-ds hover:bg-[var(--accent-hover)] hover:text-primary-foreground hover:shadow-ds-2",
         outline:
           "border-border bg-card text-foreground hover:bg-muted hover:border-border-strong aria-expanded:bg-muted",
         secondary:
@@ -33,9 +33,9 @@ const buttonVariants = cva(
           "bg-[var(--status-error-strong-bg)] text-[var(--text-on-status)] hover:bg-[var(--status-error)] shadow-ds",
         link: "text-primary underline-offset-4 hover:underline",
         soft:
-          "bg-[color-mix(in_srgb,var(--brand-accent)_12%,transparent)] text-[var(--brand-accent)] hover:bg-[color-mix(in_srgb,var(--brand-accent)_18%,transparent)] hover:shadow-[0_0_0_1px_color-mix(in_srgb,var(--brand-accent)_20%,transparent)]",
+          "surface-accent-soft hover:bg-[color-mix(in_srgb,var(--brand-accent)_22%,transparent)] hover:shadow-[0_0_0_1px_color-mix(in_srgb,var(--brand-accent)_24%,transparent)]",
         gradient:
-          "bg-accent-gradient text-primary-foreground shadow-ds hover:shadow-ds-2 hover:brightness-110",
+          "bg-accent-gradient text-primary-foreground shadow-ds hover:text-primary-foreground hover:shadow-ds-2 hover:brightness-110",
       },
       size: {
         default: "h-8 px-3.5",
@@ -81,7 +81,7 @@ function Button({
     <ButtonPrimitive
       data-slot="button"
       data-loading={loading ? "true" : undefined}
-      className={cn(buttonVariants({ variant, size, className }))}
+      className={cn(buttonVariants({ variant, size }), className)}
       render={render}
       nativeButton={nativeButton ?? render == null}
       disabled={disabled || loading}

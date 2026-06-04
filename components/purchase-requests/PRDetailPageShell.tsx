@@ -25,6 +25,8 @@ import { prDetailBreadcrumbs } from "@/lib/lineage";
 export function PRDetailPageShell({
   pr,
   role,
+  canRevise = false,
+  canEditDraft = false,
   categories,
   subcategories,
   catalogItems = [],
@@ -35,6 +37,8 @@ export function PRDetailPageShell({
 }: {
   pr: PRDetail;
   role: Role;
+  canRevise?: boolean;
+  canEditDraft?: boolean;
   categories: CategoryOption[];
   subcategories: SubcategoryOption[];
   catalogItems?: CatalogItemOption[];
@@ -102,6 +106,8 @@ export function PRDetailPageShell({
         <PRDetailView
           pr={pr}
           role={role}
+          canRevise={canRevise}
+          canEditDraft={canEditDraft}
           categories={categories}
           subcategories={subcategories}
           catalogItems={catalogItems}

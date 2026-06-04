@@ -3,6 +3,8 @@
 // (middleware → `defaultLandingFor` pulls it into the Edge Runtime bundle).
 import { Role } from "@/lib/generated/prisma/enums";
 
+import { FINANCE_ROUTES } from "@/lib/finance-routes";
+
 export type NavIconId =
   | "inbox"
   | "dashboard"
@@ -30,7 +32,7 @@ export type NavItem = {
 };
 
 export type NavGroup = {
-  id: "work" | "governance" | "insights" | "admin";
+  id: "payables" | "work" | "governance" | "insights" | "admin";
   label: string;
   items: NavItem[];
 };
@@ -75,20 +77,14 @@ function poFulfillmentChildren(role: Role): NavItem[] {
         { href: "/goods-receipt", label: "Goods Receipt", icon: "goodsReceipt" },
         { href: "/invoices", label: "Invoices", icon: "invoices" },
         {
-          href: "/payments",
+          href: FINANCE_ROUTES.invoiceSettlement,
           label: "Payments",
           icon: "payments",
           hint: "view only",
         },
       ];
     case Role.FINANCE:
-      return [
-        {
-          href: "/payments",
-          label: "Invoices & payments",
-          icon: "payments",
-        },
-      ];
+      return [];
   }
 }
 
@@ -101,7 +97,7 @@ function purchaseOrdersHubFor(role: Role): NavItem {
     ...(role === Role.SM || role === Role.FINANCE
       ? { hint: "read-only" }
       : {}),
-    children,
+    ...(children.length > 0 ? { children } : {}),
   };
 }
 
@@ -117,6 +113,28 @@ const INBOX_ITEM: NavItem = {
   icon: "inbox",
 };
 
+function payablesItemsFor(role: Role): NavItem[] {
+  if (role !== Role.FINANCE) return [];
+  return [
+    INBOX_ITEM,
+    {
+      href: FINANCE_ROUTES.invoiceSettlement,
+      label: "Invoice settlement",
+      icon: "invoices",
+    },
+    {
+      href: FINANCE_ROUTES.vendorAdvances,
+      label: "Vendor advances",
+      icon: "payments",
+    },
+    {
+      href: FINANCE_ROUTES.paymentRegister,
+      label: "Payment register",
+      icon: "payments",
+    },
+  ];
+}
+
 function workItemsFor(role: Role): NavItem[] {
   const poHub = purchaseOrdersHubFor(role);
   switch (role) {
@@ -125,7 +143,7 @@ function workItemsFor(role: Role): NavItem[] {
     case Role.OPS_HEAD:
       return [INBOX_ITEM, PURCHASE_REQUESTS_ITEM, CONFIGURE_PO_ITEM, poHub];
     case Role.FINANCE:
-      return [INBOX_ITEM, poHub];
+      return [poHub];
   }
 }
 
@@ -176,9 +194,17 @@ function adminItemsFor(role: Role): NavItem[] {
 }
 
 export function getNavGroupsForRole(role: Role): NavGroup[] {
+  const payables = payablesItemsFor(role);
   const groups: NavGroup[] = [
+    ...(payables.length > 0
+      ? [{ id: "payables" as const, label: "Payables", items: payables }]
+      : []),
     { id: "insights", label: "Insights", items: insightItemsFor(role) },
-    { id: "work", label: "Procurement", items: workItemsFor(role) },
+    {
+      id: "work",
+      label: role === Role.FINANCE ? "Procurement" : "Procurement",
+      items: workItemsFor(role),
+    },
     { id: "governance", label: "Governance", items: governanceItemsFor(role) },
     { id: "admin", label: "Admin", items: adminItemsFor(role) },
   ];
@@ -194,16 +220,13 @@ export function getNavItemsForRole(role: Role): NavItem[] {
 
 /**
  * Where each role lands after sign-in or when they hit `/`.
- *
- * All roles now land on `/dashboard` for a consistent home. Role-specific
- * working surfaces (inbox, payments queue) remain one click away in the
- * sidebar and as quick-action cards on the dashboard itself.
  */
 export function defaultLandingFor(role: Role): string {
   switch (role) {
     case Role.SM:
     case Role.OPS_HEAD:
-    case Role.FINANCE:
       return "/dashboard";
+    case Role.FINANCE:
+      return FINANCE_ROUTES.invoiceSettlement;
   }
 }

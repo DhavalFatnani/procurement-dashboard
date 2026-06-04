@@ -326,7 +326,7 @@ export function PRCatalogApproveDialog({
                     className={cn(
                       "rounded-md border px-3 py-1 text-ds-xs font-medium transition-colors",
                       isApproved
-                        ? "border-primary/40 bg-primary/10 text-primary"
+                        ? "border-[color-mix(in_srgb,var(--brand-accent)_40%,transparent)] surface-accent-soft"
                         : "border-border-subtle text-muted-foreground hover:bg-muted/40",
                     )}
                     onClick={() =>
