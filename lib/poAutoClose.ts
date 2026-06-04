@@ -1,3 +1,7 @@
+import { revalidateTag } from "next/cache";
+import { after } from "next/server";
+
+import { LIST_CACHE_TAGS } from "@/lib/list-cache";
 import { prisma } from "@/lib/prisma";
 import { sumLineValue } from "@/lib/purchase-lines";
 
@@ -75,6 +79,27 @@ export async function applyPOClosureInTransaction(
       data: { status: snapshot.status },
     });
   }
+}
+
+/**
+ * Defer PO auto-close evaluation to AFTER the response is sent (Next `after()`),
+ * so receipts/invoices/payments commit and return instantly instead of waiting
+ * on the deep PO read inside the transaction. The PO status rarely changes (only
+ * on the final closing action); when it does, it settles a moment later and the
+ * affected caches are revalidated here. Failures are non-fatal — closure is
+ * recomputed on the next mutation or PO view.
+ */
+export function schedulePOClosure(poId: string): void {
+  after(async () => {
+    try {
+      await evaluatePOClosure(poId);
+    } catch {
+      return;
+    }
+    revalidateTag(`${LIST_CACHE_TAGS.poDetail}:${poId}`);
+    revalidateTag(LIST_CACHE_TAGS.purchaseOrders);
+    revalidateTag("dashboard-metrics");
+  });
 }
 
 export { sumLineValue };

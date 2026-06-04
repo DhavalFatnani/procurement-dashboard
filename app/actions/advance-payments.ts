@@ -7,7 +7,7 @@ import {
   computeAdvanceBalances,
   validateAdvancePaymentAgainstCommitted,
 } from "@/lib/po-advance";
-import { applyPOClosureInTransaction, PO_CLOSURE_TX_OPTS } from "@/lib/poAutoClose";
+import { PO_CLOSURE_TX_OPTS, schedulePOClosure } from "@/lib/poAutoClose";
 import {
   getAdvanceRequestDetail as getAdvanceRequestDetailQuery,
   getPendingAdvanceRequests as getPendingAdvanceRequestsQuery,
@@ -267,10 +267,10 @@ export async function recordAdvancePayment(
       data: { status: POAdvanceRequestStatus.FULFILLED },
     });
 
-    await applyPOClosureInTransaction(tx, request.poId);
   }, PO_CLOSURE_TX_OPTS);
 
   revalidateAdvanceRequestsCache();
   revalidatePaymentMutation(request.poId);
+  schedulePOClosure(request.poId);
   return { ok: true };
 }

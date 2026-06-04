@@ -421,6 +421,20 @@ export async function getAdvanceRequestDetailPage(
 }
 
 export async function getPOAdvanceSummary(poId: string): Promise<POAdvanceSummary | null> {
+  // Cached per PO; invalidated by advance + PO mutations. Signed URLs inside last
+  // 1h (createStorageSignedUrl default), so a 60s cache never serves an expired one.
+  return cachedQuery(
+    "po-advance-summary",
+    [poId],
+    () => computePOAdvanceSummary(poId),
+    {
+      revalidate: 60,
+      tags: [`${LIST_CACHE_TAGS.poDetail}:${poId}`, LIST_CACHE_TAGS.advanceRequests],
+    },
+  );
+}
+
+async function computePOAdvanceSummary(poId: string): Promise<POAdvanceSummary | null> {
   const po = await prisma.purchaseOrder.findUnique({
     where: { id: poId },
     include: {

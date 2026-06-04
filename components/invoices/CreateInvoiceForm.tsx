@@ -163,8 +163,9 @@ export function CreateInvoiceForm() {
       return;
     }
     toast.success("Invoice uploaded.");
+    // The action already revalidated the PO detail tags, so the push loads fresh
+    // data — no extra router.refresh() (it would double-fetch the page).
     router.push(`/purchase-orders/${poId}`);
-    router.refresh();
   }
 
   return (

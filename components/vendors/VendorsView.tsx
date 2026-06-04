@@ -66,6 +66,13 @@ export function VendorsView({
   const canManage = role === Role.OPS_HEAD;
   const [addVendorOpen, setAddVendorOpen] = React.useState(openAddVendor ?? false);
   const [isPending, startTransition] = React.useTransition();
+  // Optimistic: deactivating a vendor flips its row to INACTIVE instantly; the
+  // value auto-reverts if the server action fails or reconciles on refresh.
+  const [optimisticVendors, markVendorDeactivated] = React.useOptimistic(
+    initialVendors.items,
+    (rows: VendorListRow[], deactivatedId: string) =>
+      rows.map((r) => (r.id === deactivatedId ? { ...r, status: "INACTIVE" as const } : r)),
+  );
 
   const navigateVendors = React.useCallback(
     (params: URLSearchParams, options?: { exactCount?: boolean }) => {
@@ -199,7 +206,7 @@ export function VendorsView({
         id: "actions",
         header: "",
         revealOnHover: true,
-        cell: (r) => (canManage ? <VendorRowActions row={r} /> : (
+        cell: (r) => (canManage ? <VendorRowActions row={r} onDeactivated={markVendorDeactivated} /> : (
           <div className="flex justify-end" onClick={(e) => e.stopPropagation()}>
             <Link href={`/vendors/${r.id}`} className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
               View
@@ -208,7 +215,7 @@ export function VendorsView({
         )),
       },
     ],
-    [canManage],
+    [canManage, markVendorDeactivated],
   );
 
   const pendingColumns: DataTableColumn<PendingVendorRequestRow>[] = React.useMemo(
@@ -345,7 +352,7 @@ export function VendorsView({
               >
                 <DataTable
                   columns={vendorColumns}
-                  data={initialVendors.items}
+                  data={optimisticVendors}
                   getRowKey={getRowId}
                   onRowClick={handleVendorRowClick}
                 />

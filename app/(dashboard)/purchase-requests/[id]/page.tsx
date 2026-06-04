@@ -35,9 +35,18 @@ export default async function PurchaseRequestDetailPage({ params }: { params: Pa
     notFound();
   }
 
-  const filterOptions = prDetailNeedsFilterOptions(user.role, pr.status)
-    ? await getFilterOptions()
-    : EMPTY_PR_FILTER_OPTIONS;
+  const isInternalPrint = pr.executionType === ExecutionType.INTERNAL_PRINT;
+
+  // `getFilterOptions` and `getLockTagsSerialPreviewForPR` both depend only on
+  // `pr` (already loaded), not on each other. Run them concurrently so the page
+  // pays a single DB round-trip batch instead of two sequential ones — material
+  // when the database is cross-region (see docs/performance_fiix.md).
+  const [filterOptions, lockTagsPreview] = await Promise.all([
+    prDetailNeedsFilterOptions(user.role, pr.status)
+      ? getFilterOptions()
+      : Promise.resolve(EMPTY_PR_FILTER_OPTIONS),
+    !isInternalPrint ? getLockTagsSerialPreviewForPR(id) : Promise.resolve(null),
+  ]);
 
   const prAccess = {
     status: pr.status,
@@ -48,10 +57,6 @@ export default async function PurchaseRequestDetailPage({ params }: { params: Pa
   const canEditDraft =
     canEditOwnDraftPurchaseRequest(user, prAccess) ||
     canEditDraftPurchaseRequestAsOps(user, prAccess);
-
-  const isInternalPrint = pr.executionType === ExecutionType.INTERNAL_PRINT;
-  const lockTagsPreview =
-    !isInternalPrint ? await getLockTagsSerialPreviewForPR(id) : null;
 
   return (
     <PRDetailPageShell

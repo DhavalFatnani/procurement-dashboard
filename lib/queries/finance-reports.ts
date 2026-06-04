@@ -4,7 +4,8 @@ import {
   POAdvanceRequestStatus,
 } from "@/lib/prisma-enums";
 
-import { dbSerial } from "@/lib/db-serial";
+import { dbParallel } from "@/lib/db-parallel";
+import { cachedQuery, LIST_CACHE_TAGS } from "@/lib/list-cache";
 import { FINANCE_ROUTES } from "@/lib/finance-routes";
 import {
   advanceOverageForPo,
@@ -180,6 +181,20 @@ async function countAdvanceOverCommitment(scopeWarehouseIds: string[]): Promise<
 export async function getFinanceReports(
   scopeWarehouseIds: string[],
 ): Promise<FinanceReportsData> {
+  return cachedQuery(
+    "finance-reports",
+    [scopeWarehouseIds.slice().sort().join(",")],
+    () => computeFinanceReports(scopeWarehouseIds),
+    {
+      revalidate: 120,
+      tags: [LIST_CACHE_TAGS.invoices, LIST_CACHE_TAGS.payments],
+    },
+  );
+}
+
+async function computeFinanceReports(
+  scopeWarehouseIds: string[],
+): Promise<FinanceReportsData> {
   const invoiceScope = invoiceWhereFromScopeIds(scopeWarehouseIds);
   const poScope = purchaseOrderWhereFromScopeIds(scopeWarehouseIds);
   const startMonth = startOfMonth();
@@ -198,7 +213,7 @@ export async function getFinanceReports(
     recentCash,
     recentAllocations,
     posWithAdvance,
-  ] = await dbSerial(
+  ] = await dbParallel(
     () =>
       prisma.invoice.findMany({
         where: {

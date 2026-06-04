@@ -42,6 +42,13 @@ function parseTab(value: string | null | undefined, role: Role): TabId {
   if (value === "summary" || value === "fulfillment" || value === "financials" || value === "activity") {
     return value;
   }
+  // Aliases used by deep links from activity feeds / other pages.
+  if (value === "grns") {
+    return "fulfillment";
+  }
+  if (value === "invoices" || value === "payments") {
+    return "financials";
+  }
   if (role === Role.FINANCE) {
     return "financials";
   }

@@ -5,7 +5,8 @@ import {
   PRStatus,
 } from "@/lib/prisma-enums";
 
-import { dbSerial } from "@/lib/db-serial";
+import { dbParallel } from "@/lib/db-parallel";
+import { cachedQuery, LIST_CACHE_TAGS } from "@/lib/list-cache";
 import { advanceOverageForPo, committedTotalFromPo } from "@/lib/po-advance";
 import { prisma } from "@/lib/prisma";
 import {
@@ -64,6 +65,22 @@ function grnExceptionWarehouseWhere(scopeWarehouseIds: string[]) {
 }
 
 export async function getReports(scopeWarehouseIds: string[]): Promise<ReportsData> {
+  return cachedQuery(
+    "reports",
+    [scopeWarehouseIds.slice().sort().join(",")],
+    () => computeReports(scopeWarehouseIds),
+    {
+      revalidate: 120,
+      tags: [
+        LIST_CACHE_TAGS.purchaseRequests,
+        LIST_CACHE_TAGS.purchaseOrders,
+        LIST_CACHE_TAGS.invoices,
+      ],
+    },
+  );
+}
+
+async function computeReports(scopeWarehouseIds: string[]): Promise<ReportsData> {
   const since = startOf(new Date());
   since.setDate(since.getDate() - DAYS + 1);
 
@@ -71,7 +88,7 @@ export async function getReports(scopeWarehouseIds: string[]): Promise<ReportsDa
   const poScope = purchaseOrderWhereFromScopeIds(scopeWarehouseIds);
 
   const [prs, grnExceptions, unpaidInvoices, topVendorRows, monthMetrics] =
-    await dbSerial(
+    await dbParallel(
       () =>
         prisma.purchaseRequest.findMany({
           where: {
@@ -215,7 +232,7 @@ const poAdvanceInclude = {
 async function advanceMetrics(scopeWarehouseIds: string[]) {
   const poScope = purchaseOrderWhereFromScopeIds(scopeWarehouseIds);
 
-  const [pendingRequests, posWithAdvance] = await dbSerial(
+  const [pendingRequests, posWithAdvance] = await dbParallel(
     () =>
       prisma.pOAdvanceRequest.findMany({
         where: {
@@ -289,7 +306,7 @@ async function monthlyMetrics(
   const poScope = purchaseOrderWhereFromScopeIds(scopeWarehouseIds);
 
   const [prsThisMonth, matchedCount, totalInvoices, openInvoices, advance] =
-    await dbSerial(
+    await dbParallel(
     () =>
       prisma.purchaseRequest.count({
         where: {

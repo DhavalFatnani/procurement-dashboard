@@ -190,6 +190,13 @@ export async function getInvoiceFilterOptions() {
 }
 
 export async function getInvoiceById(id: string): Promise<InvoiceDetail | null> {
+  return cachedQuery("invoice-detail", [id], () => computeInvoiceById(id), {
+    revalidate: 60,
+    tags: [LIST_CACHE_TAGS.invoices, LIST_CACHE_TAGS.payments],
+  });
+}
+
+async function computeInvoiceById(id: string): Promise<InvoiceDetail | null> {
   const inv = await prisma.invoice.findUnique({
     where: { id },
     include: {

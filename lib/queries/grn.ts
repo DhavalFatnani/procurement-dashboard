@@ -195,6 +195,13 @@ async function fetchGRNs(filters: GRNFilters): Promise<Paginated<GRNListRow>> {
 }
 
 export async function getGRNById(id: string): Promise<GRNDetail | null> {
+  return cachedQuery("grn-detail", [id], () => computeGRNById(id), {
+    revalidate: 60,
+    tags: [LIST_CACHE_TAGS.grn],
+  });
+}
+
+async function computeGRNById(id: string): Promise<GRNDetail | null> {
   const grn = await prisma.goodsReceipt.findUnique({
     where: { id },
     include: {

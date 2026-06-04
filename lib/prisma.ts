@@ -18,7 +18,11 @@ import { PrismaClient } from "@/lib/generated/prisma/client";
  *
  * `DB_POOL_MAX` lets you tune connections-per-instance without a code change.
  */
-const POOL_MAX = Number(process.env.DB_POOL_MAX ?? 5);
+// Dashboard/detail pages fan out ~10+ independent queries at once; a pool of 5
+// makes them queue (and, on a cold connection to a distant DB, each waiter also
+// pays a TLS handshake). 10 lets a page's burst run concurrently. Supabase's
+// transaction pooler multiplexes these, so it stays well within its client cap.
+const POOL_MAX = Number(process.env.DB_POOL_MAX ?? 10);
 
 function createPrismaClient() {
   const adapter = new PrismaPg({

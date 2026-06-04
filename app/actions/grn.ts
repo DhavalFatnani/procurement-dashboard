@@ -14,7 +14,7 @@ import {
   effectiveOrderedQtyForLegacyLine,
   effectiveOrderedQtyForLineItem,
 } from "@/lib/po-line-effective";
-import { applyPOClosureInTransaction, PO_CLOSURE_TX_OPTS } from "@/lib/poAutoClose";
+import { PO_CLOSURE_TX_OPTS, schedulePOClosure } from "@/lib/poAutoClose";
 import type { Paginated } from "@/lib/pagination";
 import { prisma } from "@/lib/prisma";
 import type { GRNLineInput, GRNLineItemInput } from "@/lib/purchase-lines";
@@ -358,11 +358,11 @@ export async function createGRN(
       });
     }
 
-    await applyPOClosureInTransaction(tx, data.poId);
     return created;
   }, PO_CLOSURE_TX_OPTS);
 
   revalidateGRNMutation(data.poId);
+  schedulePOClosure(data.poId);
 
   return { ok: true, grnId: grn.id };
 }

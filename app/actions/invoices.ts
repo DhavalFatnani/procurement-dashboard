@@ -6,7 +6,7 @@ import type { MutationResult } from "@/lib/action-result";
 import { countOpenGrnExceptionsOnPo } from "@/lib/po-line-effective";
 import { computeInvoiceMatchFromExpected } from "@/lib/invoiceMatch";
 import { applyGstToSubtotal } from "@/lib/po-gst";
-import { applyPOClosureInTransaction, PO_CLOSURE_TX_OPTS } from "@/lib/poAutoClose";
+import { PO_CLOSURE_TX_OPTS, schedulePOClosure } from "@/lib/poAutoClose";
 import type { Paginated } from "@/lib/pagination";
 import {
   getGRNsForPO as getGRNsForPOQuery,
@@ -248,11 +248,11 @@ export async function createInvoice(
         data: grnIds.map((grnId) => ({ invoiceId: created.id, grnId })),
       });
 
-      await applyPOClosureInTransaction(tx, poId);
       return created;
     }, PO_CLOSURE_TX_OPTS);
 
     revalidateInvoiceMutation(poId);
+    schedulePOClosure(poId);
 
     return { ok: true, invoiceId: invoice.id };
   } catch (e) {
@@ -299,10 +299,10 @@ export async function overrideInvoiceMatch(
         overrideReason: trimmed,
       },
     });
-    await applyPOClosureInTransaction(tx, invoice.poId);
   }, PO_CLOSURE_TX_OPTS);
 
   revalidateInvoiceMutation(invoice.poId);
+  schedulePOClosure(invoice.poId);
 
   return { ok: true };
 }

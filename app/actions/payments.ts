@@ -2,7 +2,7 @@
 
 import { InvoiceMatchStatus, PaymentStatus, Prisma, Role } from "@/lib/prisma-client";
 
-import { applyPOClosureInTransaction, PO_CLOSURE_TX_OPTS } from "@/lib/poAutoClose";
+import { PO_CLOSURE_TX_OPTS, schedulePOClosure } from "@/lib/poAutoClose";
 import type { Paginated } from "@/lib/pagination";
 import {
   computeAdvanceBalances,
@@ -246,10 +246,10 @@ export async function recordPayment(
       data: { paymentStatus: nextStatus },
     });
 
-    await applyPOClosureInTransaction(tx, invoice.poId);
   }, PO_CLOSURE_TX_OPTS);
 
   revalidatePaymentMutation(invoice.poId);
+  schedulePOClosure(invoice.poId);
 
   return { ok: true };
 }

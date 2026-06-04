@@ -11,7 +11,14 @@ import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-export function VendorRowActions({ row }: { row: VendorListRow }) {
+export function VendorRowActions({
+  row,
+  onDeactivated,
+}: {
+  row: VendorListRow;
+  /** Optimistically flip this row to INACTIVE before the server confirms. */
+  onDeactivated?: (id: string) => void;
+}) {
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
   const [pending, startTransition] = React.useTransition();
@@ -57,10 +64,13 @@ export function VendorRowActions({ row }: { row: VendorListRow }) {
         pending={pending}
         onConfirm={() => {
           startTransition(async () => {
+            onDeactivated?.(row.id); // optimistic — auto-reverts if the action fails
             const r = await deactivateVendor(row.id);
             if (r.ok) {
               toast.success("Vendor deactivated.");
               router.refresh();
+            } else {
+              toast.error(r.message ?? "Failed to deactivate vendor.");
             }
           });
         }}

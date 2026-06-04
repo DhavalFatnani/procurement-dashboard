@@ -361,17 +361,24 @@ export async function getPOByIdForPage(
   user: SessionUser,
   id: string,
 ): Promise<PODetail | null> {
-  const scopeRow = await prisma.purchaseOrder.findUnique({
-    where: { id },
-    select: { purchaseRequest: { select: { warehouseId: true } } },
-  });
-  if (!scopeRow) {
+  // A PO's warehouse is immutable, so cache the access-scope lookup instead of
+  // re-querying it uncached on every navigation.
+  const warehouseId = await cachedQuery(
+    "po-warehouse",
+    [id],
+    async () => {
+      const r = await prisma.purchaseOrder.findUnique({
+        where: { id },
+        select: { purchaseRequest: { select: { warehouseId: true } } },
+      });
+      return r?.purchaseRequest.warehouseId ?? null;
+    },
+    { revalidate: 3600, tags: [`${LIST_CACHE_TAGS.poDetail}:${id}`] },
+  );
+  if (!warehouseId) {
     return null;
   }
-  const access = assertSessionCanAccessWarehouse(
-    user,
-    scopeRow.purchaseRequest.warehouseId,
-  );
+  const access = assertSessionCanAccessWarehouse(user, warehouseId);
   if (!access.ok) {
     return null;
   }
