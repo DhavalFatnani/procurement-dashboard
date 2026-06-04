@@ -1,4 +1,4 @@
-import { ExecutionType, Role } from "@/lib/prisma-enums";
+import { ExecutionType } from "@/lib/prisma-enums";
 import { notFound } from "next/navigation";
 
 import {

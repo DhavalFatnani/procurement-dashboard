@@ -37,7 +37,9 @@ export default async function SerialGovernancePage({
     includeExactCount: parsed.includeExactCount,
   };
 
-  const filterOptions = await getSerialGovernanceFilterOptions();
+  // Filter options are independent of the tab payload — start the fetch now and
+  // await it together with the tab-specific query so the two overlap one batch.
+  const filterOptionsPromise = getSerialGovernanceFilterOptions();
   const emptyActivity = toPaginated<SerialActivityRow>([], 0, parsed.page, 25);
 
   let usageSummary: Awaited<ReturnType<typeof getSeriesUsageSummary>> = [];
@@ -48,15 +50,20 @@ export default async function SerialGovernancePage({
   if (tab === "summary") {
     usageSummary = await getSeriesUsageSummary();
   } else if (tab === "activity") {
-    activity = await getSerialActivity(activityFilters);
-    if (user.role === Role.OPS_HEAD) {
-      seriesConfigs = await getSeriesConfigsForAdvanced();
-    }
+    // Activity rows and the advanced series configs don't depend on each other.
+    [activity, seriesConfigs] = await Promise.all([
+      getSerialActivity(activityFilters),
+      user.role === Role.OPS_HEAD
+        ? getSeriesConfigsForAdvanced()
+        : Promise.resolve(seriesConfigs),
+    ]);
   } else if (tab === "warehouses") {
     warehouseSnapshots = await getWarehouseSeriesSnapshot({
       ensureWarehouseIds: assignedWarehouseIds(user),
     });
   }
+
+  const filterOptions = await filterOptionsPromise;
 
   return (
     <SerialGovernanceView

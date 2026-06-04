@@ -7,6 +7,8 @@ import { getGRNFilterOptions, getGRNs } from "@/lib/queries/grn";
 import { ACCESS } from "@/lib/route-access";
 import { assertRole, getRequestSession } from "@/lib/session";
 import { assignedWarehouseIds } from "@/lib/warehouse-scope";
+import { dbParallel } from "@/lib/db-parallel";
+import { timed } from "@/lib/server-timing";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
@@ -35,22 +37,29 @@ async function GRNTableLoader({
   parsed: ReturnType<typeof parseGRNPageParams>;
 }) {
   const user = assertRole(await getRequestSession(), [...ACCESS.goodsReceipt]);
-  const filterOptions = await getGRNFilterOptions();
-  const rows = await getGRNs({
-    poId: parsed.poId || undefined,
-    vendorId: parsed.vendorId || undefined,
-    dateFrom: parsed.dateFrom || undefined,
-    dateTo: parsed.dateTo || undefined,
-    hasExceptions:
-      parsed.hasExceptions === "yes"
-        ? true
-        : parsed.hasExceptions === "no"
-          ? false
-          : undefined,
-    scopeWarehouseIds: assignedWarehouseIds(user),
-    page: parsed.page,
-    includeExactCount: parsed.includeExactCount,
-  });
+  // Filter options and rows are independent — fetch concurrently so the loader
+  // pays one DB round-trip batch instead of two sequential ones.
+  const [filterOptions, rows] = await dbParallel(
+    () => timed("GRN.filterOptions", () => getGRNFilterOptions()),
+    () =>
+      timed("GRN.getGRNs", () =>
+        getGRNs({
+          poId: parsed.poId || undefined,
+          vendorId: parsed.vendorId || undefined,
+          dateFrom: parsed.dateFrom || undefined,
+          dateTo: parsed.dateTo || undefined,
+          hasExceptions:
+            parsed.hasExceptions === "yes"
+              ? true
+              : parsed.hasExceptions === "no"
+                ? false
+                : undefined,
+          scopeWarehouseIds: assignedWarehouseIds(user),
+          page: parsed.page,
+          includeExactCount: parsed.includeExactCount,
+        }),
+      ),
+  );
 
   return (
     <GRNListView

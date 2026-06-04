@@ -10,6 +10,8 @@ import { getInvoiceFilterOptions, getInvoices } from "@/lib/queries/invoices";
 import { ACCESS } from "@/lib/route-access";
 import { assertRole, getRequestSession, type SessionUser } from "@/lib/session";
 import { assignedWarehouseIds } from "@/lib/warehouse-scope";
+import { dbParallel } from "@/lib/db-parallel";
+import { timed } from "@/lib/server-timing";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
@@ -43,19 +45,26 @@ async function InvoicesTableLoader({
   parsed: ReturnType<typeof parseInvoicePageParams>;
 }) {
   const scopeWarehouseIds = assignedWarehouseIds(user);
-  const filterOptions = await getInvoiceFilterOptions();
-  const rows = await getInvoices({
-    matchStatus: parsed.matchStatus || undefined,
-    paymentStatus: parsed.paymentStatus || undefined,
-    vendorId: parsed.vendorId || undefined,
-    poId: parsed.poId || undefined,
-    scopeWarehouseIds,
-    dateFrom: parsed.dateFrom || undefined,
-    dateTo: parsed.dateTo || undefined,
-    uploadedById: user.role === Role.SM ? user.id : undefined,
-    page: parsed.page,
-    includeExactCount: parsed.includeExactCount,
-  });
+  // Filter options and rows are independent — fetch concurrently so the loader
+  // pays one DB round-trip batch instead of two sequential ones.
+  const [filterOptions, rows] = await dbParallel(
+    () => timed("invoice.filterOptions", () => getInvoiceFilterOptions()),
+    () =>
+      timed("invoice.getInvoices", () =>
+        getInvoices({
+          matchStatus: parsed.matchStatus || undefined,
+          paymentStatus: parsed.paymentStatus || undefined,
+          vendorId: parsed.vendorId || undefined,
+          poId: parsed.poId || undefined,
+          scopeWarehouseIds,
+          dateFrom: parsed.dateFrom || undefined,
+          dateTo: parsed.dateTo || undefined,
+          uploadedById: user.role === Role.SM ? user.id : undefined,
+          page: parsed.page,
+          includeExactCount: parsed.includeExactCount,
+        }),
+      ),
+  );
 
   return (
     <InvoicesView
