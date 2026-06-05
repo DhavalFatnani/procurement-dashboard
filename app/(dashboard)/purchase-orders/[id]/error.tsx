@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { startTransition, useEffect } from "react";
 
 import { Button } from "@/components/ui/button";
 
@@ -12,9 +13,18 @@ export default function PurchaseOrderDetailError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const router = useRouter();
+
   useEffect(() => {
     console.error("Purchase order detail failed to render:", error);
   }, [error]);
+
+  function handleRetry() {
+    startTransition(() => {
+      router.refresh();
+      reset();
+    });
+  }
 
   return (
     <div className="page-stack max-w-lg">
@@ -34,7 +44,9 @@ export default function PurchaseOrderDetailError({
         </p>
       ) : null}
       <div className="flex flex-wrap gap-2">
-        <Button onClick={() => reset()}>Try again</Button>
+        <Button type="button" onClick={handleRetry}>
+          Try again
+        </Button>
         <Button variant="outline" render={<Link href="/purchase-orders" />}>
           Back to purchase orders
         </Button>

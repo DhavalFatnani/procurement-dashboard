@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import * as React from "react";
 import { toast } from "sonner";
 
-import { getUserById, sendPasswordReset } from "@/app/actions/users";
+import { getUserById, getUsers, sendPasswordReset } from "@/app/actions/users";
 import { RecoveryLinkDialog } from "@/components/admin/RecoveryLinkDialog";
 import { UserFormDrawer } from "@/components/admin/UserFormDrawer";
 import { Avatar } from "@/components/shared/Avatar";
@@ -52,7 +52,11 @@ export function UsersView({
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const rows = initialRows;
+  const [rows, setRows] = React.useState(initialRows);
+
+  React.useEffect(() => {
+    setRows(initialRows);
+  }, [initialRows]);
 
   const [drawerMode, setDrawerMode] = React.useState<
     | { kind: "create" }
@@ -102,6 +106,24 @@ export function UsersView({
       return;
     }
     setDrawerMode({ kind: "edit", user: detail });
+  }
+
+  async function refreshRows() {
+    try {
+      const next = await getUsers({
+        search: filters.search || undefined,
+        role:
+          filters.role && filters.role in Role
+            ? (filters.role as Role)
+            : undefined,
+        warehouseId: filters.warehouseId || undefined,
+        page: rows.page,
+        includeExactCount: searchParams.get("exactCount") === "1",
+      });
+      setRows(next);
+    } catch {
+      router.refresh();
+    }
   }
 
   async function handleResetPassword(row: UserListRow) {
@@ -213,7 +235,15 @@ export function UsersView({
         title="Users"
         subtitle="Provision and manage dashboard accounts. Roles drive access across all modules."
         action={
-          <Button onClick={() => setDrawerMode({ kind: "create" })}>
+          <Button
+            onClick={() => setDrawerMode({ kind: "create" })}
+            disabled={warehouses.length === 0}
+            title={
+              warehouses.length === 0
+                ? "Add a warehouse before provisioning users."
+                : undefined
+            }
+          >
             <Plus className="size-3.5" strokeWidth={1.5} aria-hidden />
             Add user
           </Button>
@@ -302,7 +332,7 @@ export function UsersView({
         }}
         warehouses={warehouses}
         mode={drawerMode ?? { kind: "create" }}
-        onSaved={() => router.refresh()}
+        onSaved={() => void refreshRows()}
         onRecoveryLink={(email, link) => setRecoveryLinkDialog({ email, link })}
       />
 

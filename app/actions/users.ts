@@ -14,9 +14,9 @@ import {
 } from "@/lib/queries/users";
 import type { UserDetail, UserFilters, UserListRow } from "@/lib/queries/users";
 import { revalidateInboxCache } from "@/lib/revalidate-tags";
-import { requireRoles } from "@/lib/server-action-guard";
+import { ActionAuthError, requireRoles } from "@/lib/server-action-guard";
 import { generateAdminRecoveryLink } from "@/lib/auth-recovery-link";
-import { createSecretSupabaseClient } from "@/lib/supabase-admin";
+import { tryCreateSecretSupabaseClient } from "@/lib/supabase-admin";
 import { roleUsesMultiWarehouseAssignment } from "@/lib/warehouse-scope";
 
 export async function getUsers(
@@ -70,14 +70,18 @@ function resolveWarehouseSelection(
   return { ok: true, warehouseIds: [warehouseId], primaryWarehouseId: warehouseId };
 }
 
-function warehouseAppMetadata(role: Role, warehouseIds: string[], primaryWarehouseId: string) {
+function warehouseAppMetadata(
+  role: Role,
+  warehouseIds: string[],
+  primaryWarehouseId: string,
+): Record<string, string | string[]> {
   if (role === Role.SM) {
-    return { warehouseId: primaryWarehouseId, warehouseIds: null };
+    return { warehouseId: primaryWarehouseId };
   }
   if (roleUsesMultiWarehouseAssignment(role)) {
-    return { warehouseId: primaryWarehouseId, warehouseIds: warehouseIds };
+    return { warehouseId: primaryWarehouseId, warehouseIds };
   }
-  return { warehouseId: null, warehouseIds: null };
+  return {};
 }
 
 async function validateWarehousesExist(warehouseIds: string[]): Promise<string | null> {
@@ -104,107 +108,132 @@ function validateUserInput(input: CreateUserInput): string | null {
 export async function createUser(
   input: CreateUserInput,
 ): Promise<MutationResult & { userId?: string; recoveryLink?: string }> {
-  await requireRoles([Role.OPS_HEAD]);
-
-  const error = validateUserInput(input);
-  if (error) return { ok: false, message: error };
-
-  const email = input.email.trim().toLowerCase();
-  const name = input.name.trim();
-  const { role, password } = input;
-
-  const warehouses = resolveWarehouseSelection(role, input);
-  if (!warehouses.ok) return { ok: false, message: warehouses.message };
-
-  const existing = await prisma.user.findUnique({ where: { email } });
-  if (existing) {
-    return { ok: false, message: "A user with this email already exists." };
+  try {
+    await requireRoles([Role.OPS_HEAD]);
+  } catch (err) {
+    if (err instanceof ActionAuthError) {
+      return { ok: false, message: err.message };
+    }
+    throw err;
   }
-
-  const warehouseErr = await validateWarehousesExist(warehouses.warehouseIds);
-  if (warehouseErr) return { ok: false, message: warehouseErr };
-
-  const supabase = createSecretSupabaseClient();
-  const { warehouseIds, primaryWarehouseId } = warehouses;
-
-  const { data, error: createErr } = await supabase.auth.admin.createUser({
-    email,
-    password: password || undefined,
-    email_confirm: true,
-    user_metadata: { name, role, must_change_password: true },
-    app_metadata: {
-      role,
-      ...warehouseAppMetadata(role, warehouseIds, primaryWarehouseId),
-    },
-  });
-
-  if (createErr || !data.user) {
-    return {
-      ok: false,
-      message: createErr?.message ?? "Could not create Supabase user.",
-    };
-  }
-
-  const userId = data.user.id;
 
   try {
-    await prisma.user.create({
-      data: {
-        id: userId,
-        email,
-        name,
+    const error = validateUserInput(input);
+    if (error) return { ok: false, message: error };
+
+    const email = input.email.trim().toLowerCase();
+    const name = input.name.trim();
+    const { role, password } = input;
+
+    const warehouses = resolveWarehouseSelection(role, input);
+    if (!warehouses.ok) return { ok: false, message: warehouses.message };
+
+    const existing = await prisma.user.findUnique({ where: { email } });
+    if (existing) {
+      return { ok: false, message: "A user with this email already exists." };
+    }
+
+    const warehouseErr = await validateWarehousesExist(warehouses.warehouseIds);
+    if (warehouseErr) return { ok: false, message: warehouseErr };
+
+    const admin = tryCreateSecretSupabaseClient();
+    if (!admin.ok) {
+      return { ok: false, message: admin.message };
+    }
+    const supabase = admin.client;
+    const { warehouseIds, primaryWarehouseId } = warehouses;
+
+    const { data, error: createErr } = await supabase.auth.admin.createUser({
+      email,
+      password: password || undefined,
+      email_confirm: true,
+      user_metadata: { name, role, must_change_password: true },
+      app_metadata: {
         role,
-        warehouseId: primaryWarehouseId,
-        warehouseAssignments: {
-          create: warehouseIds.map((warehouseId) => ({ warehouseId })),
-        },
+        ...warehouseAppMetadata(role, warehouseIds, primaryWarehouseId),
       },
     });
-  } catch (e) {
-    logger.error(
-      { err: e instanceof Error ? e.message : String(e), userId, email },
-      "User created in Supabase but Prisma mirror failed — rolling back",
-    );
-    await supabase.auth.admin.deleteUser(userId).catch((delErr) => {
-      logger.error(
-        { err: delErr instanceof Error ? delErr.message : String(delErr) },
-        "Failed to roll back Supabase user after Prisma failure",
-      );
-    });
-    return {
-      ok: false,
-      message: e instanceof Error ? e.message : "Failed to mirror user to DB.",
-    };
-  }
 
-  let recoveryLink: string | undefined;
-  if (!password) {
-    const linkResult = await generateAdminRecoveryLink(email);
-    if (!linkResult.ok) {
-      logger.warn(
-        { email, message: linkResult.message },
-        "User created but recovery link generation failed",
-      );
+    if (createErr || !data.user) {
       return {
-        ok: true,
-        userId,
-        message:
-          "User created, but the recovery link could not be generated. Use Reset password in the users table.",
+        ok: false,
+        message: createErr?.message ?? "Could not create Supabase user.",
       };
     }
-    recoveryLink = linkResult.link;
-  }
 
-  revalidatePath("/admin/users");
-  revalidateInboxCache();
-  return {
-    ok: true,
-    userId,
-    recoveryLink,
-    message: recoveryLink
-      ? "User created — copy the recovery link and share it with them."
-      : undefined,
-  };
+    const userId = data.user.id;
+
+    try {
+      await prisma.user.create({
+        data: {
+          id: userId,
+          email,
+          name,
+          role,
+          warehouseId: primaryWarehouseId,
+          warehouseAssignments: {
+            create: warehouseIds.map((warehouseId) => ({ warehouseId })),
+          },
+        },
+      });
+    } catch (e) {
+      logger.error(
+        { err: e instanceof Error ? e.message : String(e), userId, email },
+        "User created in Supabase but Prisma mirror failed — rolling back",
+      );
+      await supabase.auth.admin.deleteUser(userId).catch((delErr) => {
+        logger.error(
+          { err: delErr instanceof Error ? delErr.message : String(delErr) },
+          "Failed to roll back Supabase user after Prisma failure",
+        );
+      });
+      return {
+        ok: false,
+        message: e instanceof Error ? e.message : "Failed to mirror user to DB.",
+      };
+    }
+
+    let recoveryLink: string | undefined;
+    if (!password) {
+      const linkResult = await generateAdminRecoveryLink(email);
+      if (!linkResult.ok) {
+        logger.warn(
+          { email, message: linkResult.message },
+          "User created but recovery link generation failed",
+        );
+        return {
+          ok: true,
+          userId,
+          message:
+            "User created, but the recovery link could not be generated. Use Reset password in the users table.",
+        };
+      }
+      recoveryLink = linkResult.link;
+    }
+
+    revalidatePath("/admin/users");
+    revalidateInboxCache();
+    return {
+      ok: true,
+      userId,
+      recoveryLink,
+      message: recoveryLink
+        ? "User created — copy the recovery link and share it with them."
+        : undefined,
+    };
+  } catch (err) {
+    logger.error(
+      { err: err instanceof Error ? err.message : String(err) },
+      "createUser failed",
+    );
+    return {
+      ok: false,
+      message:
+        err instanceof Error
+          ? err.message
+          : "Could not create user. Check server logs for details.",
+    };
+  }
 }
 
 export async function updateUser(input: UpdateUserInput): Promise<MutationResult> {
@@ -239,8 +268,11 @@ export async function updateUser(input: UpdateUserInput): Promise<MutationResult
 
   const { warehouseIds, primaryWarehouseId } = warehouses;
 
-  const supabase = createSecretSupabaseClient();
-  const { error: updateErr } = await supabase.auth.admin.updateUserById(
+  const admin = tryCreateSecretSupabaseClient();
+  if (!admin.ok) {
+    return { ok: false, message: admin.message };
+  }
+  const { error: updateErr } = await admin.client.auth.admin.updateUserById(
     existing.id,
     {
       user_metadata: { name, role },

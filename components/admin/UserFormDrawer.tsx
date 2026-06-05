@@ -144,6 +144,14 @@ export function UserFormDrawer({
     e.preventDefault();
     setSubmitting(true);
     try {
+      if (!multiWarehouse && !warehouseId) {
+        toast.error("Select a warehouse.");
+        return;
+      }
+      if (multiWarehouse && warehouseIds.length === 0) {
+        toast.error("Select at least one warehouse.");
+        return;
+      }
       const payload = multiWarehouse
         ? { warehouseIds }
         : { warehouseId };
@@ -181,6 +189,10 @@ export function UserFormDrawer({
       }
       onOpenChange(false);
       onSaved();
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Something went wrong creating the user.",
+      );
     } finally {
       setSubmitting(false);
     }

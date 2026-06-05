@@ -1,0 +1,172 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-06-05T00:00:00.000Z",
+  "title": "Design System: KNOT Procurement",
+  "extensions": {
+    "colorMeta": {
+      "brand-indigo": {
+        "role": "primary",
+        "displayName": "Operations Indigo",
+        "canonical": "oklch(51% 0.22 277)",
+        "tonalRamp": ["#1e1b4b", "#312e81", "#3730a3", "#4338ca", "#4f46e5", "#6366f1", "#818cf8", "#eef2ff"]
+      },
+      "surface-base": {
+        "role": "neutral",
+        "displayName": "Shell Gray",
+        "canonical": "oklch(96% 0.005 285)",
+        "tonalRamp": ["#0b0b10", "#111118", "#18181b", "#27272a", "#3f3f46", "#71717a", "#d4d4d8", "#f4f4f6"]
+      },
+      "text-primary": {
+        "role": "neutral",
+        "displayName": "Ink Primary",
+        "canonical": "oklch(22% 0.01 285)",
+        "tonalRamp": ["#09090b", "#18181b", "#27272a", "#3f3f46", "#52525b", "#71717a", "#a1a1aa", "#f5f5f7"]
+      },
+      "role-teal": {
+        "role": "secondary",
+        "displayName": "Role Teal",
+        "canonical": "oklch(55% 0.12 180)",
+        "tonalRamp": ["#042f2e", "#134e4a", "#115e59", "#0f766e", "#0d9488", "#14b8a6", "#2dd4bf", "#ccfbf1"]
+      },
+      "role-violet": {
+        "role": "secondary",
+        "displayName": "Role Violet",
+        "canonical": "oklch(52% 0.22 300)",
+        "tonalRamp": ["#2e1065", "#4c1d95", "#5b21b6", "#6d28d9", "#7c3aed", "#8b5cf6", "#a78bfa", "#ede9fe"]
+      },
+      "status-success": {
+        "role": "semantic",
+        "displayName": "Success Green",
+        "canonical": "oklch(55% 0.17 145)",
+        "tonalRamp": ["#052e16", "#14532d", "#166534", "#15803d", "#16a34a", "#22c55e", "#4ade80", "#dcfce7"]
+      },
+      "status-error": {
+        "role": "semantic",
+        "displayName": "Error Red",
+        "canonical": "oklch(50% 0.2 25)",
+        "tonalRamp": ["#450a0a", "#7f1d1d", "#991b1b", "#b91c1c", "#dc2626", "#ef4444", "#f87171", "#fee2e2"]
+      }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Metric Display", "purpose": "Dashboard metric numbers only. Max 28px." },
+      "headline": { "displayName": "Page Headline", "purpose": "Page titles and primary section headers." },
+      "title": { "displayName": "Card Title", "purpose": "Card headings, sheet section titles." },
+      "body": { "displayName": "Dense Body", "purpose": "Table cells, form content, toast text at 13px." },
+      "label": { "displayName": "Compact Label", "purpose": "Column headers, badges, nav group labels." },
+      "mono": { "displayName": "System Mono", "purpose": "IDs, serial ranges, GSTINs, tabular quantities." }
+    },
+    "shadows": [
+      { "name": "ds-1", "value": "0 1px 2px 0 rgba(15, 23, 42, 0.05), 0 1px 3px 0 rgba(15, 23, 42, 0.04)", "purpose": "Resting cards and buttons." },
+      { "name": "ds-2", "value": "0 4px 8px -2px rgba(15, 23, 42, 0.08), 0 2px 4px -2px rgba(15, 23, 42, 0.06)", "purpose": "Hover lift, toasts, active nav pills." },
+      { "name": "ds-3", "value": "0 16px 48px -12px rgba(15, 23, 42, 0.18), 0 6px 16px -8px rgba(15, 23, 42, 0.12)", "purpose": "Modals, sheets, popovers." },
+      { "name": "ds-focus", "value": "0 0 0 3px color-mix(in srgb, var(--brand-accent) 28%, transparent)", "purpose": "Focus-visible ring on all interactive elements." }
+    ],
+    "motion": [
+      { "name": "duration-fast", "value": "120ms", "purpose": "Table row hover, button press, nav transitions." },
+      { "name": "duration", "value": "180ms", "purpose": "Default state transitions." },
+      { "name": "duration-slow", "value": "280ms", "purpose": "Sheet open, route-level fades. Hard ceiling." },
+      { "name": "ease-out", "value": "cubic-bezier(0.22, 1, 0.36, 1)", "purpose": "Default easing. No bounce or elastic." }
+    ],
+    "breakpoints": [
+      { "name": "content-max", "value": "1280px" },
+      { "name": "sidebar", "value": "240px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Single primary action per screen. Indigo fill, compact 32px height.",
+      "html": "<button class=\"ds-btn-primary\">Create purchase request</button>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 32px; padding: 0 14px; font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif; font-size: 13px; font-weight: 500; line-height: 1.4; color: #ffffff; background: var(--brand-accent, #4f46e5); border: 1px solid transparent; border-radius: 6px; box-shadow: 0 1px 2px 0 rgba(15, 23, 42, 0.05); cursor: pointer; transition: background 120ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 120ms cubic-bezier(0.22, 1, 0.36, 1), transform 120ms cubic-bezier(0.22, 1, 0.36, 1); } .ds-btn-primary:hover { background: var(--accent-hover, #4338ca); box-shadow: 0 4px 8px -2px rgba(15, 23, 42, 0.08); } .ds-btn-primary:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand-accent, #4f46e5) 28%, transparent); } .ds-btn-primary:active { transform: translateY(1px); }"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Secondary actions, toolbar buttons, cancel actions.",
+      "html": "<button class=\"ds-btn-ghost\">Cancel</button>",
+      "css": ".ds-btn-ghost { display: inline-flex; align-items: center; justify-content: center; height: 32px; padding: 0 14px; font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif; font-size: 13px; font-weight: 500; color: var(--text-primary, #18181b); background: transparent; border: 1px solid transparent; border-radius: 6px; cursor: pointer; transition: background 120ms cubic-bezier(0.22, 1, 0.36, 1); } .ds-btn-ghost:hover { background: var(--surface-hover, #f1f1f3); } .ds-btn-ghost:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand-accent, #4f46e5) 28%, transparent); }"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input-field",
+      "description": "Compact 36px form field for filters and detail forms.",
+      "html": "<input class=\"ds-input\" type=\"text\" placeholder=\"e.g. GSTIN 22AAAAA0000A1Z5\" />",
+      "css": ".ds-input { display: block; width: 100%; height: 36px; padding: 0 12px; font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif; font-size: 13px; color: var(--text-primary, #18181b); background: var(--surface-input, #ffffff); border: 1px solid var(--border-default, #d4d4d8); border-radius: 6px; transition: border 120ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 120ms cubic-bezier(0.22, 1, 0.36, 1); } .ds-input::placeholder { color: color-mix(in srgb, var(--text-tertiary, #71717a) 70%, transparent); } .ds-input:hover { border-color: var(--border-strong, #a1a1aa); } .ds-input:focus-visible { outline: none; border-color: var(--brand-accent, #4f46e5); box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand-accent, #4f46e5) 28%, transparent); }"
+    },
+    {
+      "name": "Status Chip",
+      "kind": "chip",
+      "refersTo": "chip-status",
+      "description": "Semantic status badge with leading dot. Soft tinted background.",
+      "html": "<span class=\"ds-chip\"><span class=\"ds-chip-dot\"></span>Pending approval</span>",
+      "css": ".ds-chip { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px; font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif; font-size: 12px; font-weight: 500; line-height: 1.4; color: var(--status-warning, #b45309); background: var(--status-warning-bg, #fef3c7); border-radius: 9999px; white-space: nowrap; } .ds-chip-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--status-warning, #b45309); flex-shrink: 0; }"
+    },
+    {
+      "name": "Sidebar Nav Item",
+      "kind": "nav",
+      "refersTo": "nav-item-active",
+      "description": "Active sidebar navigation pill with accent icon.",
+      "html": "<a class=\"ds-nav-item ds-nav-item-active\" href=\"#\"><svg class=\"ds-nav-icon\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\"><path d=\"M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z\"/><path d=\"M14 2v6h6\"/></svg>Purchase requests</a>",
+      "css": ".ds-nav-item { display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 12px; font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif; font-size: 13px; font-weight: 400; color: var(--text-secondary, #52525b); text-decoration: none; border-radius: 9999px; transition: background 120ms cubic-bezier(0.22, 1, 0.36, 1), color 120ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 120ms cubic-bezier(0.22, 1, 0.36, 1); } .ds-nav-item:hover { background: var(--surface-hover, #f1f1f3); color: var(--text-primary, #18181b); } .ds-nav-item-active { font-weight: 500; color: var(--text-primary, #18181b); background: var(--surface-selected, #ebebee); box-shadow: 0 1px 2px 0 rgba(15, 23, 42, 0.05); } .ds-nav-icon { width: 16px; height: 16px; flex-shrink: 0; color: var(--text-secondary, #52525b); } .ds-nav-item-active .ds-nav-icon { color: var(--brand-accent, #4f46e5); }"
+    },
+    {
+      "name": "Data Table Row",
+      "kind": "custom",
+      "description": "Primary list UI. Fast hover, subtle borders, mono IDs.",
+      "html": "<table class=\"ds-table\"><thead><tr><th>PR ID</th><th>Vendor</th><th class=\"ds-table-num\">Qty</th><th>Status</th></tr></thead><tbody><tr><td class=\"ds-table-mono\">PR-0042</td><td>Acme Textiles</td><td class=\"ds-table-num\">1,200</td><td><span class=\"ds-chip\"><span class=\"ds-chip-dot\"></span>Approved</span></td></tr></tbody></table>",
+      "css": ".ds-table { width: 100%; border-collapse: collapse; font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif; font-size: 13px; background: var(--surface-2, #ffffff); border: 1px solid var(--border-subtle, #e7e7ea); border-radius: 8px; overflow: hidden; } .ds-table th { height: 40px; padding: 0 8px; font-size: 12px; font-weight: 500; letter-spacing: 0.02em; text-transform: uppercase; color: var(--text-tertiary, #71717a); text-align: left; border-bottom: 1px solid var(--border-default, #d4d4d8); background: var(--surface-1, #fafafa); } .ds-table td { height: 40px; padding: 8px; color: var(--text-primary, #18181b); border-bottom: 1px solid var(--border-subtle, #e7e7ea); transition: background 120ms cubic-bezier(0.22, 1, 0.36, 1); } .ds-table tbody tr:hover td { background: var(--surface-hover, #f1f1f3); } .ds-table-mono { font-family: var(--font-geist-mono), ui-monospace, monospace; } .ds-table-num { text-align: right; font-variant-numeric: tabular-nums; } .ds-chip { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px; font-size: 12px; font-weight: 500; color: var(--status-info, #1d4ed8); background: var(--status-info-bg, #dbeafe); border-radius: 9999px; } .ds-chip-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--status-info, #1d4ed8); }"
+    },
+    {
+      "name": "Content Card",
+      "kind": "card",
+      "description": "Dashboard and detail page container with border-first elevation.",
+      "html": "<div class=\"ds-card\"><div class=\"ds-card-header\"><h3 class=\"ds-card-title\">Fulfillment</h3></div><div class=\"ds-card-body\">3 open disputes awaiting resolution.</div></div>",
+      "css": ".ds-card { display: flex; flex-direction: column; gap: 16px; padding: 16px 0; background: var(--surface-2, #ffffff); border: 1px solid var(--border-subtle, #e7e7ea); border-radius: 16px; box-shadow: 0 1px 2px 0 rgba(15, 23, 42, 0.05); font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif; } .ds-card-header { padding: 0 16px; } .ds-card-title { margin: 0; font-size: 15px; font-weight: 600; color: var(--text-primary, #18181b); letter-spacing: -0.01em; } .ds-card-body { padding: 0 16px; font-size: 13px; color: var(--text-secondary, #52525b); line-height: 1.4; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Operations Ledger",
+    "overview": "KNOT Procurement is a daily-use operations console, not a marketing surface. The visual system treats tables, filters, and detail pages as the primary canvas. Every choice serves repeat operators who spend hours moving records through approval, receipt, invoicing, and payment workflows. The aesthetic sits between Linear's interaction speed and Stripe's dashboard clarity: polished surfaces, restrained motion, and information density without clutter.",
+    "keyCharacteristics": [
+      "Information-dense tables and list views as the default layout pattern",
+      "Indigo accent used sparingly for primary actions, active nav, links, and focus rings",
+      "Semantic color confined to status chips, alerts, and toasts",
+      "Geist Sans for UI copy; Geist Mono for IDs, serial ranges, and numeric columns",
+      "Fast micro-motion (120–180ms) with full prefers-reduced-motion support",
+      "Fixed 240px sidebar with role-colored left stripe; 1280px max content width"
+    ],
+    "rules": [
+      { "name": "The One Voice Rule", "body": "Brand indigo appears on ≤10% of any screen: one primary CTA, active nav indicator, focus ring, or link cluster. Its rarity signals actionability.", "section": "colors" },
+      { "name": "The Semantic-Only Rule", "body": "Success, warning, error, and info colors appear in status chips, inline alerts, and toast left-bars only. Never as decorative backgrounds or body text outside badges.", "section": "colors" },
+      { "name": "The Monospace ID Rule", "body": "Every system identifier, serial range, and right-aligned quantity uses Geist Mono. If it could be copied into a spreadsheet, it is monospace.", "section": "typography" },
+      { "name": "The 28px Ceiling Rule", "body": "No operational screen uses type above 28px. This is a tool, not a landing page.", "section": "typography" },
+      { "name": "The Border-First Rule", "body": "Cards and tables use 1px --border-subtle borders at rest. Shadows signal interactivity or elevation, not decoration.", "section": "elevation" },
+      { "name": "The Glass Sparingly Rule", "body": "surface-glass (16px backdrop blur) is reserved for sticky filter bars and drawer headers. Never as a default card treatment.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do use Geist Sans and Geist Mono as the only font families.",
+      "Do keep table hover transitions at 120ms for Linear-grade responsiveness.",
+      "Do render skeleton layouts matching real table column widths instead of spinners.",
+      "Do use dry, factual empty state copy without illustrations or emoji.",
+      "Do honor prefers-reduced-motion by collapsing all durations to instant.",
+      "Do show a visible reason when a button is disabled.",
+      "Do limit each screen to one primary (indigo) button."
+    ],
+    "donts": [
+      "Don't use generic SaaS marketing aesthetics: hero metrics with gradient accents, identical icon-card grids, cream/sand body backgrounds, tiny uppercase eyebrows on every section.",
+      "Don't use gradient text, gradient backgrounds as default, or glassmorphism for its own sake.",
+      "Don't add product tours, feature callouts, or tooltip overload on already-labeled controls.",
+      "Don't show Success! modals, emoji, exclamation marks, or illustrations in empty states.",
+      "Don't use centered page layouts or full-page loading spinners.",
+      "Don't use Inter or system-ui as the primary font, or sizes above 28px on operational screens.",
+      "Don't use generic placeholders or marketing buzzwords.",
+      "Don't use border-left greater than 1px as a colored accent stripe on cards or list items.",
+      "Don't animate longer than 280ms or use bounce/elastic easing.",
+      "Don't put semantic status colors on table row backgrounds beyond hover/selected washes."
+    ]
+  }
+}
