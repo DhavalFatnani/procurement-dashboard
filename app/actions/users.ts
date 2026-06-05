@@ -1,6 +1,6 @@
 "use server";
 
-import { Role } from "@/lib/prisma-enums";
+import { Role, UserStatus } from "@/lib/prisma-enums";
 import { revalidatePath } from "next/cache";
 
 import type { MutationResult } from "@/lib/action-result";
@@ -11,23 +11,50 @@ import {
   getUserById as getUserByIdQuery,
   getUsers as getUsersQuery,
   syncUserWarehouseAssignments,
+  userHasProcurementActivity,
 } from "@/lib/queries/users";
 import type { UserDetail, UserFilters, UserListRow } from "@/lib/queries/users";
 import { revalidateInboxCache } from "@/lib/revalidate-tags";
 import { ActionAuthError, requireRoles } from "@/lib/server-action-guard";
-import { generateAdminRecoveryLink } from "@/lib/auth-recovery-link";
+import {
+  generateAdminRecoveryLink,
+  sendPasswordResetEmail,
+} from "@/lib/auth-recovery-link";
 import { tryCreateSecretSupabaseClient } from "@/lib/supabase-admin";
 import { roleUsesMultiWarehouseAssignment } from "@/lib/warehouse-scope";
+
+async function guardOpsHead(): Promise<MutationResult | null> {
+  try {
+    await requireRoles([Role.OPS_HEAD]);
+    return null;
+  } catch (err) {
+    if (err instanceof ActionAuthError) {
+      return { ok: false, message: err.message };
+    }
+    throw err;
+  }
+}
 
 export async function getUsers(
   filters: UserFilters,
 ): Promise<Paginated<UserListRow>> {
-  await requireRoles([Role.OPS_HEAD]);
+  const authErr = await guardOpsHead();
+  if (authErr) {
+    return {
+      items: [],
+      page: filters.page ?? 1,
+      pageSize: filters.pageSize ?? 25,
+      total: 0,
+      totalPages: 0,
+      hasNextPage: false,
+    };
+  }
   return getUsersQuery(filters);
 }
 
 export async function getUserById(id: string): Promise<UserDetail | null> {
-  await requireRoles([Role.OPS_HEAD]);
+  const authErr = await guardOpsHead();
+  if (authErr) return null;
   return getUserByIdQuery(id);
 }
 
@@ -39,7 +66,7 @@ export type CreateUserInput = {
   warehouseId?: string;
   /** Required for Ops Head / Finance — one or more warehouses. */
   warehouseIds?: string[];
-  /** Optional initial password. When omitted, a password-reset link is sent. */
+  /** Optional initial password. When omitted, a password-reset email is sent. */
   password?: string;
 };
 
@@ -84,6 +111,29 @@ function warehouseAppMetadata(
   return {};
 }
 
+function authAppMetadata(
+  role: Role,
+  warehouseIds: string[],
+  primaryWarehouseId: string,
+  active: boolean,
+): Record<string, string | string[] | boolean> {
+  return {
+    role,
+    active,
+    ...warehouseAppMetadata(role, warehouseIds, primaryWarehouseId),
+  };
+}
+
+async function guardNotSelf(
+  targetUserId: string,
+): Promise<MutationResult | null> {
+  const actor = await requireRoles([Role.OPS_HEAD]);
+  if (actor.id === targetUserId) {
+    return { ok: false, message: "You cannot perform this action on your own account." };
+  }
+  return null;
+}
+
 async function validateWarehousesExist(warehouseIds: string[]): Promise<string | null> {
   const found = await prisma.warehouse.findMany({
     where: { id: { in: warehouseIds } },
@@ -108,14 +158,8 @@ function validateUserInput(input: CreateUserInput): string | null {
 export async function createUser(
   input: CreateUserInput,
 ): Promise<MutationResult & { userId?: string; recoveryLink?: string }> {
-  try {
-    await requireRoles([Role.OPS_HEAD]);
-  } catch (err) {
-    if (err instanceof ActionAuthError) {
-      return { ok: false, message: err.message };
-    }
-    throw err;
-  }
+  const authErr = await guardOpsHead();
+  if (authErr) return authErr;
 
   try {
     const error = validateUserInput(input);
@@ -148,10 +192,7 @@ export async function createUser(
       password: password || undefined,
       email_confirm: true,
       user_metadata: { name, role, must_change_password: true },
-      app_metadata: {
-        role,
-        ...warehouseAppMetadata(role, warehouseIds, primaryWarehouseId),
-      },
+      app_metadata: authAppMetadata(role, warehouseIds, primaryWarehouseId, true),
     });
 
     if (createErr || !data.user) {
@@ -194,21 +235,28 @@ export async function createUser(
     }
 
     let recoveryLink: string | undefined;
+    let message: string | undefined;
     if (!password) {
-      const linkResult = await generateAdminRecoveryLink(email);
-      if (!linkResult.ok) {
+      const emailResult = await sendPasswordResetEmail(email);
+      if (emailResult.ok) {
+        message = `User created. Password setup email sent to ${email}.`;
+      } else {
         logger.warn(
-          { email, message: linkResult.message },
-          "User created but recovery link generation failed",
+          { email, message: emailResult.message },
+          "User created but password reset email failed — falling back to manual link",
         );
-        return {
-          ok: true,
-          userId,
-          message:
-            "User created, but the recovery link could not be generated. Use Reset password in the users table.",
-        };
+        const linkResult = await generateAdminRecoveryLink(email);
+        if (!linkResult.ok) {
+          return {
+            ok: true,
+            userId,
+            message:
+              "User created, but the setup email could not be sent and no recovery link was generated. Use Reset password in the users table.",
+          };
+        }
+        recoveryLink = linkResult.link;
+        message = `User created, but email could not be sent (${emailResult.message}). Copy the recovery link and share it manually.`;
       }
-      recoveryLink = linkResult.link;
     }
 
     revalidatePath("/admin/users");
@@ -217,9 +265,7 @@ export async function createUser(
       ok: true,
       userId,
       recoveryLink,
-      message: recoveryLink
-        ? "User created — copy the recovery link and share it with them."
-        : undefined,
+      message,
     };
   } catch (err) {
     logger.error(
@@ -237,11 +283,17 @@ export async function createUser(
 }
 
 export async function updateUser(input: UpdateUserInput): Promise<MutationResult> {
-  await requireRoles([Role.OPS_HEAD]);
+  const authErr = await guardOpsHead();
+  if (authErr) return authErr;
 
   const existing = await prisma.user.findUnique({
     where: { id: input.id },
-    include: {
+    select: {
+      id: true,
+      name: true,
+      role: true,
+      status: true,
+      warehouseId: true,
       warehouseAssignments: { select: { warehouseId: true } },
     },
   });
@@ -272,14 +324,12 @@ export async function updateUser(input: UpdateUserInput): Promise<MutationResult
   if (!admin.ok) {
     return { ok: false, message: admin.message };
   }
+  const active = existing.status === UserStatus.ACTIVE;
   const { error: updateErr } = await admin.client.auth.admin.updateUserById(
     existing.id,
     {
       user_metadata: { name, role },
-      app_metadata: {
-        role,
-        ...warehouseAppMetadata(role, warehouseIds, primaryWarehouseId),
-      },
+      app_metadata: authAppMetadata(role, warehouseIds, primaryWarehouseId, active),
     },
   );
 
@@ -301,24 +351,209 @@ export async function updateUser(input: UpdateUserInput): Promise<MutationResult
   return { ok: true };
 }
 
-export async function sendPasswordReset(
-  userId: string,
-): Promise<MutationResult & { recoveryLink?: string }> {
-  await requireRoles([Role.OPS_HEAD]);
+export async function deactivateUser(userId: string): Promise<MutationResult> {
+  const selfErr = await guardNotSelf(userId);
+  if (selfErr) return selfErr;
+
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { email: true },
+    select: {
+      id: true,
+      email: true,
+      name: true,
+      role: true,
+      status: true,
+      warehouseId: true,
+      warehouseAssignments: { select: { warehouseId: true } },
+    },
+  });
+  if (!user) return { ok: false, message: "User not found." };
+  if (user.status === UserStatus.INACTIVE) {
+    return { ok: false, message: "User is already inactive." };
+  }
+
+  const warehouseIds =
+    user.warehouseAssignments.length > 0
+      ? user.warehouseAssignments.map((a) => a.warehouseId)
+      : [user.warehouseId];
+
+  const admin = tryCreateSecretSupabaseClient();
+  if (!admin.ok) {
+    return { ok: false, message: admin.message };
+  }
+
+  const { error: banErr } = await admin.client.auth.admin.updateUserById(userId, {
+    ban_duration: "876000h",
+    app_metadata: authAppMetadata(
+      user.role,
+      warehouseIds,
+      user.warehouseId,
+      false,
+    ),
+  });
+  if (banErr) {
+    return {
+      ok: false,
+      message: banErr.message ?? "Could not deactivate Supabase user.",
+    };
+  }
+
+  try {
+    await prisma.user.update({
+      where: { id: userId },
+      data: { status: UserStatus.INACTIVE },
+    });
+  } catch (err) {
+    logger.error({ err, userId }, "deactivateUser prisma failed");
+    return { ok: false, message: "Failed to deactivate user." };
+  }
+
+  revalidatePath("/admin/users");
+  revalidateInboxCache();
+  return { ok: true };
+}
+
+export async function reactivateUser(userId: string): Promise<MutationResult> {
+  await requireRoles([Role.OPS_HEAD]);
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      id: true,
+      role: true,
+      status: true,
+      warehouseId: true,
+      warehouseAssignments: { select: { warehouseId: true } },
+    },
+  });
+  if (!user) return { ok: false, message: "User not found." };
+  if (user.status === UserStatus.ACTIVE) {
+    return { ok: false, message: "User is already active." };
+  }
+
+  const warehouseIds =
+    user.warehouseAssignments.length > 0
+      ? user.warehouseAssignments.map((a) => a.warehouseId)
+      : [user.warehouseId];
+
+  const admin = tryCreateSecretSupabaseClient();
+  if (!admin.ok) {
+    return { ok: false, message: admin.message };
+  }
+
+  const { error: unbanErr } = await admin.client.auth.admin.updateUserById(userId, {
+    ban_duration: "none",
+    app_metadata: authAppMetadata(
+      user.role,
+      warehouseIds,
+      user.warehouseId,
+      true,
+    ),
+  });
+  if (unbanErr) {
+    return {
+      ok: false,
+      message: unbanErr.message ?? "Could not reactivate Supabase user.",
+    };
+  }
+
+  try {
+    await prisma.user.update({
+      where: { id: userId },
+      data: { status: UserStatus.ACTIVE },
+    });
+  } catch (err) {
+    logger.error({ err, userId }, "reactivateUser prisma failed");
+    return { ok: false, message: "Failed to reactivate user." };
+  }
+
+  revalidatePath("/admin/users");
+  revalidateInboxCache();
+  return { ok: true };
+}
+
+export async function deleteUser(userId: string): Promise<MutationResult> {
+  const selfErr = await guardNotSelf(userId);
+  if (selfErr) return selfErr;
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, email: true, name: true },
   });
   if (!user) return { ok: false, message: "User not found." };
 
+  if (await userHasProcurementActivity(userId)) {
+    return {
+      ok: false,
+      message:
+        "This user has procurement history. Deactivate the account instead of deleting it.",
+    };
+  }
+
+  const admin = tryCreateSecretSupabaseClient();
+  if (!admin.ok) {
+    return { ok: false, message: admin.message };
+  }
+
+  const { error: deleteAuthErr } = await admin.client.auth.admin.deleteUser(userId);
+  if (deleteAuthErr) {
+    return {
+      ok: false,
+      message: deleteAuthErr.message ?? "Could not delete Supabase user.",
+    };
+  }
+
+  try {
+    await prisma.user.delete({ where: { id: userId } });
+  } catch (err) {
+    logger.error({ err, userId }, "deleteUser prisma failed");
+    return {
+      ok: false,
+      message: "Auth user removed but database record could not be deleted.",
+    };
+  }
+
+  revalidatePath("/admin/users");
+  revalidateInboxCache();
+  return { ok: true };
+}
+
+export async function sendPasswordReset(
+  userId: string,
+): Promise<MutationResult & { recoveryLink?: string }> {
+  const authErr = await guardOpsHead();
+  if (authErr) return authErr;
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { email: true, status: true },
+  });
+  if (!user) return { ok: false, message: "User not found." };
+  if (user.status === UserStatus.INACTIVE) {
+    return {
+      ok: false,
+      message: "Reactivate the user before sending a password reset.",
+    };
+  }
+
+  const emailResult = await sendPasswordResetEmail(user.email);
+  if (emailResult.ok) {
+    return {
+      ok: true,
+      message: `Password reset email sent to ${user.email}.`,
+    };
+  }
+
   const linkResult = await generateAdminRecoveryLink(user.email);
   if (!linkResult.ok) {
-    return { ok: false, message: linkResult.message };
+    return {
+      ok: false,
+      message: `${emailResult.message} Could not generate a recovery link either.`,
+    };
   }
 
   return {
     ok: true,
     recoveryLink: linkResult.link,
-    message: `Recovery link ready for ${user.email}. Copy and share it with the user.`,
+    message: `Email could not be sent (${emailResult.message}). Copy the recovery link and share it with ${user.email}.`,
   };
 }

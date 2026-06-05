@@ -1,4 +1,4 @@
-import { Prisma, Role } from "@/lib/prisma-client";
+import { Prisma, Role, UserStatus } from "@/lib/prisma-client";
 
 import { paginatedListQuery, type Paginated } from "@/lib/pagination";
 import { prisma } from "@/lib/prisma";
@@ -9,6 +9,7 @@ export type UserListRow = {
   email: string;
   name: string;
   role: Role;
+  status: UserStatus;
   warehouseId: string;
   warehouseIds: string[];
   warehouseNames: string[];
@@ -22,6 +23,7 @@ export type UserDetail = UserListRow;
 export type UserFilters = {
   search?: string;
   role?: Role;
+  status?: UserStatus;
   warehouseId?: string;
   page?: number;
   pageSize?: number;
@@ -34,6 +36,7 @@ function mapUserRow(
     email: string;
     name: string;
     role: Role;
+    status: UserStatus;
     warehouseId: string;
     createdAt: Date;
     warehouse: { name: string; location: string };
@@ -55,6 +58,7 @@ function mapUserRow(
     email: u.email,
     name: u.name,
     role: u.role,
+    status: u.status,
     warehouseId: u.warehouseId,
     warehouseIds,
     warehouseNames,
@@ -68,6 +72,7 @@ const userListSelect = {
   email: true,
   name: true,
   role: true,
+  status: true,
   warehouseId: true,
   createdAt: true,
   warehouse: { select: { name: true, location: true } },
@@ -94,6 +99,9 @@ export async function getUsers(filters: UserFilters): Promise<Paginated<UserList
   }
   if (filters.role) {
     clauses.push({ role: filters.role });
+  }
+  if (filters.status) {
+    clauses.push({ status: filters.status });
   }
   if (filters.warehouseId) {
     clauses.push({
@@ -127,6 +135,43 @@ export async function getUserById(id: string): Promise<UserDetail | null> {
   });
   if (!u) return null;
   return mapUserRow(u);
+}
+
+/** True when the user is referenced by procurement records (blocks hard delete). */
+export async function userHasProcurementActivity(userId: string): Promise<boolean> {
+  const checks = await Promise.all([
+    prisma.vendor.count({ where: { createdById: userId } }),
+    prisma.vendorChangeLog.count({ where: { changedById: userId } }),
+    prisma.vendorRequest.count({
+      where: { OR: [{ requestedById: userId }, { reviewedById: userId }] },
+    }),
+    prisma.catalogItem.count({
+      where: {
+        OR: [{ createdById: userId }, { approvedById: userId }],
+      },
+    }),
+    prisma.purchaseRequest.count({ where: { createdById: userId } }),
+    prisma.pRVersion.count({ where: { changedById: userId } }),
+    prisma.purchaseOrder.count({ where: { forceClosedById: userId } }),
+    prisma.goodsReceipt.count({ where: { receivedById: userId } }),
+    prisma.gRNException.count({ where: { resolvedById: userId } }),
+    prisma.invoice.count({
+      where: {
+        OR: [{ uploadedById: userId }, { overrideById: userId }],
+      },
+    }),
+    prisma.payment.count({ where: { paidById: userId } }),
+    prisma.pOAdvanceRequest.count({
+      where: { OR: [{ requestedById: userId }, { reviewedById: userId }] },
+    }),
+    prisma.pOAdvancePayment.count({ where: { paidById: userId } }),
+    prisma.purchaseOrderLineAdjustment.count({ where: { createdById: userId } }),
+    prisma.serialReservation.count({ where: { createdById: userId } }),
+    prisma.seriesConfig.count({ where: { configuredById: userId } }),
+    prisma.catalogItemVendor.count({ where: { linkedById: userId } }),
+    prisma.vendorCatalogItemPrice.count({ where: { recordedById: userId } }),
+  ]);
+  return checks.some((count) => count > 0);
 }
 
 export async function syncUserWarehouseAssignments(

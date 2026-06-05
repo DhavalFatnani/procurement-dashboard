@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import type { MutationResult } from "@/lib/action-result";
-import { authCallbackRedirectUrl, getSiteOrigin } from "@/lib/get-site-origin";
+import { sendPasswordResetEmail } from "@/lib/auth-recovery-link";
 import { prisma } from "@/lib/prisma";
 import { getRequestSession } from "@/lib/session";
 import { createServerSupabaseClient } from "@/lib/supabase";
@@ -97,13 +97,9 @@ export async function sendOwnPasswordResetEmail(): Promise<MutationResult> {
     return { ok: false, message: "Not signed in." };
   }
 
-  const origin = await getSiteOrigin();
-  const supabase = await createServerSupabaseClient();
-  const { error } = await supabase.auth.resetPasswordForEmail(user.email, {
-    redirectTo: authCallbackRedirectUrl(origin),
-  });
-  if (error) {
-    return { ok: false, message: error.message };
+  const result = await sendPasswordResetEmail(user.email);
+  if (!result.ok) {
+    return { ok: false, message: result.message };
   }
 
   return {

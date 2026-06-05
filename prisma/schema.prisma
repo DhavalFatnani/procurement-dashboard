@@ -104,6 +104,11 @@ enum VendorStatus {
   INACTIVE
 }
 
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+}
+
 enum VendorRequestStatus {
   PENDING
   ACTIVATED
@@ -143,12 +148,13 @@ enum SeriesConfigStatus {
 // --- MODELS ---
 
 model User {
-  id          String   @id
-  email       String   @unique
+  id          String     @id
+  email       String     @unique
   name        String
   role        Role
+  status      UserStatus @default(ACTIVE)
   warehouseId String
-  createdAt   DateTime @default(now())
+  createdAt   DateTime   @default(now())
 
   warehouse Warehouse @relation(fields: [warehouseId], references: [id])
 
@@ -178,6 +184,7 @@ model User {
   vendorCatalogItemPrices   VendorCatalogItemPrice[] @relation("VendorCatalogItemPriceRecordedBy")
 
   @@index([role])
+  @@index([status])
 }
 
 model Warehouse {

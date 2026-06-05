@@ -78,11 +78,23 @@ export async function middleware(request: NextRequest) {
     : false;
 
   if (user) {
-    const rawRole =
-      (user.userMetadata as Record<string, unknown>)?.role ??
-      (user.appMetadata as Record<string, unknown>)?.role;
+    const appMeta = user.appMetadata as Record<string, unknown>;
+    const rawRole = user.userMetadata?.role ?? appMeta.role;
     const role = isRole(rawRole) ? rawRole : null;
     const landing = role ? defaultLandingFor(role) : "/dashboard";
+    const accountInactive = appMeta.active === false;
+
+    if (accountInactive && !publicPaths.has(pathname)) {
+      await supabase.auth.signOut();
+      const url = request.nextUrl.clone();
+      url.pathname = "/login";
+      url.searchParams.set("error", "account_inactive");
+      const redirectResponse = NextResponse.redirect(url);
+      supabaseResponse.cookies.getAll().forEach((cookie) => {
+        redirectResponse.cookies.set(cookie.name, "", { maxAge: 0 });
+      });
+      return redirectResponse;
+    }
 
     if (requiresPasswordChange && !passwordChangeAllowlist.has(pathname)) {
       const url = request.nextUrl.clone();

@@ -182,9 +182,14 @@ export function UserFormDrawer({
         }
         if (res.recoveryLink) {
           onRecoveryLink?.(email, res.recoveryLink);
-          toast.success(res.message ?? "User created — copy the recovery link.");
+          toast.warning(
+            res.message ??
+              "User created — email could not be sent. Copy the recovery link.",
+          );
         } else {
-          toast.success(password ? "User created." : "User created.");
+          toast.success(
+            res.message ?? (password ? "User created." : "User created."),
+          );
         }
       }
       onOpenChange(false);
@@ -319,7 +324,7 @@ export function UserFormDrawer({
         {!isEdit ? (
           <SheetSection
             title="Initial password"
-            description="Leave blank to generate a one-time recovery link to share (no email sent)."
+            description="Leave blank to email a password setup link. If delivery fails, you'll get a link to copy manually."
           >
             <Field label="Password" htmlFor="user-password" hint="Minimum 8 characters.">
               <Input

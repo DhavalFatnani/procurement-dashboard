@@ -5,11 +5,34 @@ import {
   buildRecoveryCallbackUrl,
   getSiteOrigin,
 } from "@/lib/get-site-origin";
+import { createServerSupabaseClient } from "@/lib/supabase";
 import { tryCreateSecretSupabaseClient } from "@/lib/supabase-admin";
 
+/** Sends Supabase's password-recovery email (uses project SMTP / rate limits). */
+export async function sendPasswordResetEmail(
+  email: string,
+): Promise<{ ok: true } | { ok: false; message: string }> {
+  try {
+    const origin = await getSiteOrigin();
+    const supabase = await createServerSupabaseClient();
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: authCallbackRedirectUrl(origin),
+    });
+    if (error) {
+      return { ok: false, message: error.message };
+    }
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      message: err instanceof Error ? err.message : "Could not send password reset email.",
+    };
+  }
+}
+
 /**
- * Admin recovery link without sending email — avoids Supabase built-in SMTP rate limits.
- * Ops shares the returned URL with the user (chat, in person, etc.).
+ * Admin recovery link without sending email — fallback when SMTP send fails or
+ * Ops needs to share the link manually.
  */
 export async function generateAdminRecoveryLink(
   email: string,

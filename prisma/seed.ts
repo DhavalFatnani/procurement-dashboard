@@ -343,6 +343,7 @@ async function seedUsersAndSeriesConfig(warehouseIds: string[]) {
       user_metadata: { role: seed.role, must_change_password: false },
       app_metadata: {
         role: seed.role,
+        active: true,
         ...(seed.role === Role.SM
           ? { warehouseId, warehouseIds: null }
           : {

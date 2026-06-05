@@ -41,9 +41,9 @@ export function RecoveryLinkDialog({
         <AlertDialogHeader>
           <AlertDialogTitle>Password reset link</AlertDialogTitle>
           <AlertDialogDescription>
-            Share this one-time link with <span className="font-medium">{email}</span>.
-            It opens the password setup page without sending email (avoids Supabase
-            rate limits).
+            The setup email could not be delivered to{" "}
+            <span className="font-medium">{email}</span>. Share this one-time link
+            manually — it opens the password setup page.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <div className="space-y-2">

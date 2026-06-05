@@ -1,14 +1,18 @@
 "use client";
 
-import { Role } from "@/lib/prisma-enums";
-import { Key, MoreHorizontal, Pencil, Plus } from "lucide-react";
+import { Role, UserStatus } from "@/lib/prisma-enums";
+import { MoreHorizontal, Plus } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import * as React from "react";
 import { toast } from "sonner";
 
-import { getUserById, getUsers, sendPasswordReset } from "@/app/actions/users";
+import { getUserById, sendPasswordReset } from "@/app/actions/users";
 import { RecoveryLinkDialog } from "@/components/admin/RecoveryLinkDialog";
 import { UserFormDrawer } from "@/components/admin/UserFormDrawer";
+import {
+  UserRowActions,
+  type UserRowResolveOutcome,
+} from "@/components/admin/UserRowActions";
 import { Avatar } from "@/components/shared/Avatar";
 import { Chip } from "@/components/shared/Chip";
 import {
@@ -37,26 +41,52 @@ const ROLE_TONE: Record<Role, "info" | "accent" | "neutral"> = {
   [Role.FINANCE]: "accent",
 };
 
+const USER_STATUS_TONE: Record<UserStatus, "success" | "neutral"> = {
+  [UserStatus.ACTIVE]: "success",
+  [UserStatus.INACTIVE]: "neutral",
+};
+
 export function UsersView({
   initialRows,
   filters,
   warehouses,
+  currentUserId,
 }: {
   initialRows: Paginated<UserListRow>;
   filters: {
     search: string;
     role: string;
+    status: string;
     warehouseId: string;
   };
   warehouses: WarehouseOption[];
+  currentUserId: string;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [rows, setRows] = React.useState(initialRows);
-
-  React.useEffect(() => {
-    setRows(initialRows);
-  }, [initialRows]);
+  const [rows, applyRowUpdate] = React.useOptimistic(
+    initialRows,
+    (
+      state: Paginated<UserListRow>,
+      action: { id: string; outcome: UserRowResolveOutcome },
+    ): Paginated<UserListRow> => {
+      if (action.outcome === "deleted") {
+        return {
+          ...state,
+          items: state.items.filter((r) => r.id !== action.id),
+          total: state.total != null ? Math.max(0, state.total - 1) : state.total,
+        };
+      }
+      const nextStatus =
+        action.outcome === "deactivated" ? UserStatus.INACTIVE : UserStatus.ACTIVE;
+      return {
+        ...state,
+        items: state.items.map((r) =>
+          r.id === action.id ? { ...r, status: nextStatus } : r,
+        ),
+      };
+    },
+  );
 
   const [drawerMode, setDrawerMode] = React.useState<
     | { kind: "create" }
@@ -77,14 +107,14 @@ export function UsersView({
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
     const params = new URLSearchParams();
-    for (const key of ["q", "role", "warehouseId"]) {
+    for (const key of ["q", "role", "status", "warehouseId"]) {
       const v = String(fd.get(key) ?? "").trim();
       if (v) params.set(key, v);
     }
     navigate(params);
   }
 
-  function clearFilter(key: "q" | "role" | "warehouseId") {
+  function clearFilter(key: "q" | "role" | "status" | "warehouseId") {
     const params = new URLSearchParams(searchParams.toString());
     params.delete(key);
     params.delete("page");
@@ -100,39 +130,31 @@ export function UsersView({
   }
 
   async function openEdit(id: string) {
-    const detail = await getUserById(id);
-    if (!detail) {
-      toast.error("User not found.");
-      return;
+    try {
+      const detail = await getUserById(id);
+      if (!detail) {
+        toast.error("User not found.");
+        return;
+      }
+      setDrawerMode({ kind: "edit", user: detail });
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Could not load user details.",
+      );
     }
-    setDrawerMode({ kind: "edit", user: detail });
   }
 
-  async function refreshRows() {
-    try {
-      const next = await getUsers({
-        search: filters.search || undefined,
-        role:
-          filters.role && filters.role in Role
-            ? (filters.role as Role)
-            : undefined,
-        warehouseId: filters.warehouseId || undefined,
-        page: rows.page,
-        includeExactCount: searchParams.get("exactCount") === "1",
-      });
-      setRows(next);
-    } catch {
-      router.refresh();
-    }
+  function refreshRows() {
+    router.refresh();
   }
 
   async function handleResetPassword(row: UserListRow) {
     const res = await sendPasswordReset(row.id);
     if (res.ok && res.recoveryLink) {
       setRecoveryLinkDialog({ email: row.email, link: res.recoveryLink });
-      toast.success(res.message ?? "Recovery link ready.");
+      toast.warning(res.message ?? "Email could not be sent — copy the recovery link.");
     } else if (res.ok) {
-      toast.success(res.message ?? "Done.");
+      toast.success(res.message ?? "Password reset email sent.");
     } else {
       toast.error(res.message ?? "Failed to generate recovery link.");
     }
@@ -154,6 +176,12 @@ export function UsersView({
       tone: ROLE_TONE[filters.role as Role] ?? "neutral",
       label: `Role: ${ROLE_LABELS[filters.role as Role] ?? filters.role}`,
       onClear: () => clearFilter("role"),
+    },
+    filters.status && {
+      key: "status",
+      tone: USER_STATUS_TONE[filters.status as UserStatus] ?? "neutral",
+      label: `Status: ${filters.status === UserStatus.ACTIVE ? "Active" : "Inactive"}`,
+      onClear: () => clearFilter("status"),
     },
     warehouse && {
       key: "warehouseId",
@@ -189,6 +217,15 @@ export function UsersView({
           </Chip>
         ),
       },
+      {
+        id: "status",
+        header: "Status",
+        cell: (r) => (
+          <Chip tone={USER_STATUS_TONE[r.status]} showDot>
+            {r.status === UserStatus.ACTIVE ? "Active" : "Inactive"}
+          </Chip>
+        ),
+      },
       { id: "warehouse", header: "Warehouses", cell: (r) => r.warehouseLabel },
       {
         id: "createdAt",
@@ -201,32 +238,22 @@ export function UsersView({
         header: "",
         revealOnHover: true,
         cell: (r) => (
-          <div className="flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="gap-1 px-2"
-              onClick={() => void openEdit(r.id)}
-            >
-              <Pencil className="size-3" strokeWidth={1.5} aria-hidden />
-              Edit
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="gap-1 px-2"
-              onClick={() => void handleResetPassword(r)}
-            >
-              <Key className="size-3" strokeWidth={1.5} aria-hidden />
-              Reset password
-            </Button>
-          </div>
+          <UserRowActions
+            row={r}
+            currentUserId={currentUserId}
+            onEdit={() => void openEdit(r.id)}
+            onResetPassword={handleResetPassword}
+            onResolved={(id, outcome) => {
+              React.startTransition(() => {
+                applyRowUpdate({ id, outcome });
+              });
+              refreshRows();
+            }}
+          />
         ),
       },
     ],
-    [],
+    [currentUserId],
   );
 
   return (
@@ -281,6 +308,17 @@ export function UsersView({
             }))}
           />
           <FilterSelect
+            name="status"
+            defaultValue={filters.status}
+            placeholder="All statuses"
+            ariaLabel="Status"
+            triggerClassName="w-[150px]"
+            options={[
+              { value: UserStatus.ACTIVE, label: "Active" },
+              { value: UserStatus.INACTIVE, label: "Inactive" },
+            ]}
+          />
+          <FilterSelect
             name="warehouseId"
             defaultValue={filters.warehouseId}
             placeholder="All warehouses"
@@ -319,22 +357,25 @@ export function UsersView({
             searchParams={{
               q: filters.search || undefined,
               role: filters.role || undefined,
+              status: filters.status || undefined,
               warehouseId: filters.warehouseId || undefined,
             }}
           />
         </>
       )}
 
-      <UserFormDrawer
-        open={drawerMode != null}
-        onOpenChange={(open) => {
-          if (!open) setDrawerMode(null);
-        }}
-        warehouses={warehouses}
-        mode={drawerMode ?? { kind: "create" }}
-        onSaved={() => void refreshRows()}
-        onRecoveryLink={(email, link) => setRecoveryLinkDialog({ email, link })}
-      />
+      {drawerMode != null ? (
+        <UserFormDrawer
+          open
+          onOpenChange={(open) => {
+            if (!open) setDrawerMode(null);
+          }}
+          warehouses={warehouses}
+          mode={drawerMode}
+          onSaved={() => void refreshRows()}
+          onRecoveryLink={(email, link) => setRecoveryLinkDialog({ email, link })}
+        />
+      ) : null}
 
       {recoveryLinkDialog ? (
         <RecoveryLinkDialog

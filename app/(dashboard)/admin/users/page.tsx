@@ -1,4 +1,4 @@
-import { Role } from "@/lib/prisma-enums";
+import { Role, UserStatus } from "@/lib/prisma-enums";
 
 import { UsersView } from "@/components/admin/UsersView";
 import { dbParallel } from "@/lib/db-parallel";
@@ -20,10 +20,11 @@ export default async function AdminUsersPage({
 }: {
   searchParams: SearchParams;
 }) {
-  assertRole(await getRequestSession(), [Role.OPS_HEAD]);
+  const user = assertRole(await getRequestSession(), [Role.OPS_HEAD]);
   const sp = await searchParams;
   const search = str(sp.q);
   const role = str(sp.role) as Role | "";
+  const status = str(sp.status);
   const warehouseId = str(sp.warehouseId);
   const page = Math.max(1, Number(str(sp.page)) || 1);
   const includeExactCount = str(sp.exactCount) === "1";
@@ -34,6 +35,8 @@ export default async function AdminUsersPage({
       getUsers({
         search: search || undefined,
         role: role && role in Role ? (role as Role) : undefined,
+        status:
+          status && status in UserStatus ? (status as UserStatus) : undefined,
         warehouseId: warehouseId || undefined,
         page,
         includeExactCount,
@@ -44,9 +47,11 @@ export default async function AdminUsersPage({
     <UsersView
       initialRows={rows}
       warehouses={warehouses}
+      currentUserId={user.id}
       filters={{
         search,
         role,
+        status,
         warehouseId,
       }}
     />
