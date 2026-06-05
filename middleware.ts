@@ -4,10 +4,18 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getVerifiedIdentity } from "@/lib/auth-claims";
 import { applyIdentityHeaders } from "@/lib/auth-headers";
 import { defaultLandingFor } from "@/lib/navigation";
+import { mustChangePassword } from "@/lib/must-change-password";
 import { tryGetSupabasePublishableConfig } from "@/lib/supabase-env";
 import { isRole } from "@/types";
 
 const publicPaths = new Set(["/login", "/login/forgot-password", "/unauthorized"]);
+
+/** Routes reachable while must_change_password is set. */
+const passwordChangeAllowlist = new Set([
+  "/login/set-password",
+  "/login/reset-password",
+  "/unauthorized",
+]);
 
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
@@ -65,6 +73,10 @@ export async function middleware(request: NextRequest) {
     return supabaseResponse;
   }
 
+  const requiresPasswordChange = user
+    ? mustChangePassword(user.userMetadata)
+    : false;
+
   if (user) {
     const rawRole =
       (user.userMetadata as Record<string, unknown>)?.role ??
@@ -72,11 +84,23 @@ export async function middleware(request: NextRequest) {
     const role = isRole(rawRole) ? rawRole : null;
     const landing = role ? defaultLandingFor(role) : "/dashboard";
 
-    if (pathname === "/login" || pathname === "/") {
+    if (requiresPasswordChange && !passwordChangeAllowlist.has(pathname)) {
       const url = request.nextUrl.clone();
-      url.pathname = landing;
+      url.pathname = "/login/set-password";
       return NextResponse.redirect(url);
     }
+
+    if (pathname === "/login" || pathname === "/") {
+      const url = request.nextUrl.clone();
+      url.pathname = requiresPasswordChange ? "/login/set-password" : landing;
+      return NextResponse.redirect(url);
+    }
+  }
+
+  if (!user && pathname === "/login/set-password") {
+    const url = request.nextUrl.clone();
+    url.pathname = "/login";
+    return NextResponse.redirect(url);
   }
 
   if (!user && !publicPaths.has(pathname)) {

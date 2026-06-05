@@ -25,14 +25,26 @@ import { PrismaClient } from "@/lib/generated/prisma/client";
 const POOL_MAX = Number(process.env.DB_POOL_MAX ?? 10);
 
 function createPrismaClient() {
+  const connectionString = process.env.DATABASE_URL?.trim();
+  if (!connectionString) {
+    throw new Error(
+      "DATABASE_URL is not set. Add your Supabase transaction pooler URL (port 6543) to .env.local.",
+    );
+  }
+
   const adapter = new PrismaPg({
-    connectionString: process.env.DATABASE_URL,
+    connectionString,
     max: POOL_MAX,
     // Supabase's shared pooler terminates TLS but its certificate SAN does not
     // match the per-project host, so chain verification must be relaxed (the
     // connection is still encrypted). This is the documented Supabase + node-pg
     // setting.
     ssl: { rejectUnauthorized: false },
+    // Remote pooler (Sydney from India) can see brief blips; keep sockets warm and
+    // fail fast instead of hanging, then recycle idle clients before they go stale.
+    keepAlive: true,
+    connectionTimeoutMillis: 15_000,
+    idleTimeoutMillis: 20_000,
   });
 
   return new PrismaClient({

@@ -81,12 +81,14 @@ export function UserFormDrawer({
   warehouses,
   mode,
   onSaved,
+  onRecoveryLink,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   warehouses: WarehouseOption[];
   mode: Mode;
   onSaved: () => void;
+  onRecoveryLink?: (email: string, link: string) => void;
 }) {
   const isEdit = mode.kind === "edit";
   const initial = isEdit ? mode.user : null;
@@ -170,11 +172,12 @@ export function UserFormDrawer({
           toast.error(res.message ?? "Failed to create user.");
           return;
         }
-        toast.success(
-          password
-            ? "User created."
-            : "User created — a password reset email was sent.",
-        );
+        if (res.recoveryLink) {
+          onRecoveryLink?.(email, res.recoveryLink);
+          toast.success(res.message ?? "User created — copy the recovery link.");
+        } else {
+          toast.success(password ? "User created." : "User created.");
+        }
       }
       onOpenChange(false);
       onSaved();
@@ -304,7 +307,7 @@ export function UserFormDrawer({
         {!isEdit ? (
           <SheetSection
             title="Initial password"
-            description="Leave blank to send a password-setup email instead."
+            description="Leave blank to generate a one-time recovery link to share (no email sent)."
           >
             <Field label="Password" htmlFor="user-password" hint="Minimum 8 characters.">
               <Input

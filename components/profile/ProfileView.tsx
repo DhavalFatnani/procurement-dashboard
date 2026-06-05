@@ -6,7 +6,7 @@ import Link from "next/link";
 import * as React from "react";
 import { toast } from "sonner";
 
-import { signOut } from "@/app/actions/auth";
+import { signOut } from "@/app/actions/sign-out";
 import {
   changeOwnPassword,
   sendOwnPasswordResetEmail,

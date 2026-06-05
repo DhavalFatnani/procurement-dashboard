@@ -1,3 +1,5 @@
+import { isPrismaConnectError } from "@/lib/db-retry";
+
 /**
  * Run independent Prisma tasks concurrently.
  *
@@ -8,8 +10,20 @@
  * Kept as a named helper (rather than inlining Promise.all at call sites) so the
  * concurrency strategy stays in one place and the query files read declaratively.
  */
+async function runParallel<T extends readonly unknown[]>(
+  tasks: { [K in keyof T]: () => Promise<T[K]> },
+): Promise<T> {
+  return Promise.all(tasks.map((task) => task())) as unknown as T;
+}
+
 export async function dbParallel<T extends readonly unknown[]>(
   ...tasks: { [K in keyof T]: () => Promise<T[K]> }
 ): Promise<T> {
-  return Promise.all(tasks.map((task) => task())) as unknown as T;
+  try {
+    return await runParallel(tasks);
+  } catch (error) {
+    if (!isPrismaConnectError(error)) throw error;
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    return runParallel(tasks);
+  }
 }

@@ -42,6 +42,7 @@ export const LIST_CACHE_TAGS = {
   catalog: "catalog-list",
   awaitingPo: "awaiting-po-list",
   vendorItems: "vendor-items",
+  vendorDetail: "vendor-detail",
   inbox: "inbox",
   advanceRequests: "advance-requests",
 } as const;

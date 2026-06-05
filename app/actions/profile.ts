@@ -1,22 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { headers } from "next/headers";
 
 import type { MutationResult } from "@/lib/action-result";
+import { authCallbackRedirectUrl, getSiteOrigin } from "@/lib/get-site-origin";
 import { prisma } from "@/lib/prisma";
 import { getRequestSession } from "@/lib/session";
 import { createServerSupabaseClient } from "@/lib/supabase";
-
-async function getSiteOrigin(): Promise<string> {
-  const headersList = await headers();
-  const host = headersList.get("x-forwarded-host") ?? headersList.get("host");
-  const proto = headersList.get("x-forwarded-proto") ?? "http";
-  if (host) {
-    return `${proto}://${host}`;
-  }
-  return process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
-}
 
 function revalidateProfileSurfaces() {
   revalidatePath("/profile");
@@ -110,7 +100,7 @@ export async function sendOwnPasswordResetEmail(): Promise<MutationResult> {
   const origin = await getSiteOrigin();
   const supabase = await createServerSupabaseClient();
   const { error } = await supabase.auth.resetPasswordForEmail(user.email, {
-    redirectTo: `${origin}/auth/callback?next=/login/reset-password`,
+    redirectTo: authCallbackRedirectUrl(origin),
   });
   if (error) {
     return { ok: false, message: error.message };

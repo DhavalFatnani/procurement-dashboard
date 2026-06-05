@@ -7,6 +7,7 @@ import * as React from "react";
 import { toast } from "sonner";
 
 import { getUserById, sendPasswordReset } from "@/app/actions/users";
+import { RecoveryLinkDialog } from "@/components/admin/RecoveryLinkDialog";
 import { UserFormDrawer } from "@/components/admin/UserFormDrawer";
 import { Avatar } from "@/components/shared/Avatar";
 import { Chip } from "@/components/shared/Chip";
@@ -58,6 +59,10 @@ export function UsersView({
     | { kind: "edit"; user: UserDetail }
     | null
   >(null);
+  const [recoveryLinkDialog, setRecoveryLinkDialog] = React.useState<{
+    email: string;
+    link: string;
+  } | null>(null);
 
   function navigate(params: URLSearchParams) {
     const qs = params.toString();
@@ -101,10 +106,13 @@ export function UsersView({
 
   async function handleResetPassword(row: UserListRow) {
     const res = await sendPasswordReset(row.id);
-    if (res.ok) {
-      toast.success(res.message ?? "Password reset email sent.");
+    if (res.ok && res.recoveryLink) {
+      setRecoveryLinkDialog({ email: row.email, link: res.recoveryLink });
+      toast.success(res.message ?? "Recovery link ready.");
+    } else if (res.ok) {
+      toast.success(res.message ?? "Done.");
     } else {
-      toast.error(res.message ?? "Failed to send reset email.");
+      toast.error(res.message ?? "Failed to generate recovery link.");
     }
   }
 
@@ -295,7 +303,19 @@ export function UsersView({
         warehouses={warehouses}
         mode={drawerMode ?? { kind: "create" }}
         onSaved={() => router.refresh()}
+        onRecoveryLink={(email, link) => setRecoveryLinkDialog({ email, link })}
       />
+
+      {recoveryLinkDialog ? (
+        <RecoveryLinkDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setRecoveryLinkDialog(null);
+          }}
+          email={recoveryLinkDialog.email}
+          link={recoveryLinkDialog.link}
+        />
+      ) : null}
     </div>
   );
 }

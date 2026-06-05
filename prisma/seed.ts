@@ -96,7 +96,7 @@ async function resolveSupabaseUserId(
     email: seed.email,
     password: PASSWORD,
     email_confirm: true,
-    user_metadata: { role: seed.role },
+    user_metadata: { role: seed.role, must_change_password: false },
   });
   if (error) {
     throw error;
@@ -340,7 +340,7 @@ async function seedUsersAndSeriesConfig(warehouseIds: string[]) {
           : [warehouseId];
 
     await admin.auth.admin.updateUserById(id, {
-      user_metadata: { role: seed.role },
+      user_metadata: { role: seed.role, must_change_password: false },
       app_metadata: {
         role: seed.role,
         ...(seed.role === Role.SM

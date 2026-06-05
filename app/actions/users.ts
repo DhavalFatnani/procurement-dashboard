@@ -15,8 +15,8 @@ import {
 import type { UserDetail, UserFilters, UserListRow } from "@/lib/queries/users";
 import { revalidateInboxCache } from "@/lib/revalidate-tags";
 import { requireRoles } from "@/lib/server-action-guard";
+import { generateAdminRecoveryLink } from "@/lib/auth-recovery-link";
 import { createSecretSupabaseClient } from "@/lib/supabase-admin";
-import { getSupabaseUrl } from "@/lib/supabase-env";
 import { roleUsesMultiWarehouseAssignment } from "@/lib/warehouse-scope";
 
 export async function getUsers(
@@ -103,7 +103,7 @@ function validateUserInput(input: CreateUserInput): string | null {
 
 export async function createUser(
   input: CreateUserInput,
-): Promise<MutationResult & { userId?: string }> {
+): Promise<MutationResult & { userId?: string; recoveryLink?: string }> {
   await requireRoles([Role.OPS_HEAD]);
 
   const error = validateUserInput(input);
@@ -131,7 +131,7 @@ export async function createUser(
     email,
     password: password || undefined,
     email_confirm: true,
-    user_metadata: { name, role },
+    user_metadata: { name, role, must_change_password: true },
     app_metadata: {
       role,
       ...warehouseAppMetadata(role, warehouseIds, primaryWarehouseId),
@@ -177,22 +177,34 @@ export async function createUser(
     };
   }
 
+  let recoveryLink: string | undefined;
   if (!password) {
-    void supabase.auth
-      .resetPasswordForEmail(email, {
-        redirectTo: `${getSupabaseUrl()}/login/reset-password`,
-      })
-      .catch((err: unknown) => {
-        logger.warn(
-          { err: err instanceof Error ? err.message : String(err) },
-          "Failed to send password-reset email for new user",
-        );
-      });
+    const linkResult = await generateAdminRecoveryLink(email);
+    if (!linkResult.ok) {
+      logger.warn(
+        { email, message: linkResult.message },
+        "User created but recovery link generation failed",
+      );
+      return {
+        ok: true,
+        userId,
+        message:
+          "User created, but the recovery link could not be generated. Use Reset password in the users table.",
+      };
+    }
+    recoveryLink = linkResult.link;
   }
 
   revalidatePath("/admin/users");
   revalidateInboxCache();
-  return { ok: true, userId };
+  return {
+    ok: true,
+    userId,
+    recoveryLink,
+    message: recoveryLink
+      ? "User created — copy the recovery link and share it with them."
+      : undefined,
+  };
 }
 
 export async function updateUser(input: UpdateUserInput): Promise<MutationResult> {
@@ -259,7 +271,7 @@ export async function updateUser(input: UpdateUserInput): Promise<MutationResult
 
 export async function sendPasswordReset(
   userId: string,
-): Promise<MutationResult> {
+): Promise<MutationResult & { recoveryLink?: string }> {
   await requireRoles([Role.OPS_HEAD]);
   const user = await prisma.user.findUnique({
     where: { id: userId },
@@ -267,12 +279,14 @@ export async function sendPasswordReset(
   });
   if (!user) return { ok: false, message: "User not found." };
 
-  const supabase = createSecretSupabaseClient();
-  const { error } = await supabase.auth.resetPasswordForEmail(user.email, {
-    redirectTo: `${getSupabaseUrl()}/login/reset-password`,
-  });
-  if (error) {
-    return { ok: false, message: error.message };
+  const linkResult = await generateAdminRecoveryLink(user.email);
+  if (!linkResult.ok) {
+    return { ok: false, message: linkResult.message };
   }
-  return { ok: true, message: `Reset email sent to ${user.email}.` };
+
+  return {
+    ok: true,
+    recoveryLink: linkResult.link,
+    message: `Recovery link ready for ${user.email}. Copy and share it with the user.`,
+  };
 }

@@ -1,6 +1,7 @@
 import { POStatus, VendorStatus } from "@/lib/prisma-enums";
 
 import { paginatedQuery } from "@/lib/db-serial";
+import { cachedQuery, LIST_CACHE_TAGS } from "@/lib/list-cache";
 import { maskLogValue } from "@/lib/mask-log-value";
 import { paginatedListQuery, type Paginated } from "@/lib/pagination";
 import { prisma } from "@/lib/prisma";
@@ -164,44 +165,70 @@ export async function getVendorById(
 ): Promise<VendorDetail | null> {
   const poPage = Math.max(1, options?.poPage ?? 1);
   const poPageSize = Math.min(50, Math.max(5, options?.poPageSize ?? 10));
+  return cachedQuery(
+    LIST_CACHE_TAGS.vendorDetail,
+    [id, String(poPage), String(poPageSize)],
+    () => computeVendorById(id, poPage, poPageSize),
+    {
+      // Every vendor mutation (create/update/deactivate/reactivate/merge/activate)
+      // already calls `revalidateTag("vendor-options")`, so reusing that tag keeps
+      // this detail cache correct with no changes to the mutation actions; the
+      // per-id tag is available for targeted invalidation later.
+      tags: [
+        LIST_CACHE_TAGS.vendorDetail,
+        `${LIST_CACHE_TAGS.vendorDetail}:${id}`,
+        "vendor-options",
+      ],
+    },
+  );
+}
+
+async function computeVendorById(
+  id: string,
+  poPage: number,
+  poPageSize: number,
+): Promise<VendorDetail | null> {
   const poSkip = (poPage - 1) * poPageSize;
 
-  const vendor = await prisma.vendor.findUnique({
-    where: { id },
-    include: {
-      createdBy: { select: { name: true } },
-      similarTo: { select: { id: true, businessName: true } },
-      vendorChangeLogs: {
-        orderBy: { changedAt: "desc" },
-        take: 100,
-        include: { changedBy: { select: { name: true } } },
+  // The vendor record and its PO page are independent (both keyed on `id`) —
+  // fetch concurrently so the detail page pays one DB round-trip batch.
+  const [vendor, poPaginated] = await Promise.all([
+    prisma.vendor.findUnique({
+      where: { id },
+      include: {
+        createdBy: { select: { name: true } },
+        similarTo: { select: { id: true, businessName: true } },
+        vendorChangeLogs: {
+          orderBy: { changedAt: "desc" },
+          take: 100,
+          include: { changedBy: { select: { name: true } } },
+        },
       },
-    },
-  });
+    }),
+    paginatedQuery({
+      page: poPage,
+      pageSize: poPageSize,
+      count: () => prisma.purchaseOrder.count({ where: { vendorId: id } }),
+      findMany: () =>
+        prisma.purchaseOrder.findMany({
+          where: { vendorId: id },
+          orderBy: { createdAt: "desc" },
+          skip: poSkip,
+          take: poPageSize,
+          select: {
+            id: true,
+            status: true,
+            createdAt: true,
+            unitPrice: true,
+            orderedQty: true,
+          },
+        }),
+    }),
+  ]);
 
   if (!vendor) {
     return null;
   }
-
-  const poPaginated = await paginatedQuery({
-    page: poPage,
-    pageSize: poPageSize,
-    count: () => prisma.purchaseOrder.count({ where: { vendorId: id } }),
-    findMany: () =>
-      prisma.purchaseOrder.findMany({
-        where: { vendorId: id },
-        orderBy: { createdAt: "desc" },
-        skip: poSkip,
-        take: poPageSize,
-        select: {
-          id: true,
-          status: true,
-          createdAt: true,
-          unitPrice: true,
-          orderedQty: true,
-        },
-      }),
-  });
 
   return {
     id: vendor.id,

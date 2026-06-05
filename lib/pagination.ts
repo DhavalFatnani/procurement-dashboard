@@ -1,3 +1,5 @@
+import { withDbRetry } from "@/lib/db-retry";
+
 export const DEFAULT_PAGE_SIZE = 25;
 
 export type Paginated<T> = {
@@ -53,7 +55,7 @@ export async function paginatedListQuery<T>({
   includeExactCount?: boolean;
 }): Promise<Paginated<T>> {
   const skip = (page - 1) * pageSize;
-  const raw = await findMany({ skip, take: pageSize + 1 });
+  const raw = await withDbRetry(() => findMany({ skip, take: pageSize + 1 }));
   const hasNextPage = raw.length > pageSize;
   const items = hasNextPage ? raw.slice(0, pageSize) : raw;
 

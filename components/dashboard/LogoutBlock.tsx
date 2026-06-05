@@ -1,13 +1,17 @@
 "use client";
 
 import { LogOut } from "lucide-react";
+import * as React from "react";
 
-import { signOut } from "@/app/actions/auth";
 import { Button } from "@/components/ui/button";
+import { createBrowserSupabaseClient } from "@/lib/supabase-browser";
 import { cn } from "@/lib/utils";
 
 /**
  * Sign-out button.
+ *
+ * Uses the browser Supabase client (not a server action) so the sidebar shell
+ * does not break when other auth actions change during dev HMR.
  *
  * - default: rendered as its own bordered block (legacy mobile-nav usage)
  * - `embedded`: no border / padding wrapper (used inside SidebarFooter which
@@ -20,17 +24,30 @@ export function LogoutBlock({
   className?: string;
   embedded?: boolean;
 }) {
+  const [pending, setPending] = React.useState(false);
+
+  async function handleSignOut() {
+    setPending(true);
+    try {
+      const supabase = createBrowserSupabaseClient();
+      await supabase.auth.signOut();
+      window.location.assign("/login");
+    } catch {
+      setPending(false);
+    }
+  }
+
   const button = (
-    <form action={signOut}>
-      <Button
-        type="submit"
-        variant="ghost"
-        className="h-8 w-full justify-start gap-2 px-2 text-ds-sm text-muted-foreground hover:text-foreground"
-      >
-        <LogOut className="size-4" strokeWidth={1.5} aria-hidden />
-        Log out
-      </Button>
-    </form>
+    <Button
+      type="button"
+      variant="ghost"
+      disabled={pending}
+      onClick={() => void handleSignOut()}
+      className="h-8 w-full justify-start gap-2 px-2 text-ds-sm text-muted-foreground hover:text-foreground"
+    >
+      <LogOut className="size-4" strokeWidth={1.5} aria-hidden />
+      {pending ? "Signing out…" : "Log out"}
+    </Button>
   );
 
   if (embedded) {
