@@ -121,7 +121,7 @@ export function CatalogItemPicker({
         >
           <span
             className={cn(
-              "line-clamp-1 text-left",
+              "min-w-0 flex-1 truncate text-left",
               !hasValue && "text-muted-foreground/70",
             )}
           >

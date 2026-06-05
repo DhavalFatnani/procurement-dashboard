@@ -26,7 +26,11 @@ export default async function AdminUsersPage({
   const sp = await searchParams;
   const search = str(sp.q);
   const role = str(sp.role) as Role | "";
-  const status = str(sp.status);
+  const statusRaw = str(sp.status);
+  const status: UserStatus =
+    statusRaw && statusRaw in UserStatus
+      ? (statusRaw as UserStatus)
+      : UserStatus.ACTIVE;
   const warehouseId = str(sp.warehouseId);
   const page = Math.max(1, Number(str(sp.page)) || 1);
   const includeExactCount = str(sp.exactCount) === "1";
@@ -37,8 +41,7 @@ export default async function AdminUsersPage({
       getUsers({
         search: search || undefined,
         role: role && role in Role ? (role as Role) : undefined,
-        status:
-          status && status in UserStatus ? (status as UserStatus) : undefined,
+        status,
         warehouseId: warehouseId || undefined,
         page,
         includeExactCount,

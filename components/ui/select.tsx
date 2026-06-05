@@ -33,7 +33,6 @@ const selectTriggerVariants = cva(
     "disabled:pointer-events-none disabled:cursor-not-allowed disabled:border-border-subtle disabled:bg-background disabled:text-muted-foreground/50",
     "data-[placeholder]:text-muted-foreground/70",
     "aria-invalid:border-destructive aria-invalid:shadow-[0_0_0_3px_color-mix(in_srgb,var(--status-error)_28%,transparent)]",
-    "[&>span]:line-clamp-1 [&>span]:flex-1 [&>span]:text-left",
   ),
   {
     variants: {
@@ -61,7 +60,7 @@ const SelectTrigger = React.forwardRef<
     className={cn(selectTriggerVariants({ size }), className)}
     {...props}
   >
-    {children}
+    <span className="min-w-0 flex-1 truncate text-left">{children}</span>
     <SelectPrimitive.Icon asChild>
       <span
         className={cn(

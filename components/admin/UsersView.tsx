@@ -80,6 +80,18 @@ export function UsersView({
           total: state.total != null ? Math.max(0, state.total - 1) : state.total,
         };
       }
+      const hideAfterStatusChange =
+        (action.outcome === "deactivated" &&
+          filters.status === UserStatus.ACTIVE) ||
+        (action.outcome === "reactivated" &&
+          filters.status === UserStatus.INACTIVE);
+      if (hideAfterStatusChange) {
+        return {
+          ...state,
+          items: state.items.filter((r) => r.id !== action.id),
+          total: state.total != null ? Math.max(0, state.total - 1) : state.total,
+        };
+      }
       const nextStatus =
         action.outcome === "deactivated" ? UserStatus.INACTIVE : UserStatus.ACTIVE;
       return {
@@ -112,7 +124,9 @@ export function UsersView({
     const params = new URLSearchParams();
     for (const key of ["q", "role", "status", "warehouseId"]) {
       const v = String(fd.get(key) ?? "").trim();
-      if (v) params.set(key, v);
+      if (!v) continue;
+      if (key === "status" && v === UserStatus.ACTIVE) continue;
+      params.set(key, v);
     }
     navigate(params);
   }
@@ -180,10 +194,10 @@ export function UsersView({
       label: `Role: ${ROLE_LABELS[filters.role as Role] ?? filters.role}`,
       onClear: () => clearFilter("role"),
     },
-    filters.status && {
+    filters.status === UserStatus.INACTIVE && {
       key: "status",
-      tone: USER_STATUS_TONE[filters.status as UserStatus] ?? "neutral",
-      label: `Status: ${filters.status === UserStatus.ACTIVE ? "Active" : "Inactive"}`,
+      tone: USER_STATUS_TONE[UserStatus.INACTIVE],
+      label: "Status: Inactive",
       onClear: () => clearFilter("status"),
     },
     warehouse && {
@@ -314,7 +328,8 @@ export function UsersView({
           <FilterSelect
             name="status"
             defaultValue={filters.status}
-            placeholder="All statuses"
+            placeholder="Status"
+            allOptionLabel={null}
             ariaLabel="Status"
             triggerClassName="w-[150px]"
             options={[
@@ -361,7 +376,10 @@ export function UsersView({
             searchParams={{
               q: filters.search || undefined,
               role: filters.role || undefined,
-              status: filters.status || undefined,
+              status:
+                filters.status === UserStatus.INACTIVE
+                  ? filters.status
+                  : undefined,
               warehouseId: filters.warehouseId || undefined,
             }}
           />
