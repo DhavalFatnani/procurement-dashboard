@@ -25,6 +25,7 @@ import type {
 } from "@/lib/queries/invoices";
 import { revalidateInvoiceMutation } from "@/lib/revalidate-tags";
 import { requireRoles } from "@/lib/server-action-guard";
+import { ALL_DASHBOARD_ROLES, FINANCE_OR_ADMIN_ROLES, OPS_FINANCE_OR_ADMIN_ROLES, OPS_OR_ADMIN_ROLES, SM_OPS_OR_ADMIN_ROLES } from "@/lib/admin-access";
 import { STORAGE_BUCKETS } from "@/lib/storage";
 import { uploadStorageObject } from "@/lib/upload-storage";
 import { prisma } from "@/lib/prisma";
@@ -32,22 +33,22 @@ import {
   assertSessionInvoiceAccess,
   assertSessionPurchaseOrderAccess,
 } from "@/lib/warehouse-access";
-import { assignedWarehouseIds } from "@/lib/warehouse-scope";
+import { scopeWarehouseIdsForUser } from "@/lib/warehouse-scope";
 
 export async function getInvoices(
   filters: InvoiceFilters,
 ): Promise<Paginated<InvoiceListRow>> {
-  const user = await requireRoles([Role.SM, Role.OPS_HEAD, Role.FINANCE]);
+  const user = await requireRoles([...ALL_DASHBOARD_ROLES]);
   return getInvoicesQuery({
     ...filters,
     scopeWarehouseIds:
-      filters.scopeWarehouseIds ?? assignedWarehouseIds(user),
+      filters.scopeWarehouseIds ?? scopeWarehouseIdsForUser(user),
     uploadedById: user.role === Role.SM ? user.id : filters.uploadedById,
   });
 }
 
 export async function getInvoiceById(id: string): Promise<InvoiceDetail | null> {
-  const user = await requireRoles([Role.SM, Role.OPS_HEAD, Role.FINANCE]);
+  const user = await requireRoles([...ALL_DASHBOARD_ROLES]);
   const access = await assertSessionInvoiceAccess(user, id);
   if (!access.ok) {
     return null;
@@ -56,26 +57,26 @@ export async function getInvoiceById(id: string): Promise<InvoiceDetail | null> 
 }
 
 export async function getInvoiceFilterOptions() {
-  await requireRoles([Role.SM, Role.OPS_HEAD, Role.FINANCE]);
+  await requireRoles([...ALL_DASHBOARD_ROLES]);
   return getInvoiceFilterOptionsQuery();
 }
 
 export async function getPOsForInvoice(): Promise<
   Pick<POForInvoiceOption, "id" | "label" | "vendorName">[]
 > {
-  const user = await requireRoles([Role.SM, Role.OPS_HEAD]);
-  return getPOsForInvoiceQuery(assignedWarehouseIds(user));
+  const user = await requireRoles([...SM_OPS_OR_ADMIN_ROLES]);
+  return getPOsForInvoiceQuery(scopeWarehouseIdsForUser(user));
 }
 
 export async function searchPOsForInvoice(
   q: string,
 ): Promise<Pick<POForInvoiceOption, "id" | "label" | "vendorName">[]> {
-  const user = await requireRoles([Role.SM, Role.OPS_HEAD]);
-  return searchPOsForInvoiceQuery(q, 20, assignedWarehouseIds(user));
+  const user = await requireRoles([...SM_OPS_OR_ADMIN_ROLES]);
+  return searchPOsForInvoiceQuery(q, 20, scopeWarehouseIdsForUser(user));
 }
 
 export async function getPOForInvoice(poId: string): Promise<POForInvoiceOption | null> {
-  const user = await requireRoles([Role.SM, Role.OPS_HEAD]);
+  const user = await requireRoles([...SM_OPS_OR_ADMIN_ROLES]);
   const access = await assertSessionPurchaseOrderAccess(user, poId);
   if (!access.ok) {
     return null;
@@ -84,7 +85,7 @@ export async function getPOForInvoice(poId: string): Promise<POForInvoiceOption 
 }
 
 export async function getGRNsForPO(poId: string) {
-  const user = await requireRoles([Role.SM, Role.OPS_HEAD]);
+  const user = await requireRoles([...SM_OPS_OR_ADMIN_ROLES]);
   const access = await assertSessionPurchaseOrderAccess(user, poId);
   if (!access.ok) {
     return [];
@@ -95,7 +96,7 @@ export async function getGRNsForPO(poId: string) {
 export async function createInvoice(
   formData: FormData,
 ): Promise<{ ok: boolean; invoiceId?: string; message?: string }> {
-  const user = await requireRoles([Role.SM, Role.OPS_HEAD]);
+  const user = await requireRoles([...SM_OPS_OR_ADMIN_ROLES]);
 
   const poId = String(formData.get("poId") ?? "").trim();
   if (!poId) {
@@ -268,7 +269,7 @@ export async function overrideInvoiceMatch(
   invoiceId: string,
   reason: string,
 ): Promise<MutationResult> {
-  const user = await requireRoles([Role.OPS_HEAD]);
+  const user = await requireRoles([...OPS_OR_ADMIN_ROLES]);
   const trimmed = reason.trim();
   if (!trimmed) {
     return { ok: false, message: "Override reason is required." };

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { canManageFinance } from "@/lib/admin-access";
 import { InvoiceMatchStatus, PaymentStatus, Role } from "@/lib/prisma-enums";
 import { useSearchParams } from "next/navigation";
 import { AlertTriangle } from "lucide-react";
@@ -64,7 +65,7 @@ export function InvoiceSettlementList({
 }) {
   const searchParams = useSearchParams();
   const { navigate } = useListNavigation();
-  const isFinance = role === Role.FINANCE;
+  const isFinance = canManageFinance(role);
   const rows = initialRows;
   const [exporting, setExporting] = React.useState(false);
 

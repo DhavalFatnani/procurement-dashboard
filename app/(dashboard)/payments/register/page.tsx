@@ -7,7 +7,7 @@ import { parsePaymentRegisterPageParams } from "@/lib/list-search-params";
 import { getPaymentFilterOptions, getPaymentRegister } from "@/lib/queries/payments";
 import { ACCESS } from "@/lib/route-access";
 import { assertRole, getRequestSession, type SessionUser } from "@/lib/session";
-import { assignedWarehouseIds } from "@/lib/warehouse-scope";
+import { scopeWarehouseIdsForUser } from "@/lib/warehouse-scope";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
@@ -37,7 +37,7 @@ async function PaymentRegisterTableLoader({
   user: SessionUser;
   parsed: ReturnType<typeof parsePaymentRegisterPageParams>;
 }) {
-  const scopeWarehouseIds = assignedWarehouseIds(user);
+  const scopeWarehouseIds = scopeWarehouseIdsForUser(user);
   const [filterOptions, rows] = await dbParallel(
     () => getPaymentFilterOptions(),
     () =>

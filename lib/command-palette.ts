@@ -20,6 +20,7 @@ import {
   Warehouse,
 } from "lucide-react";
 
+import { FINANCE_OR_ADMIN_ROLES } from "@/lib/admin-access";
 import { FINANCE_ROUTES } from "@/lib/finance-routes";
 import { getNavItemsForRole } from "@/lib/navigation";
 
@@ -68,21 +69,21 @@ const NAV_COMMANDS: CommandItem[] = [
     label: "Go to Invoice settlement",
     href: FINANCE_ROUTES.invoiceSettlement,
     icon: Receipt,
-    roles: [Role.FINANCE],
+    roles: [...FINANCE_OR_ADMIN_ROLES],
   },
   {
     id: "nav-vendor-advances",
     label: "Go to Vendor advances",
     href: FINANCE_ROUTES.vendorAdvances,
     icon: HandCoins,
-    roles: [Role.FINANCE],
+    roles: [...FINANCE_OR_ADMIN_ROLES],
   },
   {
     id: "nav-payment-register",
     label: "Go to Payment register",
     href: FINANCE_ROUTES.paymentRegister,
     icon: Wallet,
-    roles: [Role.FINANCE],
+    roles: [...FINANCE_OR_ADMIN_ROLES],
   },
   {
     id: "nav-serial",

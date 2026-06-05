@@ -1,8 +1,100 @@
-import { ExecutionType, SerialSeries } from "@/lib/prisma-enums";
+import {
+  ExecutionType,
+  SerialReservationPurpose,
+  SerialReservationStatus,
+} from "@/lib/prisma-enums";
 import type { Prisma } from "@/lib/prisma-client";
+
+import type { SeriesCode } from "@/lib/series-codes";
+import {
+  BUILTIN_SERIES_DEFINITIONS,
+  buildSeriesRegistry,
+  findSeriesForSerialValue,
+  getSeriesEntry,
+  requireSeriesEntry,
+  resolveSeriesBounds,
+  type SeriesRegistry,
+  type SeriesRegistryEntry,
+} from "@/lib/series-registry";
 
 /** Maximum serial numbers per internal print job. */
 export const MAX_INTERNAL_PRINT_QUANTITY = 1000;
+
+/** Label for platform-wide serial blocks (no warehouse scope). */
+export const GLOBAL_SERIAL_BLOCK_SCOPE_LABEL = "All warehouses";
+
+/** Fixed width for displaying serial numbers (lock tags show leading zeros). */
+export const SERIES_DISPLAY_WIDTH = 10;
+
+const FALLBACK_REGISTRY = buildSeriesRegistry(
+  BUILTIN_SERIES_DEFINITIONS.map((row, index) => ({
+    ...row,
+    id: `builtin-${row.code}`,
+    configuredById: "system",
+    configuredAt: new Date(0).toISOString(),
+    updatedAt: new Date(0).toISOString(),
+    sortOrder: row.sortOrder ?? index,
+  })),
+);
+
+export function registryWithFallback(registry?: SeriesRegistry): SeriesRegistry {
+  if (!registry || registry.entries.length === 0) {
+    return FALLBACK_REGISTRY;
+  }
+  return registry;
+}
+
+export function getActiveSeriesCodes(registry?: SeriesRegistry): SeriesCode[] {
+  return registryWithFallback(registry).activeCodes;
+}
+
+export function resolveSeriesDisplayName(
+  code: SeriesCode,
+  registry?: SeriesRegistry,
+): string {
+  return getSeriesEntry(registryWithFallback(registry), code)?.displayName ?? code;
+}
+
+export function resolveSeriesPrefix(code: SeriesCode, registry?: SeriesRegistry): string {
+  return getSeriesEntry(registryWithFallback(registry), code)?.prefixPattern ?? "";
+}
+
+export function getSeriesStartNumber(
+  code: SeriesCode,
+  registry?: SeriesRegistry,
+): bigint {
+  const entry = getSeriesEntry(registryWithFallback(registry), code);
+  return entry ? BigInt(entry.rangeStart) : BigInt(0);
+}
+
+export function getSeriesCeiling(code: SeriesCode, registry?: SeriesRegistry): bigint {
+  const entry = getSeriesEntry(registryWithFallback(registry), code);
+  if (!entry) return BigInt(0);
+  return resolveSeriesBounds(entry).end;
+}
+
+export function resolveSeriesCeiling(
+  code: SeriesCode,
+  configured: bigint | null | undefined,
+  registry?: SeriesRegistry,
+): bigint {
+  const reg = registryWithFallback(registry);
+  const entry = getSeriesEntry(reg, code);
+  const builtin = BUILTIN_SERIES_DEFINITIONS.find((d) => d.code === code);
+  const fallback = entry
+    ? resolveSeriesBounds(entry).end
+    : builtin
+      ? BigInt(builtin.ceilingNumber)
+      : BigInt(0);
+  if (configured == null) {
+    return fallback;
+  }
+  const start = getSeriesStartNumber(code, reg);
+  if (configured < start) {
+    return builtin ? BigInt(builtin.ceilingNumber) : fallback;
+  }
+  return configured;
+}
 
 export function validateInternalPrintQuantity(
   quantity: number,
@@ -17,101 +109,42 @@ export function validateInternalPrintQuantity(
   return null;
 }
 
-export function getSeriesStartNumber(series: SerialSeries): bigint {
-  switch (series) {
-    case SerialSeries.LOCK_TAGS:
-      return BigInt(100_000);
-    case SerialSeries.JEWELLERY_BARCODES:
-      return BigInt(1_000_000_000);
-    case SerialSeries.APPAREL_BARCODES:
-      return BigInt(2_000_000_000);
+export function getSeriesNumericBounds(
+  code: SeriesCode,
+  registry?: SeriesRegistry,
+): { start: bigint; end: bigint } {
+  const entry = getSeriesEntry(registryWithFallback(registry), code);
+  if (!entry) {
+    return { start: BigInt(0), end: BigInt(0) };
   }
+  return resolveSeriesBounds(entry);
 }
 
-/** Max serial for the series — must be above {@link getSeriesStartNumber}. */
-export function getDefaultSeriesCeiling(series: SerialSeries): bigint {
-  switch (series) {
-    case SerialSeries.LOCK_TAGS:
-      return BigInt(9_999_999);
-    case SerialSeries.JEWELLERY_BARCODES:
-    case SerialSeries.APPAREL_BARCODES:
-      return BigInt(9_999_999_999);
-  }
-}
-
-/** Use configured ceiling when valid; otherwise default (fixes seed/config below series start). */
-export function resolveSeriesCeiling(
-  series: SerialSeries,
-  configured: bigint | null | undefined,
-): bigint {
-  const fallback = getDefaultSeriesCeiling(series);
-  if (configured == null) {
-    return fallback;
-  }
-  const start = getSeriesStartNumber(series);
-  return configured < start ? fallback : configured;
-}
-
-export const SERIAL_SERIES_ORDER: SerialSeries[] = [
-  SerialSeries.LOCK_TAGS,
-  SerialSeries.JEWELLERY_BARCODES,
-  SerialSeries.APPAREL_BARCODES,
-];
-
-export function getSeriesDisplayName(series: SerialSeries): string {
-  switch (series) {
-    case SerialSeries.LOCK_TAGS:
-      return "Lock Tags";
-    case SerialSeries.JEWELLERY_BARCODES:
-      return "Jewellery Barcodes";
-    case SerialSeries.APPAREL_BARCODES:
-      return "Apparel Barcodes";
-  }
-}
-
-export function getSeriesPrefix(series: SerialSeries): string {
-  switch (series) {
-    case SerialSeries.LOCK_TAGS:
-      return "000XXXXXXX";
-    case SerialSeries.JEWELLERY_BARCODES:
-      return "1XXXXXXXXX";
-    case SerialSeries.APPAREL_BARCODES:
-      return "2XXXXXXXXX";
-  }
-}
-
-/** Fixed width for displaying serial numbers (lock tags show leading zeros). */
-export const SERIES_DISPLAY_WIDTH = 10;
-
-export function getSeriesNumericBounds(series: SerialSeries): {
-  start: bigint;
-  end: bigint;
-} {
-  return {
-    start: getSeriesStartNumber(series),
-    end: getDefaultSeriesCeiling(series),
-  };
-}
-
-export function isSerialInSeriesRange(series: SerialSeries, value: bigint): boolean {
-  const { start, end } = getSeriesNumericBounds(series);
+export function isSerialInSeriesRange(
+  code: SeriesCode,
+  value: bigint,
+  registry?: SeriesRegistry,
+): boolean {
+  const { start, end } = getSeriesNumericBounds(code, registry);
   return value >= start && value <= end;
 }
 
 export function isValidReservationRange(
-  series: SerialSeries,
+  code: SeriesCode,
   rangeStart: bigint,
   rangeEnd: bigint,
+  registry?: SeriesRegistry,
 ): boolean {
-  const { start, end } = getSeriesNumericBounds(series);
+  const { start, end } = getSeriesNumericBounds(code, registry);
   return rangeStart >= start && rangeEnd >= rangeStart && rangeEnd <= end;
 }
 
 export function computeNextRangeStart(
-  series: SerialSeries,
+  code: SeriesCode,
   lastValidRangeEnd: bigint | null | undefined,
+  registry?: SeriesRegistry,
 ): bigint {
-  const start = getSeriesStartNumber(series);
+  const start = getSeriesStartNumber(code, registry);
   if (lastValidRangeEnd == null || lastValidRangeEnd < start) {
     return start;
   }
@@ -119,47 +152,62 @@ export function computeNextRangeStart(
 }
 
 export function formatSerialNumberForSeries(
-  series: SerialSeries,
+  _code: SeriesCode,
   value: bigint | string,
 ): string {
   const raw = formatSerialNumber(value);
   return raw.padStart(SERIES_DISPLAY_WIDTH, "0");
 }
 
-/** Prisma filter for reservations that sit inside a series' numeric band. */
 export function validReservationsForSeriesWhere(
-  series: SerialSeries,
+  code: SeriesCode,
+  registry?: SeriesRegistry,
 ): Prisma.SerialReservationWhereInput {
-  const { start, end } = getSeriesNumericBounds(series);
+  const { start, end } = getSeriesNumericBounds(code, registry);
   return {
-    series,
+    series: code,
     rangeStart: { gte: start },
     rangeEnd: { gte: start, lte: end },
   };
 }
 
-export function validReservationsUnionWhere(): Prisma.SerialReservationWhereInput {
+export function activeReservationsForSeriesWhere(
+  code: SeriesCode,
+  registry?: SeriesRegistry,
+): Prisma.SerialReservationWhereInput {
   return {
-    OR: SERIAL_SERIES_ORDER.map((series) => validReservationsForSeriesWhere(series)),
+    ...validReservationsForSeriesWhere(code, registry),
+    status: { in: ["PENDING", "RESERVED"] },
   };
 }
 
-/** Detect series from serial number using non-overlapping numeric ranges. */
-export function detectSeriesFromSerialNumber(raw: string): SerialSeries | null {
+export function activeReservationsUnionWhere(
+  registry?: SeriesRegistry,
+): Prisma.SerialReservationWhereInput {
+  const reg = registryWithFallback(registry);
+  return {
+    OR: reg.activeCodes.map((code) => activeReservationsForSeriesWhere(code, reg)),
+  };
+}
+
+export function validReservationsUnionWhere(
+  registry?: SeriesRegistry,
+): Prisma.SerialReservationWhereInput {
+  const reg = registryWithFallback(registry);
+  return {
+    OR: reg.activeCodes.map((code) => validReservationsForSeriesWhere(code, reg)),
+  };
+}
+
+export function detectSeriesFromSerialNumber(
+  raw: string,
+  registry?: SeriesRegistry,
+): SeriesCode | null {
   const value = parseSerialBigInt(raw);
   if (value == null) {
     return null;
   }
-  if (value >= getSeriesStartNumber(SerialSeries.APPAREL_BARCODES)) {
-    return SerialSeries.APPAREL_BARCODES;
-  }
-  if (value >= getSeriesStartNumber(SerialSeries.JEWELLERY_BARCODES)) {
-    return SerialSeries.JEWELLERY_BARCODES;
-  }
-  if (value >= getSeriesStartNumber(SerialSeries.LOCK_TAGS)) {
-    return SerialSeries.LOCK_TAGS;
-  }
-  return null;
+  return findSeriesForSerialValue(registryWithFallback(registry), value);
 }
 
 export function parseSerialBigInt(raw: string): bigint | null {
@@ -179,11 +227,12 @@ export function formatSerialNumber(value: bigint | string): string {
 }
 
 export function computeRangeUsedPct(
-  series: SerialSeries,
+  code: SeriesCode,
   lastRangeEnd: bigint | null,
   ceiling: bigint,
+  registry?: SeriesRegistry,
 ): number {
-  const start = getSeriesStartNumber(series);
+  const start = getSeriesStartNumber(code, registry);
   if (ceiling <= start) {
     return 0;
   }
@@ -205,15 +254,19 @@ export type SerialRangePhase =
   | "internal_print"
   | "approval_hold"
   | "po_cancellable"
-  | "po_committed";
+  | "po_committed"
+  | "admin_block";
 
 export function classifySerialReservation(input: {
-  reservationStatus: "PENDING" | "RESERVED";
+  reservationStatus: SerialReservationStatus;
   poId: string | null;
   prId: string | null;
   poStatus?: string | null;
   poHasGrn?: boolean;
 }): ReservationEventType {
+  if (input.reservationStatus === "RELEASED") {
+    return "Print";
+  }
   if (input.poId) {
     const cancellable =
       input.poStatus === "OPEN" && input.poHasGrn !== true;
@@ -226,12 +279,16 @@ export function classifySerialReservation(input: {
 }
 
 export function reservationPhaseFromReservation(input: {
-  reservationStatus: "PENDING" | "RESERVED";
+  reservationStatus: SerialReservationStatus;
   poId: string | null;
   prId: string | null;
   poStatus?: string | null;
   poHasGrn?: boolean;
+  purpose?: SerialReservationPurpose;
 }): Exclude<SerialRangePhase, "free"> {
+  if (input.purpose === SerialReservationPurpose.ADMIN_BLOCK) {
+    return "admin_block";
+  }
   const event = classifySerialReservation(input);
   switch (event) {
     case "Hold":
@@ -250,7 +307,7 @@ export function reservationPhaseFromReservation(input: {
 export function reservationEventType(
   poId: string | null,
   prId: string | null,
-  reservationStatus: "PENDING" | "RESERVED" = "RESERVED",
+  reservationStatus: SerialReservationStatus = "RESERVED",
   poMeta?: { status: string | null; hasGrn: boolean },
 ): ReservationEventType {
   return classifySerialReservation({
@@ -260,4 +317,39 @@ export function reservationEventType(
     poStatus: poMeta?.status,
     poHasGrn: poMeta?.hasGrn,
   });
+}
+
+/** @deprecated Use resolveSeriesDisplayName */
+export function getSeriesDisplayName(code: SeriesCode, registry?: SeriesRegistry): string {
+  return resolveSeriesDisplayName(code, registry);
+}
+
+/** @deprecated Use resolveSeriesPrefix */
+export function getSeriesPrefix(code: SeriesCode, registry?: SeriesRegistry): string {
+  return resolveSeriesPrefix(code, registry);
+}
+
+/** @deprecated Use getSeriesCeiling */
+export function getDefaultSeriesCeiling(code: SeriesCode, registry?: SeriesRegistry): bigint {
+  return getSeriesCeiling(code, registry);
+}
+
+/** @deprecated Use resolveSeriesDisplayName */
+export function getDefaultSeriesDisplayName(code: SeriesCode, registry?: SeriesRegistry): string {
+  return resolveSeriesDisplayName(code, registry);
+}
+
+/** @deprecated Use resolveSeriesPrefix */
+export function getDefaultSeriesPrefix(code: SeriesCode, registry?: SeriesRegistry): string {
+  return resolveSeriesPrefix(code, registry);
+}
+
+/** @deprecated Use getActiveSeriesCodes */
+export const SERIAL_SERIES_ORDER: SeriesCode[] = FALLBACK_REGISTRY.activeCodes;
+
+export function requireRegistryEntry(
+  registry: SeriesRegistry,
+  code: SeriesCode,
+): SeriesRegistryEntry {
+  return requireSeriesEntry(registry, code);
 }

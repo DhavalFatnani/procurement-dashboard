@@ -1,8 +1,9 @@
 /**
- * Wipes operational data while keeping User, Warehouse, and UserWarehouse rows.
- * Re-seeds categories, subcategories, and series config (no sample vendors/PRs).
+ * Wipes operational procurement data while keeping platform master data:
+ * User, UserWarehouse, Warehouse, Vendor, VendorChangeLog, Category,
+ * Subcategory, CatalogItem, CatalogItemVendor, VendorCatalogItemPrice, SeriesConfig.
  *
- * Usage: dotenv -e .env.local -- tsx scripts/reset-operational-data.ts
+ * Usage: pnpm db:reset-fresh
  */
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@/lib/prisma-client";
@@ -10,15 +11,15 @@ import * as dotenv from "dotenv";
 
 dotenv.config({ path: ".env.local" });
 
-// Prisma 7: connect to Supabase via the node-postgres driver adapter (matches
-// lib/prisma.ts).
 const adapter = new PrismaPg({
   connectionString: process.env.DATABASE_URL ?? "",
   ssl: { rejectUnauthorized: false },
 });
 const prisma = new PrismaClient({ adapter });
 
+/** Procurement / finance / serial activity — safe to wipe. */
 const TRUNCATE_TABLES = [
+  "AdminAuditLog",
   "Payment",
   "InvoiceGRNLink",
   "Invoice",
@@ -27,48 +28,43 @@ const TRUNCATE_TABLES = [
   "GoodsReceiptLine",
   "GoodsReceipt",
   "SerialReservation",
+  "POAdvanceAllocation",
+  "POAdvancePayment",
+  "POAdvanceRequest",
+  "PurchaseOrderLineAdjustment",
   "PurchaseOrderLineItem",
   "PurchaseOrderLine",
   "PurchaseOrder",
   "PRVersion",
   "PurchaseRequestLineItem",
   "PurchaseRequestLine",
-  "CatalogItem",
   "VendorRequest",
   "PurchaseRequest",
-  "VendorChangeLog",
-  "Vendor",
-  "SeriesConfig",
-  "Subcategory",
-  "Category",
 ] as const;
 
 async function clearOperationalData() {
-  const [users, warehouses] = await Promise.all([
+  const [users, warehouses, vendors, catalogItems] = await Promise.all([
     prisma.user.count(),
     prisma.warehouse.count(),
+    prisma.vendor.count(),
+    prisma.catalogItem.count(),
   ]);
 
-  console.log(`Keeping ${users} user(s) and ${warehouses} warehouse(s).`);
+  console.log(
+    `Keeping ${users} user(s), ${warehouses} warehouse(s), ${vendors} vendor(s), ${catalogItems} catalog item(s).`,
+  );
 
   const tableList = TRUNCATE_TABLES.map((t) => `"${t}"`).join(", ");
   await prisma.$executeRawUnsafe(
     `TRUNCATE TABLE ${tableList} RESTART IDENTITY CASCADE`,
   );
 
-  console.log("Operational data cleared.");
+  console.log("Operational data cleared (PRs, POs, GRNs, invoices, payments, serials).");
 }
 
 async function main() {
   await clearOperationalData();
   await prisma.$disconnect();
-
-  process.env.SEED_SKIP_SAMPLES = "1";
-  const { execSync } = await import("node:child_process");
-  execSync("npx tsx prisma/seed.ts", {
-    stdio: "inherit",
-    env: process.env,
-  });
 }
 
 main().catch(async (error) => {

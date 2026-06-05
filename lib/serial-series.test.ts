@@ -1,5 +1,6 @@
-import { ExecutionType, SerialSeries } from "@/lib/prisma-enums";
+import { ExecutionType } from "@/lib/prisma-enums";
 import { describe, expect, it } from "vitest";
+import { SERIES_CODES } from "@/lib/series-codes";
 
 import {
   computeNextRangeStart,
@@ -12,16 +13,16 @@ import {
 
 describe("detectSeriesFromSerialNumber", () => {
   it("classifies lock tags below the jewellery range", () => {
-    expect(detectSeriesFromSerialNumber("100050")).toBe(SerialSeries.LOCK_TAGS);
-    expect(detectSeriesFromSerialNumber("199999")).toBe(SerialSeries.LOCK_TAGS);
+    expect(detectSeriesFromSerialNumber("100050")).toBe(SERIES_CODES.LOCK_TAGS);
+    expect(detectSeriesFromSerialNumber("199999")).toBe(SERIES_CODES.LOCK_TAGS);
   });
 
   it("classifies jewellery and apparel by numeric range", () => {
     expect(detectSeriesFromSerialNumber("1000000001")).toBe(
-      SerialSeries.JEWELLERY_BARCODES,
+      SERIES_CODES.JEWELLERY_BARCODES,
     );
     expect(detectSeriesFromSerialNumber("2000000001")).toBe(
-      SerialSeries.APPAREL_BARCODES,
+      SERIES_CODES.APPAREL_BARCODES,
     );
   });
 
@@ -34,21 +35,21 @@ describe("series numeric bands", () => {
   it("validates reservation ranges per series", () => {
     expect(
       isValidReservationRange(
-        SerialSeries.LOCK_TAGS,
+        SERIES_CODES.LOCK_TAGS,
         BigInt(100_000),
         BigInt(100_049),
       ),
     ).toBe(true);
     expect(
       isValidReservationRange(
-        SerialSeries.JEWELLERY_BARCODES,
+        SERIES_CODES.JEWELLERY_BARCODES,
         BigInt(1),
         BigInt(50),
       ),
     ).toBe(false);
     expect(
       isValidReservationRange(
-        SerialSeries.JEWELLERY_BARCODES,
+        SERIES_CODES.JEWELLERY_BARCODES,
         BigInt(1_000_000_000),
         BigInt(1_000_000_049),
       ),
@@ -56,11 +57,11 @@ describe("series numeric bands", () => {
   });
 
   it("computes next start from series base when last end is invalid", () => {
-    expect(computeNextRangeStart(SerialSeries.JEWELLERY_BARCODES, BigInt(50))).toBe(
-      getSeriesStartNumber(SerialSeries.JEWELLERY_BARCODES),
+    expect(computeNextRangeStart(SERIES_CODES.JEWELLERY_BARCODES, BigInt(50))).toBe(
+      getSeriesStartNumber(SERIES_CODES.JEWELLERY_BARCODES),
     );
     expect(
-      computeNextRangeStart(SerialSeries.JEWELLERY_BARCODES, BigInt(1_000_000_049)),
+      computeNextRangeStart(SERIES_CODES.JEWELLERY_BARCODES, BigInt(1_000_000_049)),
     ).toBe(BigInt(1_000_000_050));
   });
 });

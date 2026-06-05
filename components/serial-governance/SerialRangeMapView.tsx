@@ -1,11 +1,11 @@
 "use client";
 
-import { SerialSeries } from "@/lib/prisma-enums";
 import { Map, ZoomIn, ZoomOut } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import * as React from "react";
 
+import { SerialRangeMapAdminPanel } from "@/components/admin/SerialRangeMapAdminPanel";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { ProcurementRefLink } from "@/components/shared/ProcurementRef";
 import { SurfaceCard } from "@/components/shared/SurfaceCard";
@@ -13,10 +13,8 @@ import { Button } from "@/components/ui/button";
 import { formatDateTimeMedium } from "@/lib/format-datetime";
 import { serialRangeMapBreadcrumbs } from "@/lib/lineage";
 import type { SerialRangeMapData, SerialRangeMapSegment } from "@/lib/serial-governance-types";
-import { getSeriesDisplayName } from "@/lib/serial-series";
+import type { SeriesCode } from "@/lib/series-codes";
 import { cn } from "@/lib/utils";
-
-const SERIES_OPTIONS = Object.values(SerialSeries);
 
 const LEGEND: {
   phase: SerialRangeMapSegment["phase"];
@@ -49,6 +47,12 @@ const LEGEND: {
     swatch: "bg-[var(--brand-accent)]",
   },
   {
+    phase: "admin_block",
+    label: "Admin block",
+    hint: "Global or warehouse-scoped admin hold",
+    swatch: "bg-[var(--status-danger)]",
+  },
+  {
     phase: "free",
     label: "Available",
     hint: "Unallocated numbers in this view",
@@ -66,6 +70,8 @@ function phaseBarClass(phase: SerialRangeMapSegment["phase"]): string {
       return "serial-map-segment bg-[var(--status-info)]";
     case "internal_print":
       return "serial-map-segment bg-[var(--brand-accent)]";
+    case "admin_block":
+      return "serial-map-segment bg-[var(--status-danger)] ring-1 ring-inset ring-[var(--status-danger)]/60";
     case "free":
     default:
       return "serial-map-segment bg-muted/35 hover:bg-muted/55 border border-transparent hover:border-border-subtle";
@@ -155,10 +161,14 @@ function SegmentDetail({ segment }: { segment: SerialRangeMapSegment }) {
 
 export function SerialRangeMapView({
   data,
+  seriesOptions,
   initialZoomToActive,
+  adminMode = false,
 }: {
   data: SerialRangeMapData;
+  seriesOptions: { code: SeriesCode; displayName: string }[];
   initialZoomToActive: boolean;
+  adminMode?: boolean;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -179,7 +189,7 @@ export function SerialRangeMapView({
     reservedSegments[0] ??
     null;
 
-  function pushParams(next: { series?: SerialSeries; zoom?: "active" | "full" }) {
+  function pushParams(next: { series?: SeriesCode; zoom?: "active" | "full" }) {
     const params = new URLSearchParams(searchParams.toString());
     if (next.series) {
       params.set("series", next.series);
@@ -222,15 +232,15 @@ export function SerialRangeMapView({
       />
 
       <div className="flex flex-wrap items-center gap-2">
-        {SERIES_OPTIONS.map((series) => (
+        {seriesOptions.map(({ code, displayName }) => (
           <Button
-            key={series}
+            key={code}
             type="button"
             size="sm"
-            variant={data.series === series ? "default" : "soft"}
-            onClick={() => pushParams({ series })}
+            variant={data.series === code ? "default" : "soft"}
+            onClick={() => pushParams({ series: code })}
           >
-            {getSeriesDisplayName(series)}
+            {displayName}
           </Button>
         ))}
         <Button
@@ -411,6 +421,13 @@ export function SerialRangeMapView({
           {activeSegment && activeSegment.phase !== "free" ? (
             <div className="mt-3">
               <SegmentDetail segment={activeSegment} />
+              {adminMode ? (
+                <SerialRangeMapAdminPanel
+                  reservationId={activeSegment.id}
+                  rangeLabel={`${activeSegment.rangeStart}–${activeSegment.rangeEnd}`}
+                  onDone={() => router.refresh()}
+                />
+              ) : null}
             </div>
           ) : (
             <p className="mt-3 text-ds-sm text-muted-foreground">

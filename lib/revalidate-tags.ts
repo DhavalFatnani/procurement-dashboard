@@ -25,6 +25,7 @@ export function revalidateCatalogCache() {
 export function revalidateSerialGovernance() {
   revalidatePath("/serial-governance");
   revalidatePath("/serial-governance/range-map");
+  revalidatePath("/admin/platform/series");
 }
 
 export function revalidateDashboardMetrics() {

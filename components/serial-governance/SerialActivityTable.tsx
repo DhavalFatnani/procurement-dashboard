@@ -12,7 +12,6 @@ import { formatSerialBatchLabel } from "@/lib/display-ref";
 import { formatDateTimeMedium } from "@/lib/format-datetime";
 import { useListTransition } from "@/lib/list-transition-context";
 import type { Paginated } from "@/lib/pagination";
-import { getSeriesDisplayName } from "@/lib/serial-series";
 import { cn } from "@/lib/utils";
 
 const columns: DataTableColumn<SerialActivityRow>[] = [
@@ -21,13 +20,13 @@ const columns: DataTableColumn<SerialActivityRow>[] = [
     header: "Batch",
     cell: (r) =>
       formatSerialBatchLabel({
-        seriesName: getSeriesDisplayName(r.series),
+        seriesName: r.seriesName,
         rangeStart: r.rangeStart,
         rangeEnd: r.rangeEnd,
         quantity: r.quantity,
       }),
   },
-  { id: "series", header: "Series", cell: (r) => getSeriesDisplayName(r.series) },
+  { id: "series", header: "Series", cell: (r) => r.seriesName },
   {
     id: "range",
     header: "Range",

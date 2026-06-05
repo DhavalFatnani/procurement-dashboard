@@ -1,9 +1,11 @@
 import { Role, UserStatus } from "@/lib/prisma-enums";
 
 import { UsersView } from "@/components/admin/UsersView";
+import { canDeleteUser } from "@/lib/admin-access";
 import { dbParallel } from "@/lib/db-parallel";
 import { getUsers } from "@/lib/queries/users";
 import { getWarehouseOptions } from "@/lib/queries/warehouses";
+import { ACCESS } from "@/lib/route-access";
 import { assertRole, getRequestSession } from "@/lib/session";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
@@ -20,7 +22,7 @@ export default async function AdminUsersPage({
 }: {
   searchParams: SearchParams;
 }) {
-  const user = assertRole(await getRequestSession(), [Role.OPS_HEAD]);
+  const user = assertRole(await getRequestSession(), [...ACCESS.admin]);
   const sp = await searchParams;
   const search = str(sp.q);
   const role = str(sp.role) as Role | "";
@@ -48,6 +50,7 @@ export default async function AdminUsersPage({
       initialRows={rows}
       warehouses={warehouses}
       currentUserId={user.id}
+      canDeleteUser={canDeleteUser(user.role)}
       filters={{
         search,
         role,

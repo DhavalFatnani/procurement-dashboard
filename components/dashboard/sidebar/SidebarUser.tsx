@@ -9,6 +9,7 @@ const ROLE_ACCENT: Record<Role, string> = {
   [Role.SM]: "var(--accent-role-sm)",
   [Role.OPS_HEAD]: "var(--accent-role-ops)",
   [Role.FINANCE]: "var(--accent-role-finance)",
+  [Role.ADMIN]: "var(--accent-role-ops)",
 };
 
 export function SidebarUser({

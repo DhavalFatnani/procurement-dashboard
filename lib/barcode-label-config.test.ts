@@ -1,4 +1,4 @@
-import { SerialSeries } from "@/lib/prisma-enums";
+import { SERIES_CODES } from "@/lib/series-codes";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -249,14 +249,14 @@ describe("applyBarcodeLayoutPreset", () => {
 
 describe("getBarcodeLayoutPresetsForContext", () => {
   it("returns jewellery presets for jewellery series", () => {
-    expect(getBarcodeLayoutPresetContext(SerialSeries.JEWELLERY_BARCODES)).toBe("jewellery");
+    expect(getBarcodeLayoutPresetContext(SERIES_CODES.JEWELLERY_BARCODES)).toBe("jewellery");
     const presets = getBarcodeLayoutPresetsForContext("jewellery");
     expect(presets.some((p) => p.id === "jewellery-40x30")).toBe(true);
     expect(presets.some((p) => p.id === "apparel-a4-office")).toBe(false);
   });
 
   it("returns apparel presets for apparel series", () => {
-    expect(getBarcodeLayoutPresetContext(SerialSeries.APPAREL_BARCODES)).toBe("apparel");
+    expect(getBarcodeLayoutPresetContext(SERIES_CODES.APPAREL_BARCODES)).toBe("apparel");
     const presets = getBarcodeLayoutPresetsForContext("apparel");
     expect(presets.some((p) => p.id === "apparel-100x50")).toBe(true);
     expect(presets.some((p) => p.id === "jewellery-40x30")).toBe(false);

@@ -15,6 +15,7 @@ enum Role {
   SM
   OPS_HEAD
   FINANCE
+  ADMIN
 }
 
 enum PRStatus {
@@ -115,15 +116,29 @@ enum VendorRequestStatus {
   REJECTED
 }
 
-enum SerialSeries {
-  LOCK_TAGS
-  JEWELLERY_BARCODES
-  APPAREL_BARCODES
-}
-
 enum SerialReservationStatus {
   PENDING
   RESERVED
+  RELEASED
+}
+
+enum SerialReservationPurpose {
+  INTERNAL_PRINT
+  VENDOR_LOCK_TAGS
+  ADMIN_BLOCK
+}
+
+enum AdminAuditAction {
+  SERIAL_BLOCK
+  SERIAL_RELEASE
+  SERIAL_REASSIGN
+  SERIAL_SPLIT
+  SERIAL_MERGE
+  LIFECYCLE_RELEASE
+  SERIES_CONFIG_CREATE
+  SERIES_CONFIG_UPDATE
+  SERIES_CONFIG_RESET
+  SERIES_CONFIG_DEACTIVATE
 }
 
 enum CatalogItemStatus {
@@ -176,7 +191,9 @@ model User {
   poAdvanceRequestsReviewed POAdvanceRequest[] @relation("POAdvanceReviewedBy")
   poAdvancePaymentsPaid     POAdvancePayment[] @relation("POAdvancePaidBy")
   poLineAdjustmentsCreated  PurchaseOrderLineAdjustment[] @relation("POLineAdjustmentCreatedBy")
-  serialReservationsCreated SerialReservation[]
+  serialReservationsCreated SerialReservation[] @relation("SerialReservationCreatedBy")
+  serialReservationsReleased SerialReservation[] @relation("SerialReservationReleasedBy")
+  adminAuditLogs            AdminAuditLog[]
   seriesConfigsConfigured   SeriesConfig[]
   catalogItemsCreated       CatalogItem[]       @relation("CatalogItemCreatedBy")
   catalogItemsApproved      CatalogItem[]       @relation("CatalogItemApprovedBy")
@@ -301,10 +318,11 @@ model Subcategory {
   id            String        @id @default(cuid())
   categoryId    String
   name          String
-  series        SerialSeries?
+  series        String?
   executionType ExecutionType
 
   category              Category               @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  seriesConfig          SeriesConfig?          @relation(fields: [series], references: [code], onDelete: SetNull)
   purchaseRequests         PurchaseRequest[]
   purchaseRequestLines     PurchaseRequestLine[]
   purchaseOrderLines       PurchaseOrderLine[]
@@ -827,39 +845,73 @@ model Payment {
 }
 
 model SerialReservation {
-  id             String                  @id @default(cuid())
-  series         SerialSeries
+  id             String                   @id @default(cuid())
+  series         String
   rangeStart     BigInt
   rangeEnd       BigInt
   quantity       Int
-  warehouseId    String
-  status         SerialReservationStatus @default(PENDING)
-  prId           String?                 @unique
-  poId           String?                 @unique
-  idempotencyKey String                  @unique
+  warehouseId    String?
+  status         SerialReservationStatus  @default(PENDING)
+  purpose        SerialReservationPurpose @default(INTERNAL_PRINT)
+  prId           String?                  @unique
+  poId           String?                  @unique
+  idempotencyKey String                   @unique
   createdById    String
-  createdAt      DateTime                @default(now())
-  updatedAt      DateTime                @default(now()) @updatedAt
+  releasedAt     DateTime?
+  releasedById   String?
+  releaseReason  String?
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @default(now()) @updatedAt
 
-  warehouse Warehouse        @relation(fields: [warehouseId], references: [id])
-  pr        PurchaseRequest? @relation(fields: [prId], references: [id])
-  po        PurchaseOrder?   @relation(fields: [poId], references: [id])
-  createdBy User             @relation(fields: [createdById], references: [id])
+  warehouse    Warehouse?       @relation(fields: [warehouseId], references: [id])
+  pr           PurchaseRequest? @relation(fields: [prId], references: [id])
+  po           PurchaseOrder?   @relation(fields: [poId], references: [id])
+  seriesConfig SeriesConfig     @relation(fields: [series], references: [code])
+  createdBy    User             @relation("SerialReservationCreatedBy", fields: [createdById], references: [id])
+  releasedBy   User?            @relation("SerialReservationReleasedBy", fields: [releasedById], references: [id])
 
   @@index([series])
   @@index([warehouseId])
   @@index([createdById])
+  @@index([releasedById])
+  @@index([status])
+}
+
+model AdminAuditLog {
+  id         String           @id @default(cuid())
+  actorId    String
+  action     AdminAuditAction
+  targetType String
+  targetId   String?
+  reason     String
+  metadata   Json?
+  createdAt  DateTime         @default(now())
+
+  actor User @relation(fields: [actorId], references: [id])
+
+  @@index([actorId])
+  @@index([targetType, targetId])
+  @@index([createdAt])
 }
 
 model SeriesConfig {
-  id                      String       @id @default(cuid())
-  series                  SerialSeries @unique
-  inactivityThresholdDays Int          @default(30)
+  id                      String   @id @default(cuid())
+  code                    String   @unique
+  displayName             String
+  prefixPattern           String
+  rangeStart              BigInt
+  inactivityThresholdDays Int      @default(30)
   ceilingNumber           BigInt
-  ceilingAlertPct         Int          @default(80)
+  ceilingAlertPct         Int      @default(80)
+  sortOrder               Int      @default(0)
+  isActive                Boolean  @default(true)
   configuredById          String
-  configuredAt            DateTime     @default(now())
-  updatedAt               DateTime     @default(now()) @updatedAt
+  configuredAt            DateTime @default(now())
+  updatedAt               DateTime @default(now()) @updatedAt
 
-  configuredBy User @relation(fields: [configuredById], references: [id])
+  configuredBy         User                @relation(fields: [configuredById], references: [id])
+  serialReservations     SerialReservation[]
+  subcategories          Subcategory[]
+
+  @@index([isActive, sortOrder])
 }

@@ -1,5 +1,6 @@
 import "server-only";
 
+import { hasGlobalWarehouseScope } from "@/lib/admin-access";
 import { prisma } from "@/lib/prisma";
 import { getWarehousesAssignedToUser } from "@/lib/queries/warehouses";
 import type { SessionUser } from "@/lib/session";
@@ -10,6 +11,16 @@ import {
 } from "@/lib/warehouse-scope";
 
 export type WarehouseAccessResult = { ok: true } | { ok: false; message: string };
+
+export async function assertSessionWarehouseAccess(
+  user: SessionUser,
+  warehouseId: string,
+): Promise<WarehouseAccessResult> {
+  if (hasGlobalWarehouseScope(user.role)) {
+    return { ok: true };
+  }
+  return assertUserWarehouseAccess(user.id, warehouseId);
+}
 
 export async function assertUserWarehouseAccess(
   userId: string,
@@ -101,6 +112,9 @@ export async function assertSessionPurchaseRequestAccess(
   if (!sessionCheck.ok) {
     return sessionCheck;
   }
+  if (hasGlobalWarehouseScope(user.role)) {
+    return { ok: true };
+  }
   return assertUserWarehouseAccess(user.id, pr.warehouseId);
 }
 
@@ -121,6 +135,9 @@ export async function assertSessionPurchaseOrderAccess(
   );
   if (!sessionCheck.ok) {
     return sessionCheck;
+  }
+  if (hasGlobalWarehouseScope(user.role)) {
+    return { ok: true };
   }
   return assertUserWarehouseAccess(user.id, po.purchaseRequest.warehouseId);
 }
@@ -143,6 +160,9 @@ export async function assertSessionInvoiceAccess(
   if (!sessionCheck.ok) {
     return sessionCheck;
   }
+  if (hasGlobalWarehouseScope(user.role)) {
+    return { ok: true };
+  }
   return assertUserWarehouseAccess(user.id, warehouseId);
 }
 
@@ -163,6 +183,9 @@ export async function assertSessionGrnAccess(
   const sessionCheck = assertSessionCanAccessWarehouseFromUser(user, warehouseId);
   if (!sessionCheck.ok) {
     return sessionCheck;
+  }
+  if (hasGlobalWarehouseScope(user.role)) {
+    return { ok: true };
   }
   return assertUserWarehouseAccess(user.id, warehouseId);
 }

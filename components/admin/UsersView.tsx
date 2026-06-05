@@ -35,10 +35,11 @@ import { ROLE_LABELS } from "@/lib/navigation";
 import type { Paginated } from "@/lib/pagination";
 import type { UserDetail, UserListRow } from "@/lib/queries/users";
 
-const ROLE_TONE: Record<Role, "info" | "accent" | "neutral"> = {
+const ROLE_TONE: Record<Role, "info" | "accent" | "neutral" | "warning"> = {
   [Role.SM]: "neutral",
   [Role.OPS_HEAD]: "info",
   [Role.FINANCE]: "accent",
+  [Role.ADMIN]: "warning",
 };
 
 const USER_STATUS_TONE: Record<UserStatus, "success" | "neutral"> = {
@@ -51,6 +52,7 @@ export function UsersView({
   filters,
   warehouses,
   currentUserId,
+  canDeleteUser,
 }: {
   initialRows: Paginated<UserListRow>;
   filters: {
@@ -61,6 +63,7 @@ export function UsersView({
   };
   warehouses: WarehouseOption[];
   currentUserId: string;
+  canDeleteUser: boolean;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -241,6 +244,7 @@ export function UsersView({
           <UserRowActions
             row={r}
             currentUserId={currentUserId}
+            canDelete={canDeleteUser}
             onEdit={() => void openEdit(r.id)}
             onResetPassword={handleResetPassword}
             onResolved={(id, outcome) => {
@@ -253,7 +257,7 @@ export function UsersView({
         ),
       },
     ],
-    [currentUserId],
+    [canDeleteUser, currentUserId],
   );
 
   return (

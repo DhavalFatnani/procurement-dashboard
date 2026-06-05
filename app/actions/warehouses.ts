@@ -12,6 +12,7 @@ import {
 } from "@/lib/queries/warehouses";
 import { revalidateInboxCache, revalidateSerialGovernance } from "@/lib/revalidate-tags";
 import { requireRoles } from "@/lib/server-action-guard";
+import { ALL_DASHBOARD_ROLES, FINANCE_OR_ADMIN_ROLES, OPS_FINANCE_OR_ADMIN_ROLES, OPS_OR_ADMIN_ROLES, SM_OPS_OR_ADMIN_ROLES } from "@/lib/admin-access";
 
 function revalidateWarehouseSurfaces() {
   revalidateTag("warehouses");
@@ -29,17 +30,17 @@ function revalidateWarehouseSurfaces() {
 }
 
 export async function getWarehouses() {
-  await requireRoles([Role.OPS_HEAD]);
+  await requireRoles([...OPS_OR_ADMIN_ROLES]);
   return getWarehousesQuery();
 }
 
 export async function getWarehouseOptions() {
-  await requireRoles([Role.SM, Role.OPS_HEAD, Role.FINANCE]);
+  await requireRoles([...ALL_DASHBOARD_ROLES]);
   return getWarehouseOptionsQuery();
 }
 
 export async function getWarehouseById(id: string) {
-  await requireRoles([Role.OPS_HEAD]);
+  await requireRoles([...OPS_OR_ADMIN_ROLES]);
   return getWarehouseByIdQuery(id);
 }
 
@@ -57,7 +58,7 @@ function validate(input: WarehouseInput): string | null {
 }
 
 export async function createWarehouse(input: WarehouseInput): Promise<MutationResult> {
-  await requireRoles([Role.OPS_HEAD]);
+  await requireRoles([...OPS_OR_ADMIN_ROLES]);
   const err = validate(input);
   if (err) return { ok: false, message: err };
 
@@ -72,7 +73,7 @@ export async function updateWarehouse(
   id: string,
   input: WarehouseInput,
 ): Promise<MutationResult> {
-  await requireRoles([Role.OPS_HEAD]);
+  await requireRoles([...OPS_OR_ADMIN_ROLES]);
   const err = validate(input);
   if (err) return { ok: false, message: err };
 

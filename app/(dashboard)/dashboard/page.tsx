@@ -9,7 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Role } from "@/lib/prisma-enums";
 import { ACCESS } from "@/lib/route-access";
 import { assertRole, getRequestSession } from "@/lib/session";
-import { assignedWarehouseIds } from "@/lib/warehouse-scope";
+import { scopeWarehouseIdsForUser } from "@/lib/warehouse-scope";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +19,7 @@ export default async function DashboardHomePage() {
     (typeof user.user_metadata?.name === "string" && user.user_metadata.name) ||
     user.email ||
     "User";
-  const scopeWarehouseIds = assignedWarehouseIds(user);
+  const scopeWarehouseIds = scopeWarehouseIdsForUser(user);
 
   return (
     <div className="page-stack">

@@ -5,7 +5,7 @@ import {
   getApprovedPRAwaitingPOById,
   getPOFilterOptions,
 } from "@/lib/queries/purchase-orders";
-import { assignedWarehouseIds } from "@/lib/warehouse-scope";
+import { scopeWarehouseIdsForUser } from "@/lib/warehouse-scope";
 
 type Params = Promise<{ prId: string }>;
 
@@ -13,7 +13,7 @@ export default async function ConfigurePurchaseOrderPage({ params }: { params: P
   const user = await assertConfigurePOAccess();
   const { prId: prIdRaw } = await params;
   const prId = prIdRaw.trim();
-  const scopeWarehouseIds = assignedWarehouseIds(user);
+  const scopeWarehouseIds = scopeWarehouseIdsForUser(user);
 
   const [selectedPr, filterOptions] = await dbParallel(
     () => getApprovedPRAwaitingPOById(prId, { scopeWarehouseIds }),

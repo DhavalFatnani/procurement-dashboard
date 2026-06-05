@@ -1,6 +1,6 @@
 "use client";
 
-import { SerialSeries } from "@/lib/prisma-enums";
+import type { SeriesCode } from "@/lib/series-codes";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,7 +21,7 @@ import { Info, Loader2, Printer, ShieldCheck } from "lucide-react";
 export type ReserveSerialRangeDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  series: SerialSeries;
+  series: SeriesCode;
   seriesName: string;
   categoryName?: string;
   quantity: number;

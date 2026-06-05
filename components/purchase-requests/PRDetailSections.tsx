@@ -1,5 +1,5 @@
 import type { LockTagsSerialPreview } from "@/app/actions/serial";
-import { ExecutionType, PRStatus, Role, type SerialSeries } from "@/lib/prisma-enums";
+import { ExecutionType, PRStatus, Role } from "@/lib/prisma-enums";
 import Link from "next/link";
 
 import type { PRDetail } from "@/lib/queries/purchase-requests";
@@ -12,7 +12,6 @@ import {
   formatSerialBatchLabel,
 } from "@/lib/display-ref";
 import { formatDateTimeMedium } from "@/lib/format-datetime";
-import { getSeriesDisplayName } from "@/lib/serial-series";
 import { cn } from "@/lib/utils";
 import { ArrowRight, CheckCircle2 } from "lucide-react";
 
@@ -25,10 +24,7 @@ const PROGRESS_STEPS = [
 ] as const;
 
 function internalPrintSeriesName(pr: PRDetail): string {
-  if (!pr.serialReservation) {
-    return pr.subcategoryName;
-  }
-  return getSeriesDisplayName(pr.serialReservation.series as SerialSeries);
+  return pr.serialReservation?.seriesName ?? pr.subcategoryName;
 }
 
 export function PRDetailProgress({ pr }: { pr: PRDetail }) {

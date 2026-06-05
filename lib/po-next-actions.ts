@@ -1,3 +1,4 @@
+import { canManageFinance, isAdminRole } from "@/lib/admin-access";
 import { PaymentStatus, POStatus, Role } from "@/lib/prisma-enums";
 
 import { FINANCE_ROUTES } from "@/lib/finance-routes";
@@ -38,9 +39,9 @@ export function getApplicablePOActions(
   role: Role,
 ): PONextAction[] {
   const actions: PONextAction[] = [];
-  const isOps = role === Role.OPS_HEAD;
+  const isOps = role === Role.OPS_HEAD || isAdminRole(role);
   const isSm = role === Role.SM;
-  const isFinance = role === Role.FINANCE;
+  const isFinance = canManageFinance(role);
   const isClosed = CLOSED_STATUSES.includes(po.status);
 
   if (isClosed) {

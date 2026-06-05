@@ -1,6 +1,5 @@
 "use client";
 
-import { SerialSeries } from "@/lib/prisma-enums";
 import Link from "next/link";
 import * as React from "react";
 
@@ -10,7 +9,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { formatProcurementRef, formatSerialBatchLabel } from "@/lib/display-ref";
 import { formatDateTimeMedium } from "@/lib/format-datetime";
-import { getSeriesDisplayName } from "@/lib/serial-series";
 import {
   CheckCircle2,
   ClipboardCopy,
@@ -27,6 +25,7 @@ export function PrintExecutionView({
   reservation: {
     id: string;
     series: string;
+    seriesName: string;
     rangeStart: string;
     rangeEnd: string;
     quantity: number;
@@ -37,7 +36,7 @@ export function PrintExecutionView({
 }) {
   const [pending, startTransition] = React.useTransition();
   const [copyLabel, setCopyLabel] = React.useState("Copy range to clipboard");
-  const seriesName = getSeriesDisplayName(reservation.series as SerialSeries);
+  const seriesName = reservation.seriesName;
   const rangeText = `${reservation.rangeStart} → ${reservation.rangeEnd}`;
   const clipboardText = `Start: ${reservation.rangeStart} | End: ${reservation.rangeEnd} | Qty: ${reservation.quantity}`;
 

@@ -6,7 +6,7 @@ import { parseGRNPageParams } from "@/lib/list-search-params";
 import { getGRNFilterOptions, getGRNs } from "@/lib/queries/grn";
 import { ACCESS } from "@/lib/route-access";
 import { assertRole, getRequestSession } from "@/lib/session";
-import { assignedWarehouseIds } from "@/lib/warehouse-scope";
+import { scopeWarehouseIdsForUser } from "@/lib/warehouse-scope";
 import { dbParallel } from "@/lib/db-parallel";
 import { timed } from "@/lib/server-timing";
 
@@ -54,7 +54,7 @@ async function GRNTableLoader({
               : parsed.hasExceptions === "no"
                 ? false
                 : undefined,
-          scopeWarehouseIds: assignedWarehouseIds(user),
+          scopeWarehouseIds: scopeWarehouseIdsForUser(user),
           page: parsed.page,
           includeExactCount: parsed.includeExactCount,
         }),

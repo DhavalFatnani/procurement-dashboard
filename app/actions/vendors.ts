@@ -24,6 +24,7 @@ import { revalidateDashboardMetrics } from "@/lib/revalidate-tags";
 import type { Paginated } from "@/lib/pagination";
 import { prisma } from "@/lib/prisma";
 import { requireRoles } from "@/lib/server-action-guard";
+import { ALL_DASHBOARD_ROLES, FINANCE_OR_ADMIN_ROLES, OPS_FINANCE_OR_ADMIN_ROLES, OPS_OR_ADMIN_ROLES, SM_OPS_OR_ADMIN_ROLES } from "@/lib/admin-access";
 
 const JW_THRESHOLD = 0.85;
 
@@ -35,12 +36,12 @@ export async function getVendors(
     pageSize?: number;
   },
 ): Promise<Paginated<VendorListRow>> {
-  await requireRoles([Role.SM, Role.OPS_HEAD]);
+  await requireRoles([...SM_OPS_OR_ADMIN_ROLES]);
   return getVendorsQuery(filters);
 }
 
 export async function getPendingVendorRequests(): Promise<PendingVendorRequestRow[]> {
-  await requireRoles([Role.OPS_HEAD]);
+  await requireRoles([...OPS_OR_ADMIN_ROLES]);
   return getPendingVendorRequestsQuery();
 }
 
@@ -76,7 +77,7 @@ export type CreateVendorResult =
   | { ok: false; code: "VALIDATION"; message: string };
 
 export async function createVendor(input: CreateVendorInput): Promise<CreateVendorResult> {
-  const user = await requireRoles([Role.OPS_HEAD]);
+  const user = await requireRoles([...OPS_OR_ADMIN_ROLES]);
 
   const {
     businessName,
@@ -225,7 +226,7 @@ export async function getVendorById(
   id: string,
   options?: { poPage?: number; poPageSize?: number },
 ): Promise<VendorDetail | null> {
-  await requireRoles([Role.SM, Role.OPS_HEAD]);
+  await requireRoles([...SM_OPS_OR_ADMIN_ROLES]);
   return getVendorByIdQuery(id, options);
 }
 
@@ -258,7 +259,7 @@ export async function updateVendor(
   id: string,
   input: UpdateVendorInput,
 ): Promise<UpdateVendorResult> {
-  const user = await requireRoles([Role.OPS_HEAD]);
+  const user = await requireRoles([...OPS_OR_ADMIN_ROLES]);
 
   const {
     pocName,
@@ -340,7 +341,7 @@ export async function updateVendor(
 }
 
 export async function deactivateVendor(id: string): Promise<MutationResult> {
-  await requireRoles([Role.OPS_HEAD]);
+  await requireRoles([...OPS_OR_ADMIN_ROLES]);
   try {
     await prisma.vendor.update({
       where: { id },
@@ -357,7 +358,7 @@ export async function deactivateVendor(id: string): Promise<MutationResult> {
 }
 
 export async function reactivateVendor(id: string): Promise<MutationResult> {
-  await requireRoles([Role.OPS_HEAD]);
+  await requireRoles([...OPS_OR_ADMIN_ROLES]);
   try {
     await prisma.vendor.update({
       where: { id },
@@ -377,7 +378,7 @@ export async function mergeVendors(
   primaryId: string,
   secondaryId: string,
 ): Promise<MutationResult> {
-  const user = await requireRoles([Role.OPS_HEAD]);
+  const user = await requireRoles([...OPS_OR_ADMIN_ROLES]);
 
   if (primaryId === secondaryId) {
     return { ok: false, message: "Cannot merge a vendor into itself." };
@@ -433,7 +434,7 @@ export async function reviewVendorRequest(
   reason?: string,
   bank?: ActivateVendorFromRequestInput,
 ): Promise<{ ok: boolean; message?: string; vendorId?: string }> {
-  const user = await requireRoles([Role.OPS_HEAD]);
+  const user = await requireRoles([...OPS_OR_ADMIN_ROLES]);
 
   const request = await prisma.vendorRequest.findUnique({ where: { id: requestId } });
   if (!request || request.status !== "PENDING") {
@@ -512,6 +513,6 @@ export async function reviewVendorRequest(
 }
 
 export async function getActiveVendors(): Promise<{ id: string; businessName: string }[]> {
-  await requireRoles([Role.SM, Role.OPS_HEAD]);
+  await requireRoles([...SM_OPS_OR_ADMIN_ROLES]);
   return getActiveVendorsQuery();
 }

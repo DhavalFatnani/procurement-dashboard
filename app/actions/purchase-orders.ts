@@ -35,46 +35,48 @@ import {
   revalidateSerialGovernance,
 } from "@/lib/revalidate-tags";
 import { requireRoles } from "@/lib/server-action-guard";
+import { ALL_DASHBOARD_ROLES, FINANCE_OR_ADMIN_ROLES, OPS_FINANCE_OR_ADMIN_ROLES, OPS_OR_ADMIN_ROLES, SM_OPS_OR_ADMIN_ROLES } from "@/lib/admin-access";
 import {
   createVendorLockTagsApprovalHold,
   releaseVendorLockTagsApprovalHold,
   releaseVendorLockTagsPoReservation,
 } from "@/lib/vendor-lock-tags-serial";
+import { releaseSerialReservationsForPO } from "@/lib/serial-admin";
 import { lockTagsQtyFromSelectedItems } from "@/lib/purchase-lines";
 import { assertSessionPurchaseOrderAccess } from "@/lib/warehouse-access";
-import { assignedWarehouseIds } from "@/lib/warehouse-scope";
+import { scopeWarehouseIdsForUser } from "@/lib/warehouse-scope";
 
 export async function getApprovedPRsAwaitingPO(): Promise<ApprovedPRAwaitingPO[]> {
-  const user = await requireRoles([Role.OPS_HEAD]);
+  const user = await requireRoles([...OPS_OR_ADMIN_ROLES]);
   return getApprovedPRsAwaitingPOQuery({
-    scopeWarehouseIds: assignedWarehouseIds(user),
+    scopeWarehouseIds: scopeWarehouseIdsForUser(user),
   });
 }
 
 export async function getPurchaseOrders(
   filters: PurchaseOrderFilters,
 ): Promise<Paginated<PurchaseOrderListRow>> {
-  const user = await requireRoles([Role.SM, Role.OPS_HEAD, Role.FINANCE]);
+  const user = await requireRoles([...ALL_DASHBOARD_ROLES]);
   return getPurchaseOrdersQuery({
     ...filters,
-    scopeWarehouseIds: filters.scopeWarehouseIds ?? assignedWarehouseIds(user),
+    scopeWarehouseIds: filters.scopeWarehouseIds ?? scopeWarehouseIdsForUser(user),
   });
 }
 
 export async function getPOById(id: string): Promise<PODetail | null> {
-  const user = await requireRoles([Role.SM, Role.OPS_HEAD, Role.FINANCE]);
+  const user = await requireRoles([...ALL_DASHBOARD_ROLES]);
   return getPOByIdForPageQuery(user, id);
 }
 
 export async function getPOFilterOptions() {
-  await requireRoles([Role.SM, Role.OPS_HEAD, Role.FINANCE]);
+  await requireRoles([...ALL_DASHBOARD_ROLES]);
   return getPOFilterOptionsQuery();
 }
 
 export async function markDeliveryComplete(
   poId: string,
 ): Promise<MutationResult> {
-  const user = await requireRoles([Role.OPS_HEAD]);
+  const user = await requireRoles([...OPS_OR_ADMIN_ROLES]);
 
   const access = await assertSessionPurchaseOrderAccess(user, poId);
   if (!access.ok) {
@@ -101,7 +103,7 @@ export async function cancelPO(
   poId: string,
   reason: string,
 ): Promise<MutationResult> {
-  const user = await requireRoles([Role.OPS_HEAD]);
+  const user = await requireRoles([...OPS_OR_ADMIN_ROLES]);
   const trimmed = reason.trim();
   if (!trimmed) {
     return { ok: false, message: "Reason is required." };
@@ -239,7 +241,7 @@ export async function forceClosePO(
   poId: string,
   reason: string,
 ): Promise<MutationResult> {
-  const user = await requireRoles([Role.OPS_HEAD]);
+  const user = await requireRoles([...OPS_OR_ADMIN_ROLES]);
   const trimmed = reason.trim();
   if (!trimmed) {
     return { ok: false, message: "Reason is required." };
@@ -255,16 +257,20 @@ export async function forceClosePO(
     return { ok: false, message: "Purchase order not found." };
   }
 
-  await prisma.purchaseOrder.update({
-    where: { id: poId },
-    data: {
-      status: "FORCE_CLOSED",
-      forceClosedById: user.id,
-      forceCloseReason: trimmed,
-    },
+  await prisma.$transaction(async (tx) => {
+    await tx.purchaseOrder.update({
+      where: { id: poId },
+      data: {
+        status: "FORCE_CLOSED",
+        forceClosedById: user.id,
+        forceCloseReason: trimmed,
+      },
+    });
+    await releaseSerialReservationsForPO(tx, poId, user.id, trimmed);
   });
 
   revalidateProcurementLists(undefined, poId);
+  revalidateSerialGovernance();
   return { ok: true };
 }
 
@@ -272,7 +278,7 @@ export async function updatePOExpectedDelivery(
   poId: string,
   expectedDelivery: string,
 ): Promise<MutationResult> {
-  const user = await requireRoles([Role.OPS_HEAD]);
+  const user = await requireRoles([...OPS_OR_ADMIN_ROLES]);
 
   const access = await assertSessionPurchaseOrderAccess(user, poId);
   if (!access.ok) {
@@ -298,7 +304,7 @@ export async function resolveGRNException(
   exceptionId: string,
   input: ResolveGrnExceptionInput,
 ): Promise<MutationResult> {
-  const user = await requireRoles([Role.OPS_HEAD]);
+  const user = await requireRoles([...OPS_OR_ADMIN_ROLES]);
 
   const exception = await prisma.gRNException.findUnique({
     where: { id: exceptionId },
@@ -341,7 +347,7 @@ export async function resolveGRNException(
 export async function runEvaluatePOClosure(
   poId: string,
 ): Promise<{ ok: boolean; status?: string; message?: string }> {
-  const user = await requireRoles([Role.OPS_HEAD]);
+  const user = await requireRoles([...OPS_OR_ADMIN_ROLES]);
 
   const access = await assertSessionPurchaseOrderAccess(user, poId);
   if (!access.ok) {

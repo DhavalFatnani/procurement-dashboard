@@ -4,6 +4,7 @@ import { CatalogView } from "@/components/admin/CatalogView";
 import { dbParallel } from "@/lib/db-parallel";
 import { getCatalogFilterOptions, getCatalogItems } from "@/lib/queries/catalog";
 import { prisma } from "@/lib/prisma";
+import { ACCESS } from "@/lib/route-access";
 import { assertRole, getRequestSession } from "@/lib/session";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
@@ -20,7 +21,7 @@ export default async function AdminCatalogPage({
 }: {
   searchParams: SearchParams;
 }) {
-  assertRole(await getRequestSession(), [Role.OPS_HEAD]);
+  assertRole(await getRequestSession(), [...ACCESS.admin]);
   const sp = await searchParams;
   const search = str(sp.q);
   const statusRaw = str(sp.status);

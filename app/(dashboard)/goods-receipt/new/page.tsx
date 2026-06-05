@@ -3,7 +3,7 @@ import { getPOForGRNById } from "@/lib/queries/grn";
 import { ACCESS } from "@/lib/route-access";
 import { assertRole, getRequestSession } from "@/lib/session";
 import { assertSessionPurchaseOrderAccess } from "@/lib/warehouse-access";
-import { assignedWarehouseIds } from "@/lib/warehouse-scope";
+import { scopeWarehouseIdsForUser } from "@/lib/warehouse-scope";
 
 type SearchParams = Promise<{ poId?: string }>;
 
@@ -31,7 +31,7 @@ export default async function NewGoodsReceiptPage({
   if (initialPoId) {
     const access = await assertSessionPurchaseOrderAccess(user, initialPoId);
     initialPo = access.ok
-      ? await getPOForGRNById(initialPoId, assignedWarehouseIds(user))
+      ? await getPOForGRNById(initialPoId, scopeWarehouseIdsForUser(user))
       : null;
   }
 

@@ -1,8 +1,10 @@
-import { PRStatus, SerialSeries } from "@/lib/prisma-client";
+import { PRStatus } from "@/lib/prisma-client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { SERIES_CODES } from "@/lib/series-codes";
 
 const txFindUnique = vi.fn();
 const txFindFirst = vi.fn();
+const txFindMany = vi.fn();
 const txCreate = vi.fn();
 const txUpdate = vi.fn();
 const txDeleteMany = vi.fn();
@@ -14,6 +16,7 @@ function makeTx() {
     serialReservation: {
       findUnique: txFindUnique,
       findFirst: txFindFirst,
+      findMany: txFindMany,
       create: txCreate,
       update: txUpdate,
       deleteMany: txDeleteMany,
@@ -34,6 +37,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   txFindUnique.mockResolvedValue(null);
   txFindFirst.mockResolvedValue(null);
+  txFindMany.mockResolvedValue([]);
   txSeriesConfigFindUnique.mockResolvedValue(null);
   txPrFindUnique.mockResolvedValue({ id: "pr-1", status: PRStatus.APPROVED });
   txDeleteMany.mockResolvedValue({ count: 1 });
@@ -80,7 +84,7 @@ describe("createVendorLockTagsApprovalHold", () => {
     expect(txCreate).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          series: SerialSeries.LOCK_TAGS,
+          series: SERIES_CODES.LOCK_TAGS,
           quantity: 50,
           status: "PENDING",
           prId: "pr-1",
@@ -182,7 +186,7 @@ describe("release helpers", () => {
   it("releaseVendorLockTagsPoReservation deletes PO lock-tag reservations", async () => {
     await releaseVendorLockTagsPoReservation(makeTx() as never, "po-1");
     expect(txDeleteMany).toHaveBeenCalledWith({
-      where: { poId: "po-1", series: SerialSeries.LOCK_TAGS },
+      where: { poId: "po-1", series: SERIES_CODES.LOCK_TAGS },
     });
   });
 });

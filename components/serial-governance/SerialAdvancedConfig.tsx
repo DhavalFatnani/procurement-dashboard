@@ -1,7 +1,8 @@
 "use client";
 
-import { SerialSeries } from "@/lib/prisma-enums";
+import { Role } from "@/lib/prisma-enums";
 import { ChevronDown, ChevronRight } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import * as React from "react";
 import { toast } from "sonner";
@@ -10,17 +11,25 @@ import { updateSeriesConfig } from "@/app/actions/serial";
 import type { SeriesConfigSummary } from "@/lib/serial-governance-types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import type { SeriesCode } from "@/lib/series-codes";
 import { cn } from "@/lib/utils";
 
-export function SerialAdvancedConfig({ configs }: { configs: SeriesConfigSummary[] }) {
+export function SerialAdvancedConfig({
+  configs,
+  role,
+}: {
+  configs: SeriesConfigSummary[];
+  role: Role;
+}) {
   const router = useRouter();
+  const isAdmin = role === Role.ADMIN;
   const [open, setOpen] = React.useState(false);
   const [ceilings, setCeilings] = React.useState<Record<string, string>>(() =>
     Object.fromEntries(configs.map((c) => [c.series, c.ceilingNumber])),
   );
-  const [savingSeries, setSavingSeries] = React.useState<SerialSeries | null>(null);
+  const [savingSeries, setSavingSeries] = React.useState<SeriesCode | null>(null);
 
-  async function handleSave(series: SerialSeries) {
+  async function handleSave(series: SeriesCode) {
     setSavingSeries(series);
     const res = await updateSeriesConfig(series, {
       ceilingNumber: ceilings[series] ?? "",
@@ -47,14 +56,26 @@ export function SerialAdvancedConfig({ configs }: { configs: SeriesConfigSummary
           <ChevronRight className="size-4 shrink-0" strokeWidth={1.5} />
         )}
         Advanced settings
-        <span className="font-normal text-muted-foreground">(Ops Head — range ceilings)</span>
+        <span className="font-normal text-muted-foreground">
+          {isAdmin ? "(Admin — ceilings; full config on platform)" : "(Ops Head — range ceilings)"}
+        </span>
       </button>
       {open ? (
         <div className="space-y-4 border-t border-border-subtle px-4 pb-4 pt-3">
-          <p className="text-ds-xs text-muted-foreground">
-            Hard backstop for the maximum serial number per series. Ranges are long-tail by
-            design — these ceilings rarely need attention.
-          </p>
+          {isAdmin ? (
+            <p className="text-ds-xs text-muted-foreground">
+              Rename series labels, prefix patterns, thresholds, and ceilings on{" "}
+              <Link href="/admin/platform/series" className="font-medium text-foreground underline-offset-2 hover:underline">
+                Platform → Series config
+              </Link>
+              . Changes are audited.
+            </p>
+          ) : (
+            <p className="text-ds-xs text-muted-foreground">
+              Hard backstop for the maximum serial number per series. Ranges are long-tail by
+              design — these ceilings rarely need attention.
+            </p>
+          )}
           {configs.map((config) => (
             <div
               key={config.series}

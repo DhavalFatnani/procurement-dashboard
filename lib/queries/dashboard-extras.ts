@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import {
   goodsReceiptWhereFromScopeIds,
   invoiceWhereFromScopeIds,
+  prWarehouseWhereFromScopeIds,
   purchaseOrderWhereFromScopeIds,
   warehouseIdFilter,
 } from "@/lib/warehouse-scope";
@@ -38,11 +39,11 @@ const STAGE_ORDER: POStatus[] = [
 ];
 
 export async function getPOStageDistribution(
-  scopeWarehouseIds: string[],
+  scopeWarehouseIds?: string[],
 ): Promise<POStageDistribution[]> {
   return cachedQuery(
     "dashboard:po-stage-distribution",
-    [scopeWarehouseIds.slice().sort().join(",")],
+    [(scopeWarehouseIds === undefined ? "__global__" : scopeWarehouseIds.slice().sort().join(","))],
     async () => {
       const rows = await prisma.purchaseOrder.groupBy({
         by: ["status"],
@@ -73,21 +74,21 @@ export type RecentActivityItem = {
 };
 
 export async function getRecentActivity(
-  scopeWarehouseIds: string[],
   limit = 10,
+  scopeWarehouseIds?: string[],
 ): Promise<RecentActivityItem[]> {
-  return getRecentActivityForRole(scopeWarehouseIds, null, limit);
+  return getRecentActivityForRole(null, limit, scopeWarehouseIds);
 }
 
 export async function getRecentActivityForRole(
-  scopeWarehouseIds: string[],
   role: Role | null,
   limit = 10,
+  scopeWarehouseIds?: string[],
 ): Promise<RecentActivityItem[]> {
   return cachedQuery(
     "dashboard:recent-activity",
-    [scopeWarehouseIds.slice().sort().join(","), role ?? "all", String(limit)],
-    () => computeRecentActivity(scopeWarehouseIds, limit, role),
+    [(scopeWarehouseIds === undefined ? "__global__" : scopeWarehouseIds.slice().sort().join(",")), role ?? "all", String(limit)],
+    () => computeRecentActivity(limit, role, scopeWarehouseIds),
     { revalidate: 30, tags: ["dashboard-metrics"] },
   );
 }
@@ -96,14 +97,15 @@ const ACTIVITY_KINDS_BY_ROLE: Record<Role, RecentActivityItem["kind"][]> = {
   [Role.SM]: ["pr", "grn", "invoice", "po"],
   [Role.OPS_HEAD]: ["pr", "po", "grn", "invoice", "payment"],
   [Role.FINANCE]: ["invoice", "payment"],
+  [Role.ADMIN]: ["pr", "po", "grn", "invoice", "payment"],
 };
 
 async function computeRecentActivity(
-  scopeWarehouseIds: string[],
   limit: number,
   role: Role | null = null,
+  scopeWarehouseIds?: string[],
 ): Promise<RecentActivityItem[]> {
-  const prWhere = { warehouseId: warehouseIdFilter(scopeWarehouseIds) };
+  const prWhere = prWarehouseWhereFromScopeIds(scopeWarehouseIds);
   const poWhere = purchaseOrderWhereFromScopeIds(scopeWarehouseIds);
   const grnWhere = goodsReceiptWhereFromScopeIds(scopeWarehouseIds);
   const invoiceWhere = invoiceWhereFromScopeIds(scopeWarehouseIds);
@@ -301,22 +303,22 @@ export type DashboardWorkQueueItem = {
 };
 
 export async function getDashboardWorkQueue(
-  scopeWarehouseIds: string[],
   role: Role,
+  scopeWarehouseIds?: string[],
 ): Promise<DashboardWorkQueueItem[]> {
   return cachedQuery(
     "dashboard:work-queue",
-    [scopeWarehouseIds.slice().sort().join(","), role],
-    () => computeDashboardWorkQueue(scopeWarehouseIds, role),
+    [(scopeWarehouseIds === undefined ? "__global__" : scopeWarehouseIds.slice().sort().join(",")), role],
+    () => computeDashboardWorkQueue(role, scopeWarehouseIds),
     { revalidate: 30, tags: ["dashboard-metrics"] },
   );
 }
 
 async function computeDashboardWorkQueue(
-  scopeWarehouseIds: string[],
   role: Role,
+  scopeWarehouseIds?: string[],
 ): Promise<DashboardWorkQueueItem[]> {
-  const prWhere = { warehouseId: warehouseIdFilter(scopeWarehouseIds) };
+  const prWhere = prWarehouseWhereFromScopeIds(scopeWarehouseIds);
   const poWhere = purchaseOrderWhereFromScopeIds(scopeWarehouseIds);
 
   if (role === Role.FINANCE) {
@@ -347,7 +349,7 @@ async function computeDashboardWorkQueue(
     }));
   }
 
-  if (role === Role.OPS_HEAD) {
+  if (role === Role.OPS_HEAD || role === Role.ADMIN) {
     const [pendingPrs, vendorRequests, awaitingPoPrs, grnExceptions, mismatchPos] =
       await dbParallel(
         () =>
@@ -379,9 +381,9 @@ async function computeDashboardWorkQueue(
         () =>
           prisma.purchaseRequest.findMany({
             where: {
+              ...prWhere,
               status: "APPROVED",
               executionType: "VENDOR_PURCHASE",
-              warehouseId: warehouseIdFilter(scopeWarehouseIds),
               lines: { some: { items: { some: { poLineItem: null } } } },
             },
             orderBy: { updatedAt: "asc" },

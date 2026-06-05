@@ -1,8 +1,8 @@
 import { notFound } from "next/navigation";
 
 import { InvoiceSettlementPageView } from "@/components/payments/InvoiceSettlementPageView";
-import { Role } from "@/lib/prisma-enums";
 import { getInvoicePaymentDetail } from "@/lib/queries/payments";
+import { ACCESS } from "@/lib/route-access";
 import { assertRole, getRequestSession } from "@/lib/session";
 import { assertSessionInvoiceAccess } from "@/lib/warehouse-access";
 
@@ -13,7 +13,7 @@ export default async function InvoiceSettlementDetailPage({
 }: {
   params: Params;
 }) {
-  const user = assertRole(await getRequestSession(), [Role.FINANCE]);
+  const user = assertRole(await getRequestSession(), [...ACCESS.vendorAdvances]);
   const { invoiceId } = await params;
 
   const access = await assertSessionInvoiceAccess(user, invoiceId);

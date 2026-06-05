@@ -26,7 +26,7 @@ type QuickAction = {
 };
 
 const QUICK_ACTIONS_BY_ROLE: Record<Role, QuickAction[]> = {
-  [Role.SM]: [
+  SM: [
     {
       label: "Open inbox",
       href: "/inbox",
@@ -52,7 +52,7 @@ const QUICK_ACTIONS_BY_ROLE: Record<Role, QuickAction[]> = {
       description: "Match a vendor invoice to a received PO.",
     },
   ],
-  [Role.OPS_HEAD]: [
+  OPS_HEAD: [
     {
       label: "Review approvals",
       href: "/purchase-requests?status=PENDING_APPROVAL",
@@ -78,7 +78,7 @@ const QUICK_ACTIONS_BY_ROLE: Record<Role, QuickAction[]> = {
       description: "Raise a request on behalf of a warehouse.",
     },
   ],
-  [Role.FINANCE]: [
+  FINANCE: [
     {
       label: "Open inbox",
       href: "/inbox",
@@ -110,10 +110,36 @@ const QUICK_ACTIONS_BY_ROLE: Record<Role, QuickAction[]> = {
       description: "Payment ageing, vendor exposure, and settlement activity.",
     },
   ],
+  ADMIN: [
+    {
+      label: "Platform control",
+      href: "/admin/platform",
+      icon: BarChart3,
+      description: "Global admin hub — serial overrides and audit (expanding).",
+    },
+    {
+      label: "Review approvals",
+      href: "/purchase-requests?status=PENDING_APPROVAL",
+      icon: Inbox,
+      description: "Vendor PRs awaiting decision — all warehouses.",
+    },
+    {
+      label: "Settle invoices",
+      href: `${FINANCE_ROUTES.invoiceSettlement}?paymentStatus=UNPAID`,
+      icon: Receipt,
+      description: "Global payables settlement queue.",
+    },
+    {
+      label: "Serial range map",
+      href: "/serial-governance/range-map",
+      icon: ClipboardList,
+      description: "Inspect and govern serial allocation across series.",
+    },
+  ],
 };
 
 export function DashboardQuickActions({ role }: { role: Role }) {
-  const actions = QUICK_ACTIONS_BY_ROLE[role];
+  const actions = QUICK_ACTIONS_BY_ROLE[role] ?? [];
   if (actions.length === 0) return null;
 
   return (

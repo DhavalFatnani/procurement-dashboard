@@ -1,5 +1,5 @@
 /** Page setup and label layout for internal-print barcode sheets. */
-import { SerialSeries } from "@/lib/prisma-enums";
+import { SERIES_CODES, type SeriesCode } from "@/lib/series-codes";
 
 export type BarcodePageSize =
   | "a4"
@@ -392,8 +392,8 @@ export const BARCODE_LAYOUT_PRESETS: BarcodeLayoutPreset[] = [
   ...APPAREL_LAYOUT_PRESETS,
 ];
 
-export function getBarcodeLayoutPresetContext(series: SerialSeries): BarcodeLayoutPresetContext {
-  if (series === SerialSeries.APPAREL_BARCODES) {
+export function getBarcodeLayoutPresetContext(series: SeriesCode): BarcodeLayoutPresetContext {
+  if (series === SERIES_CODES.APPAREL_BARCODES) {
     return "apparel";
   }
   return "jewellery";

@@ -1,11 +1,16 @@
-import { PRStatus, SerialSeries, type SerialReservation } from "@/lib/prisma-client";
+import { PRStatus, SerialReservationPurpose, type SerialReservation } from "@/lib/prisma-client";
 
+import { findOverlappingActiveReservation } from "@/lib/serial-overlap";
+import { registryForSeriesCode } from "@/lib/series-registry";
 import {
+  activeReservationsForSeriesWhere,
   computeNextRangeStart,
+  formatSerialNumberForSeries,
   getSeriesNumericBounds,
   isValidReservationRange,
   resolveSeriesCeiling,
 } from "@/lib/serial-series";
+import { SERIES_CODES } from "@/lib/series-codes";
 import type { PrismaTx } from "@/lib/serialReservation";
 
 export const LOCK_TAGS_HOLD_IDEMPOTENCY = (prId: string) =>
@@ -26,27 +31,23 @@ async function computeNextLockTagsRange(
   tx: PrismaTx,
   quantity: number,
 ): Promise<{ rangeStart: bigint; rangeEnd: bigint }> {
-  const series = SerialSeries.LOCK_TAGS;
-  const { start: seriesStart } = getSeriesNumericBounds(series);
+  const series = SERIES_CODES.LOCK_TAGS;
+  const config = await tx.seriesConfig.findUnique({ where: { code: series } });
+  const registry = registryForSeriesCode(series, config);
 
   const latest = await tx.serialReservation.findFirst({
-    where: {
-      series,
-      rangeStart: { gte: seriesStart },
-      rangeEnd: { gte: seriesStart },
-    },
+    where: activeReservationsForSeriesWhere(series, registry),
     orderBy: { rangeEnd: "desc" },
   });
 
-  const rangeStart = computeNextRangeStart(series, latest?.rangeEnd ?? null);
+  const rangeStart = computeNextRangeStart(series, latest?.rangeEnd ?? null, registry);
   const rangeEnd = rangeStart + BigInt(quantity) - BigInt(1);
 
-  const config = await tx.seriesConfig.findUnique({ where: { series } });
-  const ceiling = resolveSeriesCeiling(series, config?.ceilingNumber);
+  const ceiling = resolveSeriesCeiling(series, config?.ceilingNumber, registry);
   if (rangeEnd > ceiling) {
     throw new Error("Range ceiling exceeded");
   }
-  if (!isValidReservationRange(series, rangeStart, rangeEnd)) {
+  if (!isValidReservationRange(series, rangeStart, rangeEnd, registry)) {
     throw new Error("Reservation range outside series bounds");
   }
 
@@ -82,14 +83,27 @@ export async function createVendorLockTagsApprovalHold(
 
   const { rangeStart, rangeEnd } = await computeNextLockTagsRange(tx, input.quantity);
 
+  const overlap = await findOverlappingActiveReservation(tx, {
+    series: SERIES_CODES.LOCK_TAGS,
+    rangeStart,
+    rangeEnd,
+    warehouseId: input.warehouseId,
+  });
+  if (overlap) {
+    throw new Error(
+      `Range overlaps reservation ${overlap.id} (${formatSerialNumberForSeries(SERIES_CODES.LOCK_TAGS, overlap.rangeStart)}–${formatSerialNumberForSeries(SERIES_CODES.LOCK_TAGS, overlap.rangeEnd)}).`,
+    );
+  }
+
   return tx.serialReservation.create({
     data: {
-      series: SerialSeries.LOCK_TAGS,
+      series: SERIES_CODES.LOCK_TAGS,
       rangeStart,
       rangeEnd,
       quantity: input.quantity,
       warehouseId: input.warehouseId,
       status: "PENDING",
+      purpose: SerialReservationPurpose.VENDOR_LOCK_TAGS,
       prId: input.prId,
       idempotencyKey,
       createdById: input.createdById,
@@ -113,7 +127,7 @@ export async function releaseVendorLockTagsPoReservation(
   poId: string,
 ): Promise<void> {
   await tx.serialReservation.deleteMany({
-    where: { poId, series: SerialSeries.LOCK_TAGS },
+    where: { poId, series: SERIES_CODES.LOCK_TAGS },
   });
 }
 
@@ -176,12 +190,13 @@ export async function commitVendorLockTagsHoldToPo(
 
   const poReservation = await tx.serialReservation.create({
     data: {
-      series: SerialSeries.LOCK_TAGS,
+      series: SERIES_CODES.LOCK_TAGS,
       rangeStart: hold.rangeStart,
       rangeEnd: poRangeEnd,
       quantity: input.quantity,
       warehouseId: input.warehouseId,
       status: "RESERVED",
+      purpose: SerialReservationPurpose.VENDOR_LOCK_TAGS,
       poId: input.poId,
       idempotencyKey: poCommitIdempotencyKey(input.poId),
       createdById: input.createdById,

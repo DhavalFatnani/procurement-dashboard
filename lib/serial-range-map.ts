@@ -1,10 +1,12 @@
-import type { SerialSeries } from "@/lib/prisma-enums";
+import type { SerialReservationPurpose, SerialReservationStatus } from "@/lib/prisma-enums";
+import type { SeriesCode } from "@/lib/series-codes";
 
 import type { SerialRangeMapSegment, SerialRangeMapStats } from "@/lib/serial-governance-types";
 import {
   formatSerialNumberForSeries,
   getDefaultSeriesCeiling,
   getSeriesStartNumber,
+  GLOBAL_SERIAL_BLOCK_SCOPE_LABEL,
   reservationPhaseFromReservation,
   resolveSeriesCeiling,
   type SerialRangePhase,
@@ -15,11 +17,12 @@ export type RawSerialReservationRow = {
   rangeStart: bigint;
   rangeEnd: bigint;
   quantity: number;
-  status: "PENDING" | "RESERVED";
+  status: SerialReservationStatus;
   prId: string | null;
   poId: string | null;
   warehouseId: string;
   warehouseName: string;
+  purpose: SerialReservationPurpose;
   createdByName: string;
   createdAt: string;
   poStatus: string | null;
@@ -54,6 +57,12 @@ const PHASE_META: Record<
       "Linked to a purchase order that has started receiving or is no longer open. Serials stay allocated until closure.",
     actionHint: "Track receipt and invoicing from the PO detail page.",
   },
+  admin_block: {
+    title: "Admin block",
+    description:
+      "Admin block on this band. Global blocks apply to every warehouse; warehouse-scoped blocks restrict only the listed site.",
+    actionHint: "Release from Platform control → Serial control or the range map admin panel.",
+  },
 };
 
 function phaseMeta(phase: Exclude<SerialRangePhase, "free">) {
@@ -75,7 +84,7 @@ function segmentHref(input: {
 }
 
 function computeViewBounds(
-  series: SerialSeries,
+  series: SeriesCode,
   ceiling: bigint,
   reservations: RawSerialReservationRow[],
   zoomToActive: boolean,
@@ -139,6 +148,8 @@ function buildStats(
       case "internal_print":
         internalPrint += segment.quantity;
         break;
+      case "admin_block":
+        break;
     }
   }
 
@@ -157,7 +168,7 @@ function buildStats(
 }
 
 export function buildSerialRangeMap(input: {
-  series: SerialSeries;
+  series: SeriesCode;
   displayName: string;
   ceiling?: bigint;
   reservations: RawSerialReservationRow[];
@@ -233,6 +244,7 @@ export function buildSerialRangeMap(input: {
       prId: row.prId,
       poStatus: row.poStatus,
       poHasGrn: row.poHasGrn,
+      purpose: row.purpose,
     });
     const meta = phaseMeta(phase);
     const leftPct = Number((segStart - viewStart) * BigInt(100_000) / totalSpan) / 1000;
@@ -247,7 +259,7 @@ export function buildSerialRangeMap(input: {
       leftPct,
       widthPct,
       warehouseId: row.warehouseId,
-      warehouseName: row.warehouseName,
+      warehouseName: row.warehouseName || GLOBAL_SERIAL_BLOCK_SCOPE_LABEL,
       linkedPrId: row.prId,
       linkedPoId: row.poId,
       poStatus: row.poStatus,

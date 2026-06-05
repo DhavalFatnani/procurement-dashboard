@@ -63,15 +63,17 @@ import { timed } from "@/lib/server-timing";
 import {
   SERIAL_RESERVE_TX_OPTS,
 } from "@/lib/serialReservation";
+import { releaseSerialReservationsForPR } from "@/lib/serial-admin";
 import {
   commitVendorLockTagsHoldToPo,
   createVendorLockTagsApprovalHold,
   releaseVendorLockTagsApprovalHold,
 } from "@/lib/vendor-lock-tags-serial";
 import { requireRoles } from "@/lib/server-action-guard";
+import { ALL_DASHBOARD_ROLES, FINANCE_OR_ADMIN_ROLES, OPS_FINANCE_OR_ADMIN_ROLES, OPS_OR_ADMIN_ROLES, SM_OPS_OR_ADMIN_ROLES } from "@/lib/admin-access";
 import {
   assertSessionPurchaseRequestAccess,
-  assertUserWarehouseAccess,
+  assertSessionWarehouseAccess,
 } from "@/lib/warehouse-access";
 import { assertSessionCanAccessWarehouse } from "@/lib/warehouse-scope";
 import { canRevisePurchaseRequest, canUpdatePurchaseRequestLines } from "@/lib/pr-access";
@@ -115,7 +117,7 @@ function parseExpectedDeliveryDate(isoDate: string): Date | null {
 }
 
 export async function createPR(data: PRFormData): Promise<{ ok: boolean; prId?: string; message?: string }> {
-  const user = await requireRoles([Role.SM, Role.OPS_HEAD]);
+  const user = await requireRoles([...SM_OPS_OR_ADMIN_ROLES]);
   const validated = await validatePRLines(data.lines);
   if (!validated.ok) {
     return { ok: false, message: validated.message };
@@ -135,7 +137,7 @@ export async function createPR(data: PRFormData): Promise<{ ok: boolean; prId?: 
     };
   }
 
-  const access = await assertUserWarehouseAccess(user.id, warehouseId);
+  const access = await assertSessionWarehouseAccess(user, warehouseId);
   if (!access.ok) {
     return { ok: false, message: access.message };
   }
@@ -176,7 +178,7 @@ export async function updatePR(
   prId: string,
   data: PRFormData,
 ): Promise<MutationResult> {
-  const user = await requireRoles([Role.SM, Role.OPS_HEAD]);
+  const user = await requireRoles([...SM_OPS_OR_ADMIN_ROLES]);
   const pr = await prisma.purchaseRequest.findUnique({
     where: { id: prId },
     include: { lines: { orderBy: { lineNumber: "asc" } } },
@@ -243,7 +245,7 @@ export async function submitPRForApproval(
   data: PRFormData,
   existingPrId?: string | null,
 ): Promise<SubmitPRForApprovalResult> {
-  const user = await requireRoles([Role.SM, Role.OPS_HEAD]);
+  const user = await requireRoles([...SM_OPS_OR_ADMIN_ROLES]);
   const validated = await validatePRLines(data.lines);
   if (!validated.ok) {
     return { ok: false, message: validated.message };
@@ -322,7 +324,7 @@ export async function submitPRForApproval(
     };
   }
 
-  const warehouseAccess = await assertUserWarehouseAccess(user.id, warehouseId);
+  const warehouseAccess = await assertSessionWarehouseAccess(user, warehouseId);
   if (!warehouseAccess.ok) {
     return { ok: false, message: warehouseAccess.message };
   }
@@ -367,7 +369,7 @@ export async function submitPRForApproval(
 }
 
 export async function submitPR(prId: string): Promise<MutationResult> {
-  const user = await requireRoles([Role.SM, Role.OPS_HEAD]);
+  const user = await requireRoles([...SM_OPS_OR_ADMIN_ROLES]);
   const pr = await prisma.purchaseRequest.findUnique({
     where: { id: prId },
     select: { status: true, warehouseId: true, createdById: true },
@@ -414,7 +416,7 @@ export async function submitPR(prId: string): Promise<MutationResult> {
 }
 
 export async function cancelPR(prId: string): Promise<MutationResult> {
-  const user = await requireRoles([Role.SM, Role.OPS_HEAD]);
+  const user = await requireRoles([...SM_OPS_OR_ADMIN_ROLES]);
   const pr = await prisma.purchaseRequest.findUnique({ where: { id: prId } });
   if (!pr) {
     return { ok: false, message: "PR not found." };
@@ -445,9 +447,11 @@ export async function cancelPR(prId: string): Promise<MutationResult> {
         diffSnapshot: { action: "CANCELLED" },
       },
     });
+    await releaseSerialReservationsForPR(tx, prId, user.id, "Purchase request cancelled");
   });
 
   revalidatePurchaseRequestMutation(prId);
+  revalidateSerialGovernance();
   return { ok: true };
 }
 
@@ -463,7 +467,7 @@ export async function forceClosePR(
   prId: string,
   reason: string,
 ): Promise<MutationResult> {
-  const user = await requireRoles([Role.OPS_HEAD]);
+  const user = await requireRoles([...OPS_OR_ADMIN_ROLES]);
   const trimmed = reason.trim();
   if (!trimmed) {
     return { ok: false, message: "Reason is required." };
@@ -497,9 +501,11 @@ export async function forceClosePR(
         diffSnapshot: { action: "FORCE_CLOSE", reason: trimmed },
       },
     });
+    await releaseSerialReservationsForPR(tx, prId, user.id, trimmed);
   });
 
   revalidatePurchaseRequestMutation(prId);
+  revalidateSerialGovernance();
   return { ok: true };
 }
 
@@ -507,7 +513,7 @@ export async function resubmitPR(
   prId: string,
   data: PRFormData,
 ): Promise<MutationResult> {
-  const user = await requireRoles([Role.SM, Role.OPS_HEAD]);
+  const user = await requireRoles([...SM_OPS_OR_ADMIN_ROLES]);
   const pr = await prisma.purchaseRequest.findUnique({
     where: { id: prId },
     include: { lines: { orderBy: { lineNumber: "asc" } } },
@@ -613,7 +619,7 @@ export async function resubmitPR(
 export async function createVendorRequest(
   data: { businessName: string; pocName: string; phone: string; email: string },
 ): Promise<{ ok: boolean; requestId?: string; message?: string }> {
-  const user = await requireRoles([Role.SM, Role.OPS_HEAD]);
+  const user = await requireRoles([...SM_OPS_OR_ADMIN_ROLES]);
 
   const request = await prisma.vendorRequest.create({
     data: {
@@ -634,7 +640,7 @@ export async function linkCatalogItemVendor(
   catalogItemId: string,
   vendorId: string,
 ): Promise<MutationResult> {
-  const user = await requireRoles([Role.OPS_HEAD]);
+  const user = await requireRoles([...OPS_OR_ADMIN_ROLES]);
   const vendor = await prisma.vendor.findUnique({
     where: { id: vendorId },
     select: { id: true, status: true },
@@ -658,7 +664,7 @@ export async function createPOFromPRGroup(
   prId: string,
   input: CreatePOFromPRGroupInput,
 ): Promise<{ ok: boolean; poId?: string; message?: string; fullyConverted?: boolean }> {
-  const user = await requireRoles([Role.OPS_HEAD]);
+  const user = await requireRoles([...OPS_OR_ADMIN_ROLES]);
 
   const pr = await prisma.purchaseRequest.findUnique({
     where: { id: prId },
@@ -1009,7 +1015,7 @@ export async function fetchPendingCatalogItemsForPR(
   | { ok: true; items: PendingCatalogItemRow[] }
   | { ok: false; message: string }
 > {
-  await requireRoles([Role.OPS_HEAD]);
+  await requireRoles([...OPS_OR_ADMIN_ROLES]);
   const items = await listPendingCatalogItemsForPR(prId);
   return {
     ok: true,
@@ -1031,7 +1037,7 @@ export async function exportPORateCsvForPR(
   | { ok: true; csv: string; filename: string }
   | { ok: false; message: string }
 > {
-  await requireRoles([Role.OPS_HEAD]);
+  await requireRoles([...OPS_OR_ADMIN_ROLES]);
 
   const pr = await prisma.purchaseRequest.findUnique({
     where: { id: prId },
@@ -1092,7 +1098,7 @@ export async function validatePORateCsvForPR(
   | { ok: true; itemPrices: CreatePOItemPriceInput[] }
   | { ok: false; message: string }
 > {
-  await requireRoles([Role.OPS_HEAD]);
+  await requireRoles([...OPS_OR_ADMIN_ROLES]);
 
   const pr = await prisma.purchaseRequest.findUnique({
     where: { id: prId },
@@ -1149,7 +1155,7 @@ export async function approvePR(
   catalogReview: ApprovePRInput,
 ): Promise<MutationResult> {
   return timed("action.approvePR", async () => {
-    const user = await requireRoles([Role.OPS_HEAD]);
+    const user = await requireRoles([...OPS_OR_ADMIN_ROLES]);
 
     const pr = await prisma.purchaseRequest.findUnique({
       where: { id: prId },
@@ -1263,7 +1269,7 @@ export async function rejectPR(
   prId: string,
   reason: string,
 ): Promise<MutationResult> {
-  const user = await requireRoles([Role.OPS_HEAD]);
+  const user = await requireRoles([...OPS_OR_ADMIN_ROLES]);
   const trimmed = reason.trim();
   if (!trimmed) {
     return { ok: false, message: "Rejection reason is required." };
@@ -1312,7 +1318,7 @@ export async function sendForRevision(
   prId: string,
   revisionComment: string,
 ): Promise<MutationResult> {
-  const user = await requireRoles([Role.OPS_HEAD]);
+  const user = await requireRoles([...OPS_OR_ADMIN_ROLES]);
   const comment = revisionComment.trim();
   if (!comment) {
     return { ok: false, message: "Revision comment is required." };
@@ -1364,7 +1370,7 @@ export async function revertPRApproval(
   prId: string,
   reason: string,
 ): Promise<MutationResult> {
-  const user = await requireRoles([Role.OPS_HEAD]);
+  const user = await requireRoles([...OPS_OR_ADMIN_ROLES]);
   const trimmed = reason.trim();
   if (!trimmed) {
     return { ok: false, message: "Reason is required." };

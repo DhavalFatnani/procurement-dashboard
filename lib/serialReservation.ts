@@ -2,16 +2,20 @@ import {
   ExecutionType,
   PRStatus,
   Prisma,
-  SerialSeries,
+  SerialReservationPurpose,
   type SerialReservation,
 } from "@/lib/prisma-client";
 
 import { logger } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
+import { findOverlappingActiveReservation } from "@/lib/serial-overlap";
+import type { SeriesCode } from "@/lib/series-codes";
+import { registryForSeriesCode } from "@/lib/series-registry";
 import {
+  activeReservationsForSeriesWhere,
   computeNextRangeStart,
+  formatSerialNumberForSeries,
   getSeriesNumericBounds,
-  getSeriesStartNumber,
   isValidReservationRange,
   resolveSeriesCeiling,
 } from "@/lib/serial-series";
@@ -30,7 +34,7 @@ export type InternalPrintPRPayload = {
 export type ReserveSerialPurpose = "internal_print" | "vendor_lock_tags";
 
 export type ReserveSerialInput = {
-  series: SerialSeries;
+  series: SeriesCode;
   quantity: number;
   warehouseId: string;
   createdById: string;
@@ -70,32 +74,28 @@ function assertVendorLockTagsPrStatus(status: PRStatus): void {
 
 async function computeReservationRange(
   tx: PrismaTx,
-  series: SerialSeries,
+  series: SeriesCode,
   quantity: number,
 ): Promise<{ rangeStart: bigint; rangeEnd: bigint }> {
-  const { start: seriesStart } = getSeriesNumericBounds(series);
+  const config = await tx.seriesConfig.findUnique({
+    where: { code: series },
+  });
+  const registry = registryForSeriesCode(series, config);
 
   const latest = await tx.serialReservation.findFirst({
-    where: {
-      series,
-      rangeStart: { gte: seriesStart },
-      rangeEnd: { gte: seriesStart },
-    },
+    where: activeReservationsForSeriesWhere(series, registry),
     orderBy: { rangeEnd: "desc" },
   });
 
-  const rangeStart = computeNextRangeStart(series, latest?.rangeEnd ?? null);
+  const rangeStart = computeNextRangeStart(series, latest?.rangeEnd ?? null, registry);
   const rangeEnd = rangeStart + BigInt(quantity) - BigInt(1);
 
-  const config = await tx.seriesConfig.findUnique({
-    where: { series },
-  });
-  const ceiling = resolveSeriesCeiling(series, config?.ceilingNumber);
+  const ceiling = resolveSeriesCeiling(series, config?.ceilingNumber, registry);
   if (rangeEnd > ceiling) {
     throw new Error("Range ceiling exceeded");
   }
 
-  if (!isValidReservationRange(series, rangeStart, rangeEnd)) {
+  if (!isValidReservationRange(series, rangeStart, rangeEnd, registry)) {
     throw new Error("Reservation range outside series bounds");
   }
 
@@ -130,6 +130,18 @@ export async function reserveSerialRangeInTransaction(
     input.series,
     input.quantity,
   );
+
+  const overlap = await findOverlappingActiveReservation(tx, {
+    series: input.series,
+    rangeStart,
+    rangeEnd,
+    warehouseId: input.warehouseId,
+  });
+  if (overlap) {
+    throw new Error(
+      `Range overlaps reservation ${overlap.id} (${formatSerialNumberForSeries(input.series, overlap.rangeStart)}–${formatSerialNumberForSeries(input.series, overlap.rangeEnd)}).`,
+    );
+  }
 
   if (input.internalPrintPR) {
     const existingPr = await tx.purchaseRequest.findUnique({
@@ -179,6 +191,10 @@ export async function reserveSerialRangeInTransaction(
       quantity: input.quantity,
       warehouseId: input.warehouseId,
       status: "RESERVED",
+      purpose:
+        purpose === "vendor_lock_tags"
+          ? SerialReservationPurpose.VENDOR_LOCK_TAGS
+          : SerialReservationPurpose.INTERNAL_PRINT,
       prId: purpose === "vendor_lock_tags" ? null : input.prId,
       poId: purpose === "vendor_lock_tags" ? input.poId : undefined,
       idempotencyKey: input.idempotencyKey,

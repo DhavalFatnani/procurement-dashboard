@@ -83,6 +83,16 @@ function poFulfillmentChildren(role: Role): NavItem[] {
           hint: "view only",
         },
       ];
+    case Role.ADMIN:
+      return [
+        { href: "/goods-receipt", label: "Goods Receipt", icon: "goodsReceipt" },
+        { href: "/invoices", label: "Invoices", icon: "invoices" },
+        {
+          href: FINANCE_ROUTES.invoiceSettlement,
+          label: "Payments",
+          icon: "payments",
+        },
+      ];
     case Role.FINANCE:
       return [];
   }
@@ -105,6 +115,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   [Role.SM]: "Store Manager",
   [Role.OPS_HEAD]: "Operations Head",
   [Role.FINANCE]: "Finance",
+  [Role.ADMIN]: "Admin",
 };
 
 const INBOX_ITEM: NavItem = {
@@ -114,7 +125,7 @@ const INBOX_ITEM: NavItem = {
 };
 
 function payablesItemsFor(role: Role): NavItem[] {
-  if (role !== Role.FINANCE) return [];
+  if (role !== Role.FINANCE && role !== Role.ADMIN) return [];
   return [
     INBOX_ITEM,
     {
@@ -141,6 +152,7 @@ function workItemsFor(role: Role): NavItem[] {
     case Role.SM:
       return [INBOX_ITEM, PURCHASE_REQUESTS_ITEM, poHub];
     case Role.OPS_HEAD:
+    case Role.ADMIN:
       return [INBOX_ITEM, PURCHASE_REQUESTS_ITEM, CONFIGURE_PO_ITEM, poHub];
     case Role.FINANCE:
       return [poHub];
@@ -155,6 +167,7 @@ function governanceItemsFor(role: Role): NavItem[] {
         { href: "/serial-governance", label: "Serial Governance", icon: "serialGovernance" },
       ];
     case Role.OPS_HEAD:
+    case Role.ADMIN:
       return [
         { href: "/vendors", label: "Vendors", icon: "vendors" },
         { href: "/serial-governance", label: "Serial Governance", icon: "serialGovernance" },
@@ -172,6 +185,7 @@ function insightItemsFor(role: Role): NavItem[] {
         { href: "/reports", label: "Reports", icon: "reports", hint: "limited" },
       ];
     case Role.OPS_HEAD:
+    case Role.ADMIN:
       return [
         { href: "/dashboard", label: "Dashboard", icon: "dashboard" },
         { href: "/reports", label: "Reports", icon: "reports" },
@@ -185,12 +199,22 @@ function insightItemsFor(role: Role): NavItem[] {
 }
 
 function adminItemsFor(role: Role): NavItem[] {
-  if (role !== Role.OPS_HEAD) return [];
-  return [
-    { href: "/admin/users", label: "Users", icon: "users" },
-    { href: "/admin/warehouses", label: "Warehouses", icon: "warehouses" },
-    { href: "/admin/catalog", label: "Item catalog", icon: "catalog" },
-  ];
+  if (role === Role.OPS_HEAD) {
+    return [
+      { href: "/admin/users", label: "Users", icon: "users" },
+      { href: "/admin/warehouses", label: "Warehouses", icon: "warehouses" },
+      { href: "/admin/catalog", label: "Item catalog", icon: "catalog" },
+    ];
+  }
+  if (role === Role.ADMIN) {
+    return [
+      { href: "/admin/platform", label: "Platform control", icon: "dashboard" },
+      { href: "/admin/users", label: "Users", icon: "users" },
+      { href: "/admin/warehouses", label: "Warehouses", icon: "warehouses" },
+      { href: "/admin/catalog", label: "Item catalog", icon: "catalog" },
+    ];
+  }
+  return [];
 }
 
 export function getNavGroupsForRole(role: Role): NavGroup[] {
@@ -228,5 +252,7 @@ export function defaultLandingFor(role: Role): string {
       return "/dashboard";
     case Role.FINANCE:
       return FINANCE_ROUTES.invoiceSettlement;
+    case Role.ADMIN:
+      return "/admin/platform";
   }
 }

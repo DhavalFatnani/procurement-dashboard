@@ -9,7 +9,7 @@ import { parseInvoicePageParams } from "@/lib/list-search-params";
 import { getInvoiceFilterOptions, getInvoices } from "@/lib/queries/invoices";
 import { ACCESS } from "@/lib/route-access";
 import { assertRole, getRequestSession, type SessionUser } from "@/lib/session";
-import { assignedWarehouseIds } from "@/lib/warehouse-scope";
+import { scopeWarehouseIdsForUser } from "@/lib/warehouse-scope";
 import { dbParallel } from "@/lib/db-parallel";
 import { timed } from "@/lib/server-timing";
 
@@ -44,7 +44,7 @@ async function InvoicesTableLoader({
   user: SessionUser;
   parsed: ReturnType<typeof parseInvoicePageParams>;
 }) {
-  const scopeWarehouseIds = assignedWarehouseIds(user);
+  const scopeWarehouseIds = scopeWarehouseIdsForUser(user);
   // Filter options and rows are independent — fetch concurrently so the loader
   // pays one DB round-trip batch instead of two sequential ones.
   const [filterOptions, rows] = await dbParallel(

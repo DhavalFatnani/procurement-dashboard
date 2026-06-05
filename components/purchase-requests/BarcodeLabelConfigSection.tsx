@@ -1,6 +1,6 @@
 "use client";
 
-import { SerialSeries } from "@/lib/prisma-enums";
+import type { SeriesCode } from "@/lib/series-codes";
 
 import { BarcodeLabelSetupPanel } from "@/components/purchase-requests/BarcodeLabelSetupPanel";
 import type { BarcodeLabelConfig } from "@/lib/barcode-label-config";
@@ -27,7 +27,7 @@ export function BarcodeLabelConfigSection({
   layoutLocked?: boolean;
   onLockLayout?: () => void;
   onUnlockLayout?: () => void;
-  series?: SerialSeries;
+  series?: SeriesCode;
   seriesName?: string;
   sampleSerial?: string;
   className?: string;

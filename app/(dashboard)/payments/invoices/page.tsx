@@ -7,7 +7,7 @@ import { parsePaymentPageParams } from "@/lib/list-search-params";
 import { getPaymentFilterOptions, getPayments } from "@/lib/queries/payments";
 import { ACCESS } from "@/lib/route-access";
 import { assertRole, getRequestSession, type SessionUser } from "@/lib/session";
-import { assignedWarehouseIds } from "@/lib/warehouse-scope";
+import { scopeWarehouseIdsForUser } from "@/lib/warehouse-scope";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
@@ -37,7 +37,7 @@ async function InvoiceSettlementTableLoader({
   user: SessionUser;
   parsed: ReturnType<typeof parsePaymentPageParams>;
 }) {
-  const scopeWarehouseIds = assignedWarehouseIds(user);
+  const scopeWarehouseIds = scopeWarehouseIdsForUser(user);
   const [filterOptions, rows] = await dbParallel(
     () => getPaymentFilterOptions(),
     () =>

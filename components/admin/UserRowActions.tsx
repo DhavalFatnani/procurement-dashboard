@@ -15,12 +15,14 @@ export type UserRowResolveOutcome = "deactivated" | "reactivated" | "deleted";
 export function UserRowActions({
   row,
   currentUserId,
+  canDelete = false,
   onEdit,
   onResetPassword,
   onResolved,
 }: {
   row: UserListRow;
   currentUserId: string;
+  canDelete?: boolean;
   onEdit: () => void;
   onResetPassword: (row: UserListRow) => void | Promise<void>;
   onResolved?: (id: string, outcome: UserRowResolveOutcome) => void;
@@ -94,18 +96,20 @@ export function UserRowActions({
           Reactivate
         </Button>
       )}
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        className="gap-1 px-2 text-destructive hover:text-destructive"
-        disabled={busy || isSelf}
-        title={isSelf ? "You cannot delete your own account." : undefined}
-        onClick={() => setDeleteOpen(true)}
-      >
-        <Trash2 className="size-3" strokeWidth={1.5} aria-hidden />
-        Delete
-      </Button>
+      {canDelete ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="gap-1 px-2 text-destructive hover:text-destructive"
+          disabled={busy || isSelf}
+          title={isSelf ? "You cannot delete your own account." : undefined}
+          onClick={() => setDeleteOpen(true)}
+        >
+          <Trash2 className="size-3" strokeWidth={1.5} aria-hidden />
+          Delete
+        </Button>
+      ) : null}
 
       <ConfirmDialog
         open={deactivateOpen}
@@ -142,24 +146,26 @@ export function UserRowActions({
           );
         }}
       />
-      <ConfirmDialog
-        open={deleteOpen}
-        onOpenChange={setDeleteOpen}
-        title={`Delete ${row.name}?`}
-        description="Permanently removes this account. Only allowed when the user has no procurement history; otherwise deactivate instead."
-        confirmLabel="Delete user"
-        confirmVariant="destructive"
-        onConfirm={() => {
-          void runAction(
-            () => deleteUser(row.id),
-            () => {
-              toast.success("User deleted.");
-              setDeleteOpen(false);
-              onResolved?.(row.id, "deleted");
-            },
-          );
-        }}
-      />
+      {canDelete ? (
+        <ConfirmDialog
+          open={deleteOpen}
+          onOpenChange={setDeleteOpen}
+          title={`Delete ${row.name}?`}
+          description="Permanently removes this account. Only allowed when the user has no procurement history; otherwise deactivate instead."
+          confirmLabel="Delete user"
+          confirmVariant="destructive"
+          onConfirm={() => {
+            void runAction(
+              () => deleteUser(row.id),
+              () => {
+                toast.success("User deleted.");
+                setDeleteOpen(false);
+                onResolved?.(row.id, "deleted");
+              },
+            );
+          }}
+        />
+      ) : null}
     </div>
   );
 }

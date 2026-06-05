@@ -38,7 +38,7 @@ export async function DashboardOverviewSection({
     );
   }
 
-  if (user.role === Role.OPS_HEAD) {
+  if (user.role === Role.OPS_HEAD || user.role === Role.ADMIN) {
     const metrics = await timed("dashboard.opsMetrics", () =>
       getOpsDashboardMetrics(user),
     );

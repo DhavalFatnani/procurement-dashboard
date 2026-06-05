@@ -16,6 +16,10 @@ const PENDING_LINKS: Partial<Record<Role, { href: string; label: string }>> = {
     href: "/purchase-requests?status=PENDING_APPROVAL",
     label: "Review pending approvals",
   },
+  [Role.ADMIN]: {
+    href: "/admin/platform",
+    label: "Open platform control",
+  },
   [Role.SM]: {
     href: "/inbox",
     label: "Open inbox",
@@ -76,7 +80,9 @@ export function DashboardWelcomeStrip({
       ? `${metrics.draftPurchaseRequests} draft · ${metrics.pendingApprovals} pending · ${metrics.posAwaitingReceipt} to receive`
       : role === Role.OPS_HEAD && isOpsMetrics(metrics)
         ? `${metrics.pendingApprovals} approvals · ${metrics.prsAwaitingPo} configure PO · ${metrics.openGrnExceptions + metrics.matchExceptions} exceptions`
-        : null;
+        : role === Role.ADMIN && isOpsMetrics(metrics)
+          ? `${metrics.pendingApprovals} approvals · ${metrics.prsAwaitingPo} configure PO · ${metrics.openGrnExceptions + metrics.matchExceptions} exceptions (all warehouses)`
+          : null;
 
   return (
     <SurfaceCard variant="accent" size="lg" className="surface-glow">

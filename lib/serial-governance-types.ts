@@ -1,4 +1,6 @@
-import type { SerialSeries } from "@/lib/prisma-enums";
+import type { SerialReservationStatus } from "@/lib/prisma-enums";
+
+import type { SeriesCode } from "@/lib/series-codes";
 
 import type {
   ReservationEventType,
@@ -8,12 +10,13 @@ import type {
 /** Unified ledger row for serial activity (print + receipt). */
 export type SerialActivityRow = {
   id: string;
-  series: SerialSeries;
+  series: SeriesCode;
+  seriesName: string;
   rangeStart: string;
   rangeEnd: string;
   quantity: number;
   type: ReservationEventType;
-  reservationStatus: "PENDING" | "RESERVED";
+  reservationStatus: SerialReservationStatus;
   warehouseId: string;
   warehouseName: string;
   linkedPrId: string | null;
@@ -46,7 +49,7 @@ export type SerialRangeMapSegment = {
   linkedPrId: string | null;
   linkedPoId: string | null;
   poStatus: string | null;
-  reservationStatus: "PENDING" | "RESERVED" | null;
+  reservationStatus: SerialReservationStatus | null;
   createdByName: string;
   createdAt: string;
   contextTitle: string;
@@ -56,7 +59,7 @@ export type SerialRangeMapSegment = {
 };
 
 export type SerialRangeMapData = {
-  series: SerialSeries;
+  series: SeriesCode;
   displayName: string;
   seriesStart: string;
   seriesCeiling: string;
@@ -75,7 +78,7 @@ export type WarehouseSeriesSnapshot = {
 };
 
 export type WarehouseSeriesRow = {
-  series: SerialSeries;
+  series: SeriesCode;
   displayName: string;
   reservationCount: number;
   lastRangeEnd: string | null;
@@ -85,14 +88,14 @@ export type WarehouseSeriesRow = {
 
 /** Ops advanced config — ceiling only in UI. */
 export type SeriesConfigSummary = {
-  series: SerialSeries;
+  series: SeriesCode;
   displayName: string;
   ceilingNumber: string;
 };
 
 /** Global series usage for the Summary tab — informational, not alarming. */
 export type SeriesUsageSummary = {
-  series: SerialSeries;
+  series: SeriesCode;
   displayName: string;
   prefix: string;
   seriesStart: string;
@@ -113,7 +116,7 @@ export type SeriesUsageSummary = {
 
 export type SerialSearchResult = {
   id: string;
-  series: SerialSeries;
+  series: SeriesCode;
   seriesName: string;
   rangeStart: string;
   rangeEnd: string;

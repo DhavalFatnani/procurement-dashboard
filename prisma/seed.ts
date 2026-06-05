@@ -2,7 +2,6 @@ import {
   PrismaClient,
   Role,
   ExecutionType,
-  SerialSeries,
   PRStatus,
   VendorStatus,
   CatalogItemStatus,
@@ -13,6 +12,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import * as dotenv from "dotenv";
 
 import { getSeriesStartNumber } from "../lib/serial-series";
+import { SERIES_CODES, type SeriesCode } from "../lib/series-codes";
 
 dotenv.config({ path: ".env.local" });
 
@@ -206,22 +206,22 @@ async function seedCategoriesAndSubcategories() {
 
   const lockTagRows: {
     name: string;
-    series: SerialSeries;
+    series: SeriesCode;
     executionType: ExecutionType;
   }[] = [
     {
       name: "Apparel Lock Tags",
-      series: SerialSeries.LOCK_TAGS,
+      series: SERIES_CODES.LOCK_TAGS,
       executionType: ExecutionType.VENDOR_PURCHASE,
     },
     {
       name: "Jewellery Barcodes",
-      series: SerialSeries.JEWELLERY_BARCODES,
+      series: SERIES_CODES.JEWELLERY_BARCODES,
       executionType: ExecutionType.INTERNAL_PRINT,
     },
     {
       name: "Accessories & Apparel Barcodes",
-      series: SerialSeries.APPAREL_BARCODES,
+      series: SERIES_CODES.APPAREL_BARCODES,
       executionType: ExecutionType.INTERNAL_PRINT,
     },
   ];
@@ -380,27 +380,65 @@ async function seedUsersAndSeriesConfig(warehouseIds: string[]) {
   }
 
   const configuredById = userIds[0]!;
-  const seriesRows: { series: SerialSeries; ceiling: bigint }[] = [
-    { series: SerialSeries.LOCK_TAGS, ceiling: BigInt(9_999_999) },
-    { series: SerialSeries.JEWELLERY_BARCODES, ceiling: BigInt(9_999_999_999) },
-    { series: SerialSeries.APPAREL_BARCODES, ceiling: BigInt(9_999_999_999) },
+  const seriesRows: {
+    code: SeriesCode;
+    displayName: string;
+    prefixPattern: string;
+    rangeStart: bigint;
+    ceiling: bigint;
+    sortOrder: number;
+  }[] = [
+    {
+      code: SERIES_CODES.LOCK_TAGS,
+      displayName: "Lock Tags",
+      prefixPattern: "000XXXXXXX",
+      rangeStart: BigInt(100_000),
+      ceiling: BigInt(9_999_999),
+      sortOrder: 0,
+    },
+    {
+      code: SERIES_CODES.JEWELLERY_BARCODES,
+      displayName: "Jewellery Barcodes",
+      prefixPattern: "1XXXXXXXXX",
+      rangeStart: BigInt(1_000_000_000),
+      ceiling: BigInt(9_999_999_999),
+      sortOrder: 1,
+    },
+    {
+      code: SERIES_CODES.APPAREL_BARCODES,
+      displayName: "Apparel Barcodes",
+      prefixPattern: "2XXXXXXXXX",
+      rangeStart: BigInt(2_000_000_000),
+      ceiling: BigInt(9_999_999_999),
+      sortOrder: 2,
+    },
   ];
 
   for (const row of seriesRows) {
     await prisma.seriesConfig.upsert({
-      where: { series: row.series },
+      where: { code: row.code },
       update: {
+        displayName: row.displayName,
+        prefixPattern: row.prefixPattern,
+        rangeStart: row.rangeStart,
         inactivityThresholdDays: 30,
         ceilingNumber: row.ceiling,
         ceilingAlertPct: 80,
+        sortOrder: row.sortOrder,
+        isActive: true,
         configuredById,
       },
       create: {
-        id: `seed-sc-${row.series}`,
-        series: row.series,
+        id: `seed-sc-${row.code}`,
+        code: row.code,
+        displayName: row.displayName,
+        prefixPattern: row.prefixPattern,
+        rangeStart: row.rangeStart,
         inactivityThresholdDays: 30,
         ceilingNumber: row.ceiling,
         ceilingAlertPct: 80,
+        sortOrder: row.sortOrder,
+        isActive: true,
         configuredById,
       },
     });

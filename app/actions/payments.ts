@@ -25,31 +25,32 @@ import type {
 } from "@/lib/queries/payments";
 import { revalidatePaymentMutation } from "@/lib/revalidate-tags";
 import { requireRoles } from "@/lib/server-action-guard";
+import { ALL_DASHBOARD_ROLES, FINANCE_OR_ADMIN_ROLES, OPS_FINANCE_OR_ADMIN_ROLES, OPS_OR_ADMIN_ROLES, SM_OPS_OR_ADMIN_ROLES } from "@/lib/admin-access";
 import { STORAGE_BUCKETS } from "@/lib/storage";
 import { uploadStorageObject } from "@/lib/upload-storage";
 import { prisma } from "@/lib/prisma";
 import { assertSessionInvoiceAccess } from "@/lib/warehouse-access";
-import { assignedWarehouseIds } from "@/lib/warehouse-scope";
+import { scopeWarehouseIdsForUser } from "@/lib/warehouse-scope";
 
 export async function getPayments(
   filters: PaymentFilters,
 ): Promise<Paginated<PaymentListRow>> {
-  const user = await requireRoles([Role.OPS_HEAD, Role.FINANCE]);
+  const user = await requireRoles([...OPS_FINANCE_OR_ADMIN_ROLES]);
   return getPaymentsQuery({
     ...filters,
-    scopeWarehouseIds: filters.scopeWarehouseIds ?? assignedWarehouseIds(user),
+    scopeWarehouseIds: filters.scopeWarehouseIds ?? scopeWarehouseIdsForUser(user),
   });
 }
 
 export async function getPaymentFilterOptions() {
-  await requireRoles([Role.OPS_HEAD, Role.FINANCE]);
+  await requireRoles([...OPS_FINANCE_OR_ADMIN_ROLES]);
   return getPaymentFilterOptionsQuery();
 }
 
 export async function getInvoicePaymentDetail(
   invoiceId: string,
 ): Promise<InvoicePaymentDetail | null> {
-  const user = await requireRoles([Role.FINANCE]);
+  const user = await requireRoles([...FINANCE_OR_ADMIN_ROLES]);
   const access = await assertSessionInvoiceAccess(user, invoiceId);
   if (!access.ok) {
     return null;
@@ -60,7 +61,7 @@ export async function getInvoicePaymentDetail(
 export async function recordPayment(
   formData: FormData,
 ): Promise<{ ok: boolean; message?: string }> {
-  const user = await requireRoles([Role.FINANCE]);
+  const user = await requireRoles([...FINANCE_OR_ADMIN_ROLES]);
 
   const invoiceId = String(formData.get("invoiceId") ?? "").trim();
   const amountRaw = String(formData.get("amount") ?? "").trim();

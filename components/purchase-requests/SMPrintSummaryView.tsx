@@ -1,6 +1,5 @@
 "use client";
 
-import { SerialSeries } from "@/lib/prisma-enums";
 import Link from "next/link";
 import * as React from "react";
 
@@ -14,7 +13,6 @@ import {
   loadBarcodeLabelConfigFromSession,
   type BarcodeLabelConfig,
 } from "@/lib/barcode-label-config";
-import { getSeriesDisplayName } from "@/lib/serial-series";
 import { cn } from "@/lib/utils";
 import { CheckCircle2, Loader2, Printer } from "lucide-react";
 
@@ -95,6 +93,7 @@ export function SMPrintSummaryView({
   reservation: {
     id: string;
     series: string;
+    seriesName: string;
     rangeStart: string;
     rangeEnd: string;
     quantity: number;
@@ -120,7 +119,7 @@ export function SMPrintSummaryView({
     setMountPrintSheet(true);
   }, [autoPrint]);
 
-  const seriesName = getSeriesDisplayName(reservation.series as SerialSeries);
+  const seriesName = reservation.seriesName;
   const batchLabel = formatSerialBatchLabel({
     seriesName,
     rangeStart: reservation.rangeStart,

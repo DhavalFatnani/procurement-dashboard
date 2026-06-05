@@ -1,4 +1,5 @@
-import { SerialSeries, type GRNExceptionType } from "@/lib/prisma-enums";
+import type { GRNExceptionType } from "@/lib/prisma-enums";
+import { SERIES_CODES } from "@/lib/series-codes";
 
 export type PRLineItemRow = {
   id: string;
@@ -225,4 +226,4 @@ export function hasLockTagsLines(
   return lines.some((line) => isLockTagsCategoryName(line.categoryName));
 }
 
-export const LOCK_TAGS_SERIES = SerialSeries.LOCK_TAGS;
+export const LOCK_TAGS_SERIES = SERIES_CODES.LOCK_TAGS;

@@ -14,6 +14,8 @@ import { prisma } from "@/lib/prisma";
 import type { SessionUser } from "@/lib/session";
 import {
   assignedWarehouseIds,
+  prWarehouseWhereFromScopeIds,
+  scopeWarehouseIdsForUser,
   invoiceWhereFromScopeIds,
   purchaseOrderWhereFromScopeIds,
   warehouseIdFilter,
@@ -37,7 +39,10 @@ type MetricsRow = {
   unpaid_invoices: number;
 };
 
-function warehouseFilterSql(warehouseIds: string[]) {
+function warehouseFilterSql(warehouseIds: string[] | undefined) {
+  if (warehouseIds === undefined) {
+    return Prisma.empty;
+  }
   if (warehouseIds.length === 0) {
     return Prisma.sql`AND false`;
   }
@@ -47,7 +52,10 @@ function warehouseFilterSql(warehouseIds: string[]) {
   return Prisma.sql`AND pr."warehouseId" IN (${Prisma.join(warehouseIds)})`;
 }
 
-function poWarehouseFilterSql(warehouseIds: string[]) {
+function poWarehouseFilterSql(warehouseIds: string[] | undefined) {
+  if (warehouseIds === undefined) {
+    return Prisma.empty;
+  }
   if (warehouseIds.length === 0) {
     return Prisma.sql`AND false`;
   }
@@ -59,9 +67,9 @@ function poWarehouseFilterSql(warehouseIds: string[]) {
 
 async function fetchDashboardMetrics(
   role: Role,
-  warehouseIds: string[],
+  warehouseIds: string[] | undefined,
 ): Promise<DashboardMetrics> {
-  const includeVendorPending = role === Role.OPS_HEAD;
+  const includeVendorPending = role === Role.OPS_HEAD || role === Role.ADMIN;
   const prWarehouseFilter = warehouseFilterSql(warehouseIds);
   const poWarehouseFilter = poWarehouseFilterSql(warehouseIds);
 
@@ -137,7 +145,15 @@ const getCachedDashboardMetrics = (
   warehouseKey: string,
 ) =>
   unstable_cache(
-    () => fetchDashboardMetrics(role, warehouseKey ? warehouseKey.split(",") : []),
+    () =>
+      fetchDashboardMetrics(
+        role,
+        warehouseKey === "__global__"
+          ? undefined
+          : warehouseKey
+            ? warehouseKey.split(",")
+            : [],
+      ),
     ["dashboard-metrics", role, userId, warehouseKey],
     { revalidate: 30, tags: ["dashboard-metrics"] },
   );
@@ -145,8 +161,10 @@ const getCachedDashboardMetrics = (
 export async function getDashboardMetricsForSession(
   user: SessionUser,
 ): Promise<DashboardMetrics> {
-  const warehouseIds = assignedWarehouseIds(user);
-  return getCachedDashboardMetrics(user.role, user.id, warehouseIds.join(","))();
+  const scoped = scopeWarehouseIdsForUser(user);
+  const warehouseKey =
+    scoped === undefined ? "__global__" : scoped.join(",");
+  return getCachedDashboardMetrics(user.role, user.id, warehouseKey)();
 }
 
 export type PaymentAgeingBucketSummary = {
@@ -228,7 +246,9 @@ function buildPaymentAgeingSummary(
   });
 }
 
-async function countAdvanceOverCommitment(scopeWarehouseIds: string[]): Promise<number> {
+async function countAdvanceOverCommitment(
+  scopeWarehouseIds: string[] | undefined,
+): Promise<number> {
   const poScope = purchaseOrderWhereFromScopeIds(scopeWarehouseIds);
   const posWithAdvance = await prisma.purchaseOrder.findMany({
     where: {
@@ -274,7 +294,7 @@ async function countAdvanceOverCommitment(scopeWarehouseIds: string[]): Promise<
 }
 
 async function fetchFinanceDashboardMetrics(
-  warehouseIds: string[],
+  warehouseIds: string[] | undefined,
 ): Promise<FinanceDashboardMetrics> {
   const invoiceScope = invoiceWhereFromScopeIds(warehouseIds);
   const poScope = purchaseOrderWhereFromScopeIds(warehouseIds);
@@ -359,7 +379,14 @@ async function fetchFinanceDashboardMetrics(
 
 const getCachedFinanceDashboardMetrics = (userId: string, warehouseKey: string) =>
   unstable_cache(
-    () => fetchFinanceDashboardMetrics(warehouseKey ? warehouseKey.split(",") : []),
+    () =>
+      fetchFinanceDashboardMetrics(
+        warehouseKey === "__global__"
+          ? undefined
+          : warehouseKey
+            ? warehouseKey.split(",")
+            : [],
+      ),
     ["finance-dashboard-metrics", userId, warehouseKey],
     { revalidate: 30, tags: ["dashboard-metrics", "finance-dashboard-metrics"] },
   );
@@ -367,8 +394,10 @@ const getCachedFinanceDashboardMetrics = (userId: string, warehouseKey: string) 
 export async function getFinanceDashboardMetrics(
   user: SessionUser,
 ): Promise<FinanceDashboardMetrics> {
-  const warehouseIds = assignedWarehouseIds(user);
-  return getCachedFinanceDashboardMetrics(user.id, warehouseIds.join(","))();
+  const scoped = scopeWarehouseIdsForUser(user);
+  const warehouseKey =
+    scoped === undefined ? "__global__" : scoped.join(",");
+  return getCachedFinanceDashboardMetrics(user.id, warehouseKey)();
 }
 
 export type OpsDashboardMetrics = {
@@ -381,19 +410,22 @@ export type OpsDashboardMetrics = {
 };
 
 async function fetchOpsDashboardMetrics(
-  warehouseIds: string[],
+  warehouseIds: string[] | undefined,
 ): Promise<OpsDashboardMetrics> {
   const invoiceScope = invoiceWhereFromScopeIds(warehouseIds);
   const prWarehouseFilter = warehouseFilterSql(warehouseIds);
   const poWarehouseFilter = poWarehouseFilterSql(warehouseIds);
 
-  const grnExceptionScope = {
-    grn: {
-      purchaseOrder: {
-        purchaseRequest: { warehouseId: warehouseIdFilter(warehouseIds) },
-      },
-    },
-  };
+  const grnExceptionScope =
+    warehouseIds === undefined
+      ? {}
+      : {
+          grn: {
+            purchaseOrder: {
+              purchaseRequest: { warehouseId: warehouseIdFilter(warehouseIds) },
+            },
+          },
+        };
 
   const [
     baseRow,
@@ -437,7 +469,7 @@ async function fetchOpsDashboardMetrics(
         where: {
           status: "APPROVED",
           executionType: "VENDOR_PURCHASE",
-          warehouseId: warehouseIdFilter(warehouseIds),
+          ...prWarehouseWhereFromScopeIds(warehouseIds),
           lines: {
             some: {
               items: { some: { poLineItem: null } },
@@ -474,7 +506,14 @@ async function fetchOpsDashboardMetrics(
 
 const getCachedOpsDashboardMetrics = (userId: string, warehouseKey: string) =>
   unstable_cache(
-    () => fetchOpsDashboardMetrics(warehouseKey ? warehouseKey.split(",") : []),
+    () =>
+      fetchOpsDashboardMetrics(
+        warehouseKey === "__global__"
+          ? undefined
+          : warehouseKey
+            ? warehouseKey.split(",")
+            : [],
+      ),
     ["ops-dashboard-metrics", userId, warehouseKey],
     { revalidate: 30, tags: ["dashboard-metrics", "ops-dashboard-metrics"] },
   );
@@ -482,6 +521,8 @@ const getCachedOpsDashboardMetrics = (userId: string, warehouseKey: string) =>
 export async function getOpsDashboardMetrics(
   user: SessionUser,
 ): Promise<OpsDashboardMetrics> {
-  const warehouseIds = assignedWarehouseIds(user);
-  return getCachedOpsDashboardMetrics(user.id, warehouseIds.join(","))();
+  const scoped = scopeWarehouseIdsForUser(user);
+  const warehouseKey =
+    scoped === undefined ? "__global__" : scoped.join(",");
+  return getCachedOpsDashboardMetrics(user.id, warehouseKey)();
 }

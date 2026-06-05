@@ -1,6 +1,5 @@
 "use client";
 
-import { SerialSeries } from "@/lib/prisma-enums";
 import * as React from "react";
 
 import { DateRangeFilter } from "@/components/shared/DateRangeFilter";
@@ -11,7 +10,7 @@ import { compactChipSpecs, type FilterChipSpec } from "@/lib/filter-chips";
 import { formatDateTimeMedium } from "@/lib/format-datetime";
 import type { WarehouseOption } from "@/lib/format-warehouse";
 import { useListTransition } from "@/lib/list-transition-context";
-import { getSeriesDisplayName } from "@/lib/serial-series";
+import type { SeriesCode } from "@/lib/series-codes";
 
 export type SerialGovernanceFiltersValue = {
   series: string;
@@ -28,7 +27,10 @@ export function SerialGovernanceFilters({
   filterOptions,
 }: {
   filters: SerialGovernanceFiltersValue;
-  filterOptions: { warehouses: WarehouseOption[] };
+  filterOptions: {
+    warehouses: WarehouseOption[];
+    series?: { code: SeriesCode; displayName: string }[];
+  };
 }) {
   const { isPending, navigate } = useListTransition();
 
@@ -68,11 +70,18 @@ export function SerialGovernanceFilters({
     ? filterOptions.warehouses.find((w) => w.id === filters.warehouseId)
     : null;
 
+  const seriesOptions = filterOptions.series ?? [];
+
+  const selectedSeriesName = filters.series
+    ? seriesOptions.find((option) => option.code === filters.series)?.displayName ??
+      filters.series
+    : null;
+
   const chipSpecs: FilterChipSpec[] = compactChipSpecs([
-    filters.series && {
+    selectedSeriesName && {
       key: "series",
       tone: "info",
-      label: `Series: ${getSeriesDisplayName(filters.series as SerialSeries)}`,
+      label: `Series: ${selectedSeriesName}`,
       onClear: () => clearFilter("series"),
     },
     filters.type && {
@@ -116,9 +125,9 @@ export function SerialGovernanceFilters({
         placeholder="All series"
         ariaLabel="Series"
         triggerClassName="w-[160px]"
-        options={Object.values(SerialSeries).map((s) => ({
-          value: s,
-          label: getSeriesDisplayName(s),
+        options={seriesOptions.map(({ code, displayName }) => ({
+          value: code,
+          label: displayName,
         }))}
       />
       <FilterSelect

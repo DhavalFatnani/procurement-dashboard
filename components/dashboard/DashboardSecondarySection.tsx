@@ -23,7 +23,7 @@ export async function DashboardSecondarySection({
   scopeWarehouseIds,
 }: {
   user: SessionUser;
-  scopeWarehouseIds: string[];
+  scopeWarehouseIds: string[] | undefined;
 }) {
   if (user.role === Role.FINANCE) {
     const [financeMetrics, queue, activity] = await dbParallel(
@@ -31,11 +31,11 @@ export async function DashboardSecondarySection({
         timed("dashboard.financeAgeing", () => getFinanceDashboardMetrics(user)),
       () =>
         timed("dashboard.financeQueue", () =>
-          getDashboardWorkQueue(scopeWarehouseIds, Role.FINANCE),
+          getDashboardWorkQueue(Role.FINANCE, scopeWarehouseIds),
         ),
       () =>
         timed("dashboard.financeActivity", () =>
-          getRecentActivityForRole(scopeWarehouseIds, Role.FINANCE, 8),
+          getRecentActivityForRole(Role.FINANCE, 8, scopeWarehouseIds),
         ),
     );
 
@@ -61,7 +61,7 @@ export async function DashboardSecondarySection({
     );
   }
 
-  if (user.role === Role.OPS_HEAD) {
+  if (user.role === Role.OPS_HEAD || user.role === Role.ADMIN) {
     const [stages, queue, activity] = await dbParallel(
       () =>
         timed("dashboard.poStages", () =>
@@ -69,11 +69,11 @@ export async function DashboardSecondarySection({
         ),
       () =>
         timed("dashboard.opsQueue", () =>
-          getDashboardWorkQueue(scopeWarehouseIds, Role.OPS_HEAD),
+          getDashboardWorkQueue(user.role, scopeWarehouseIds),
         ),
       () =>
         timed("dashboard.opsActivity", () =>
-          getRecentActivityForRole(scopeWarehouseIds, Role.OPS_HEAD, 8),
+          getRecentActivityForRole(user.role, 8, scopeWarehouseIds),
         ),
     );
 
@@ -108,14 +108,14 @@ export async function DashboardSecondarySection({
     () =>
       timed("dashboard.poStages", () => getPOStageDistribution(scopeWarehouseIds)),
     () =>
-      timed("dashboard.smQueue", () => getDashboardWorkQueue(scopeWarehouseIds, Role.SM)),
+      timed("dashboard.smQueue", () => getDashboardWorkQueue(Role.SM, scopeWarehouseIds)),
     () =>
       timed("dashboard.smSparkline", () =>
         getPrCreationSparkline({ warehouseIds }),
       ),
     () =>
       timed("dashboard.smActivity", () =>
-        getRecentActivityForRole(scopeWarehouseIds, Role.SM, 8),
+        getRecentActivityForRole(Role.SM, 8, scopeWarehouseIds),
       ),
   );
 

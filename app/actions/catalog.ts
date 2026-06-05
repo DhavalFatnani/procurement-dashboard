@@ -11,6 +11,7 @@ import {
   revalidatePurchaseRequestsCache,
 } from "@/lib/revalidate-tags";
 import { requireRoles } from "@/lib/server-action-guard";
+import { ALL_DASHBOARD_ROLES, FINANCE_OR_ADMIN_ROLES, OPS_FINANCE_OR_ADMIN_ROLES, OPS_OR_ADMIN_ROLES, SM_OPS_OR_ADMIN_ROLES } from "@/lib/admin-access";
 
 const EDITABLE_PR_STATUSES: PRStatus[] = [
   PRStatus.DRAFT,
@@ -24,7 +25,7 @@ export async function createCatalogItem(data: {
   sku?: string | null;
   unit: string;
 }): Promise<MutationResult & { id?: string }> {
-  const user = await requireRoles([Role.OPS_HEAD]);
+  const user = await requireRoles([...OPS_OR_ADMIN_ROLES]);
 
   const sub = await prisma.subcategory.findUnique({
     where: { id: data.subcategoryId },
@@ -82,7 +83,7 @@ export async function updatePendingCatalogItem(
   id: string,
   data: { name: string; sku?: string | null; unit: string },
 ): Promise<MutationResult> {
-  await requireRoles([Role.OPS_HEAD]);
+  await requireRoles([...OPS_OR_ADMIN_ROLES]);
 
   const item = await prisma.catalogItem.findUnique({ where: { id } });
   if (!item) {
@@ -123,7 +124,7 @@ export async function updateCatalogItemDetails(
   id: string,
   data: { sku?: string | null; unit: string },
 ): Promise<MutationResult> {
-  await requireRoles([Role.OPS_HEAD]);
+  await requireRoles([...OPS_OR_ADMIN_ROLES]);
 
   const item = await prisma.catalogItem.findUnique({ where: { id } });
   if (!item) {
@@ -152,7 +153,7 @@ export async function updateCatalogItemDetails(
 }
 
 export async function approveCatalogItem(id: string): Promise<MutationResult> {
-  const user = await requireRoles([Role.OPS_HEAD]);
+  const user = await requireRoles([...OPS_OR_ADMIN_ROLES]);
 
   const item = await prisma.catalogItem.findUnique({ where: { id } });
   if (!item) {
@@ -181,7 +182,7 @@ export async function rejectCatalogItem(
   id: string,
   reason: string,
 ): Promise<MutationResult> {
-  const user = await requireRoles([Role.OPS_HEAD]);
+  const user = await requireRoles([...OPS_OR_ADMIN_ROLES]);
   const trimmed = reason.trim();
   if (!trimmed) {
     return { ok: false, message: "Rejection reason is required." };
@@ -221,7 +222,7 @@ export async function rejectCatalogItem(
 }
 
 export async function deactivateCatalogItem(id: string): Promise<MutationResult> {
-  await requireRoles([Role.OPS_HEAD]);
+  await requireRoles([...OPS_OR_ADMIN_ROLES]);
 
   const item = await prisma.catalogItem.findUnique({ where: { id } });
   if (!item) {
@@ -241,7 +242,7 @@ export async function deactivateCatalogItem(id: string): Promise<MutationResult>
 }
 
 export async function reactivateCatalogItem(id: string): Promise<MutationResult> {
-  await requireRoles([Role.OPS_HEAD]);
+  await requireRoles([...OPS_OR_ADMIN_ROLES]);
 
   const item = await prisma.catalogItem.findUnique({ where: { id } });
   if (!item) {

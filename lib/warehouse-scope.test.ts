@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { SessionUser } from "@/lib/session";
 import {
   assignedWarehouseIds,
+  scopeWarehouseIdsForUser,
   goodsReceiptViaPoWarehouseWhere,
   invoiceViaPoWarehouseWhere,
   purchaseOrderViaPrWarehouseWhere,
@@ -48,6 +49,15 @@ describe("assignedWarehouseIds", () => {
       warehouseIds: ["w1", "w2"],
     });
     expect(assignedWarehouseIds(user)).toEqual(["w1", "w2"]);
+  });
+
+  it("returns empty assigned list but global scope for Admin", () => {
+    const user = session({
+      role: Role.ADMIN,
+      warehouseIds: ["w1", "w2", "w3"],
+    });
+    expect(assignedWarehouseIds(user)).toEqual([]);
+    expect(scopeWarehouseIdsForUser(user)).toBeUndefined();
   });
 });
 

@@ -14,8 +14,8 @@ describe("defaultLandingFor", () => {
     expect(defaultLandingFor(Role.OPS_HEAD)).toBe("/dashboard");
   });
 
-  it("sends Finance to invoice settlement", () => {
-    expect(defaultLandingFor(Role.FINANCE)).toBe(FINANCE_ROUTES.invoiceSettlement);
+  it("sends Admin to platform control", () => {
+    expect(defaultLandingFor(Role.ADMIN)).toBe("/admin/platform");
   });
 });
 

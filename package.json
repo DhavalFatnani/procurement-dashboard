@@ -21,7 +21,8 @@
     "db:generate": "prisma generate",
     "storage:setup": "dotenv -e .env.local -- tsx scripts/ensure-storage-buckets.ts",
     "postinstall": "prisma generate",
-    "prepare": "husky"
+    "prepare": "husky",
+    "db:studio": "dotenv -e .env.local -- prisma studio"
   },
   "lint-staged": {
     "*.{ts,tsx}": "eslint --fix"

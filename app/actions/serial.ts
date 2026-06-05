@@ -1,10 +1,11 @@
 "use server";
 
-import { ExecutionType, PRStatus, Role, SerialSeries } from "@/lib/prisma-enums";
+import { ExecutionType, PRStatus, Role } from "@/lib/prisma-enums";
 import { revalidatePath, revalidateTag } from "next/cache";
 import { after } from "next/server";
 
 import type { MutationResult } from "@/lib/action-result";
+import { getCachedSeriesRegistry } from "@/lib/cache";
 import { formatWarehouseLabel } from "@/lib/format-warehouse";
 import { revalidateInternalPrintMutation, revalidateSerialGovernance } from "@/lib/revalidate-tags";
 
@@ -20,26 +21,35 @@ import {
 } from "@/lib/queries/serial";
 import { LIST_CACHE_TAGS } from "@/lib/list-cache";
 import { assertPRStatusTransition } from "@/lib/prStatus";
+import { resolveSeriesDisplayName } from "@/lib/series-config-resolve";
 import {
   computeNextRangeStart,
   formatSerialNumberForSeries,
-  getSeriesDisplayName,
+  getSeriesPrefix,
+  getSeriesStartNumber,
   resolveSeriesCeiling,
   validateInternalPrintQuantity,
   validReservationsForSeriesWhere,
 } from "@/lib/serial-series";
+import { SERIES_CODES, type SeriesCode } from "@/lib/series-codes";
 import {
   atomicReserveSerialRange,
   type InternalPrintPRPayload,
 } from "@/lib/serialReservation";
 import { requireRoles } from "@/lib/server-action-guard";
+import { ALL_DASHBOARD_ROLES, FINANCE_OR_ADMIN_ROLES, OPS_FINANCE_OR_ADMIN_ROLES, OPS_OR_ADMIN_ROLES, SM_OPS_OR_ADMIN_ROLES } from "@/lib/admin-access";
 import { assertUserWarehouseAccess } from "@/lib/warehouse-access";
 import { lockTagsQtyFromSelectedItems } from "@/lib/purchase-lines";
 
 const WAREHOUSE_SCOPE_ERROR = "You cannot reserve serials for this warehouse.";
 
+async function seriesDisplayName(code: SeriesCode): Promise<string> {
+  const registry = await getCachedSeriesRegistry();
+  return resolveSeriesDisplayName(code, registry);
+}
+
 export type LockTagsSerialPreview = {
-  series: SerialSeries;
+  series: SeriesCode;
   seriesName: string;
   quantity: number;
   rangeStart: string;
@@ -55,7 +65,7 @@ async function buildLockTagsRangePreview(quantity: number): Promise<LockTagsSeri
     return null;
   }
 
-  const series = SerialSeries.LOCK_TAGS;
+  const series = SERIES_CODES.LOCK_TAGS;
   const latest = await prisma.serialReservation.findFirst({
     where: validReservationsForSeriesWhere(series),
     orderBy: { rangeEnd: "desc" },
@@ -67,7 +77,7 @@ async function buildLockTagsRangePreview(quantity: number): Promise<LockTagsSeri
 
   return {
     series,
-    seriesName: getSeriesDisplayName(series),
+    seriesName: await seriesDisplayName(series),
     quantity,
     rangeStart: formatSerialNumberForSeries(series, nextStart),
     rangeEnd: formatSerialNumberForSeries(series, rangeEnd),
@@ -82,7 +92,7 @@ async function buildLockTagsRangePreview(quantity: number): Promise<LockTagsSeri
 export async function getLockTagsSerialPreviewForQuantity(
   quantity: number,
 ): Promise<LockTagsSerialPreview | null> {
-  await requireRoles([Role.SM, Role.OPS_HEAD]);
+  await requireRoles([...SM_OPS_OR_ADMIN_ROLES]);
   return buildLockTagsRangePreview(quantity);
 }
 
@@ -90,7 +100,7 @@ export async function getLockTagsSerialPreviewForQuantity(
 export async function getLockTagsSerialPreviewForPR(
   prId: string,
 ): Promise<LockTagsSerialPreview | null> {
-  await requireRoles([Role.SM, Role.OPS_HEAD]);
+  await requireRoles([...SM_OPS_OR_ADMIN_ROLES]);
 
   const pr = await prisma.purchaseRequest.findUnique({
     where: { id: prId },
@@ -125,16 +135,16 @@ export async function getLockTagsSerialPreviewForPR(
   }
 
   const hold = await prisma.serialReservation.findFirst({
-    where: { prId, status: "PENDING", poId: null, series: SerialSeries.LOCK_TAGS },
+    where: { prId, status: "PENDING", poId: null, series: SERIES_CODES.LOCK_TAGS },
   });
 
   if (hold) {
     return {
-      series: SerialSeries.LOCK_TAGS,
-      seriesName: getSeriesDisplayName(SerialSeries.LOCK_TAGS),
+      series: SERIES_CODES.LOCK_TAGS,
+      seriesName: await seriesDisplayName(SERIES_CODES.LOCK_TAGS),
       quantity: hold.quantity,
-      rangeStart: formatSerialNumberForSeries(SerialSeries.LOCK_TAGS, hold.rangeStart),
-      rangeEnd: formatSerialNumberForSeries(SerialSeries.LOCK_TAGS, hold.rangeEnd),
+      rangeStart: formatSerialNumberForSeries(SERIES_CODES.LOCK_TAGS, hold.rangeStart),
+      rangeEnd: formatSerialNumberForSeries(SERIES_CODES.LOCK_TAGS, hold.rangeEnd),
       lastRangeEnd: null,
       previewOnly: true,
       isHeld: true,
@@ -149,7 +159,7 @@ export async function getLockTagsSerialPreviewForPRItems(
   prId: string,
   prLineItemIds: string[],
 ): Promise<LockTagsSerialPreview | null> {
-  await requireRoles([Role.OPS_HEAD]);
+  await requireRoles([...OPS_OR_ADMIN_ROLES]);
 
   const pr = await prisma.purchaseRequest.findUnique({
     where: { id: prId },
@@ -182,7 +192,7 @@ export async function getLockTagsSerialPreviewForPRItems(
   }
 
   const hold = await prisma.serialReservation.findFirst({
-    where: { prId, status: "PENDING", poId: null, series: SerialSeries.LOCK_TAGS },
+    where: { prId, status: "PENDING", poId: null, series: SERIES_CODES.LOCK_TAGS },
   });
 
   if (hold) {
@@ -191,11 +201,11 @@ export async function getLockTagsSerialPreviewForPRItems(
     }
     const rangeEnd = hold.rangeStart + BigInt(quantity) - BigInt(1);
     return {
-      series: SerialSeries.LOCK_TAGS,
-      seriesName: getSeriesDisplayName(SerialSeries.LOCK_TAGS),
+      series: SERIES_CODES.LOCK_TAGS,
+      seriesName: await seriesDisplayName(SERIES_CODES.LOCK_TAGS),
       quantity,
-      rangeStart: formatSerialNumberForSeries(SerialSeries.LOCK_TAGS, hold.rangeStart),
-      rangeEnd: formatSerialNumberForSeries(SerialSeries.LOCK_TAGS, rangeEnd),
+      rangeStart: formatSerialNumberForSeries(SERIES_CODES.LOCK_TAGS, hold.rangeStart),
+      rangeEnd: formatSerialNumberForSeries(SERIES_CODES.LOCK_TAGS, rangeEnd),
       lastRangeEnd: null,
       previewOnly: true,
       isHeld: true,
@@ -206,7 +216,7 @@ export async function getLockTagsSerialPreviewForPRItems(
 }
 
 export async function getSerialSeriesHint(subcategoryId: string) {
-  await requireRoles([Role.SM, Role.OPS_HEAD]);
+  await requireRoles([...SM_OPS_OR_ADMIN_ROLES]);
   const sub = await prisma.subcategory.findUnique({
     where: { id: subcategoryId },
     include: { category: { select: { name: true } } },
@@ -226,7 +236,7 @@ export async function getSerialSeriesHint(subcategoryId: string) {
   return {
     categoryName: sub.category.name,
     series: sub.series,
-    seriesName: getSeriesDisplayName(sub.series),
+    seriesName: await seriesDisplayName(sub.series),
     executionType: sub.executionType,
     lastRangeEnd: lastEnd != null ? formatSerialNumberForSeries(sub.series, lastEnd) : null,
     nextStart: formatSerialNumberForSeries(sub.series, nextStart),
@@ -253,7 +263,7 @@ export async function reserveSerialRangeForPR(input: {
   warehouseId: string;
   idempotencyKey: string;
 }): Promise<{ ok: boolean; prId?: string; reservationId?: string; error?: string }> {
-  const user = await requireRoles([Role.SM, Role.OPS_HEAD]);
+  const user = await requireRoles([...SM_OPS_OR_ADMIN_ROLES]);
 
   const access = await assertUserWarehouseAccess(user.id, input.warehouseId);
   if (!access.ok) {
@@ -356,7 +366,7 @@ export async function reserveSerialRangeForPR(input: {
 }
 
 export async function getSerialReservationByPRId(prId: string) {
-  await requireRoles([Role.SM, Role.OPS_HEAD]);
+  await requireRoles([...SM_OPS_OR_ADMIN_ROLES]);
   const reservation = await prisma.serialReservation.findFirst({
     where: { prId },
     include: {
@@ -370,13 +380,16 @@ export async function getSerialReservationByPRId(prId: string) {
   return {
     id: reservation.id,
     series: reservation.series,
+    seriesName: await seriesDisplayName(reservation.series),
     rangeStart: reservation.rangeStart.toString(),
     rangeEnd: reservation.rangeEnd.toString(),
     quantity: reservation.quantity,
-    warehouseName: formatWarehouseLabel(
-      reservation.warehouse.name,
-      reservation.warehouse.location,
-    ),
+    warehouseName: reservation.warehouse
+      ? formatWarehouseLabel(
+          reservation.warehouse.name,
+          reservation.warehouse.location,
+        )
+      : "All warehouses",
     createdByName: reservation.createdBy.name,
     createdAt: reservation.createdAt.toISOString(),
     prId: reservation.prId,
@@ -384,7 +397,7 @@ export async function getSerialReservationByPRId(prId: string) {
 }
 
 export async function generateSerialCSV(reservationId: string): Promise<string | null> {
-  await requireRoles([Role.OPS_HEAD]);
+  await requireRoles([...OPS_OR_ADMIN_ROLES]);
   const r = await prisma.serialReservation.findUnique({ where: { id: reservationId } });
   if (!r) {
     return null;
@@ -393,9 +406,9 @@ export async function generateSerialCSV(reservationId: string): Promise<string |
 }
 
 export async function generateVendorLockTagSerialCSV(poId: string): Promise<string | null> {
-  await requireRoles([Role.OPS_HEAD]);
+  await requireRoles([...OPS_OR_ADMIN_ROLES]);
   const r = await prisma.serialReservation.findUnique({ where: { poId } });
-  if (!r || r.series !== SerialSeries.LOCK_TAGS) {
+  if (!r || r.series !== SERIES_CODES.LOCK_TAGS) {
     return null;
   }
   return serialRangeToCsv(r.rangeStart, r.rangeEnd);
@@ -410,7 +423,7 @@ function serialRangeToCsv(rangeStart: bigint, rangeEnd: bigint): string {
 }
 
 export async function generateSerialLabelTxt(reservationId: string): Promise<string | null> {
-  await requireRoles([Role.OPS_HEAD]);
+  await requireRoles([...OPS_OR_ADMIN_ROLES]);
   const r = await prisma.serialReservation.findUnique({ where: { id: reservationId } });
   if (!r) {
     return null;
@@ -423,37 +436,37 @@ export async function generateSerialLabelTxt(reservationId: string): Promise<str
 }
 
 export async function getSerialActivity(filters: SerialActivityFilters) {
-  await requireRoles([Role.SM, Role.OPS_HEAD]);
+  await requireRoles([...SM_OPS_OR_ADMIN_ROLES]);
   return getSerialActivityQuery(filters);
 }
 
 export async function getWarehouseSeriesSnapshot(ensureWarehouseIds?: string[]) {
-  await requireRoles([Role.SM, Role.OPS_HEAD]);
+  await requireRoles([...SM_OPS_OR_ADMIN_ROLES]);
   return getWarehouseSeriesSnapshotQuery({ ensureWarehouseIds });
 }
 
 export async function getSeriesConfigsForAdvanced() {
-  await requireRoles([Role.OPS_HEAD]);
+  await requireRoles([...OPS_OR_ADMIN_ROLES]);
   return getSeriesConfigsForAdvancedQuery();
 }
 
 export async function searchSerialNumber(serialNumber: string) {
-  await requireRoles([Role.SM, Role.OPS_HEAD]);
+  await requireRoles([...SM_OPS_OR_ADMIN_ROLES]);
   return searchSerialNumberQuery(serialNumber);
 }
 
 export async function getSerialGovernanceFilterOptions() {
-  await requireRoles([Role.SM, Role.OPS_HEAD]);
+  await requireRoles([...SM_OPS_OR_ADMIN_ROLES]);
   return getSerialGovernanceFilterOptionsQuery();
 }
 
 export async function updateSeriesConfig(
-  series: SerialSeries,
+  series: SeriesCode,
   config: {
     ceilingNumber: string;
   },
 ): Promise<MutationResult> {
-  const user = await requireRoles([Role.OPS_HEAD]);
+  const user = await requireRoles([...OPS_OR_ADMIN_ROLES]);
 
   let ceilingNumber: bigint;
   try {
@@ -465,7 +478,9 @@ export async function updateSeriesConfig(
     return { ok: false, message: "Ceiling must be greater than zero." };
   }
 
-  const resolved = resolveSeriesCeiling(series, ceilingNumber);
+  const registry = await getCachedSeriesRegistry();
+
+  const resolved = resolveSeriesCeiling(series, ceilingNumber, registry);
   if (resolved !== ceilingNumber) {
     return {
       ok: false,
@@ -473,17 +488,24 @@ export async function updateSeriesConfig(
     };
   }
 
+  const entry = registry.byCode.get(series);
+
   await prisma.seriesConfig.upsert({
-    where: { series },
+    where: { code: series },
     update: {
       ceilingNumber,
       configuredById: user.id,
       configuredAt: new Date(),
     },
     create: {
-      series,
+      code: series,
+      displayName: entry?.displayName ?? (await seriesDisplayName(series)),
+      prefixPattern: getSeriesPrefix(series, registry),
+      rangeStart: getSeriesStartNumber(series, registry),
       inactivityThresholdDays: 30,
       ceilingAlertPct: 80,
+      sortOrder: 0,
+      isActive: true,
       ceilingNumber,
       configuredById: user.id,
     },

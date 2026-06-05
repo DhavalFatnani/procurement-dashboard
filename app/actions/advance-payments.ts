@@ -20,28 +20,29 @@ import type {
 } from "@/lib/queries/po-advance";
 import { revalidateAdvanceRequestsCache, revalidatePaymentMutation } from "@/lib/revalidate-tags";
 import { requireRoles } from "@/lib/server-action-guard";
+import { ALL_DASHBOARD_ROLES, FINANCE_OR_ADMIN_ROLES, OPS_FINANCE_OR_ADMIN_ROLES, OPS_OR_ADMIN_ROLES, SM_OPS_OR_ADMIN_ROLES } from "@/lib/admin-access";
 import { prisma } from "@/lib/prisma";
 import { assertSessionPurchaseOrderAccess } from "@/lib/warehouse-access";
-import { assignedWarehouseIds } from "@/lib/warehouse-scope";
+import { scopeWarehouseIdsForUser } from "@/lib/warehouse-scope";
 import { STORAGE_BUCKETS } from "@/lib/storage";
 import { uploadStorageObject } from "@/lib/upload-storage";
 
 export async function getPendingAdvanceRequests(): Promise<AdvanceRequestListRow[]> {
-  const user = await requireRoles([Role.FINANCE, Role.OPS_HEAD]);
-  return getPendingAdvanceRequestsQuery(assignedWarehouseIds(user));
+  const user = await requireRoles([...OPS_FINANCE_OR_ADMIN_ROLES]);
+  return getPendingAdvanceRequestsQuery(scopeWarehouseIdsForUser(user));
 }
 
 export async function getAdvanceRequestDetailForPay(
   requestId: string,
 ): Promise<AdvanceRequestDetail | null> {
-  await requireRoles([Role.FINANCE]);
+  await requireRoles([...FINANCE_OR_ADMIN_ROLES]);
   return getAdvanceRequestDetailQuery(requestId);
 }
 
 export async function fetchPOAdvanceSummary(
   poId: string,
 ): Promise<POAdvanceSummary | null> {
-  const user = await requireRoles([Role.SM, Role.OPS_HEAD, Role.FINANCE]);
+  const user = await requireRoles([...ALL_DASHBOARD_ROLES]);
   const access = await assertSessionPurchaseOrderAccess(user, poId);
   if (!access.ok) {
     return null;
@@ -52,7 +53,7 @@ export async function fetchPOAdvanceSummary(
 export async function cancelAdvanceRequest(
   requestId: string,
 ): Promise<{ ok: boolean; message?: string }> {
-  const user = await requireRoles([Role.OPS_HEAD]);
+  const user = await requireRoles([...OPS_OR_ADMIN_ROLES]);
 
   const request = await prisma.pOAdvanceRequest.findUnique({
     where: { id: requestId },
@@ -84,7 +85,7 @@ export async function rejectAdvanceRequest(
   requestId: string,
   reason: string,
 ): Promise<{ ok: boolean; message?: string }> {
-  const user = await requireRoles([Role.FINANCE]);
+  const user = await requireRoles([...FINANCE_OR_ADMIN_ROLES]);
 
   const trimmed = reason.trim();
   if (!trimmed) {
@@ -124,7 +125,7 @@ export async function rejectAdvanceRequest(
 export async function recordAdvancePayment(
   formData: FormData,
 ): Promise<{ ok: boolean; message?: string }> {
-  const user = await requireRoles([Role.FINANCE]);
+  const user = await requireRoles([...FINANCE_OR_ADMIN_ROLES]);
 
   const requestId = String(formData.get("requestId") ?? "").trim();
   const method = String(formData.get("method") ?? "").trim();

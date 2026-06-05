@@ -11,6 +11,7 @@ KNOT Procurement serves three internal roles at a quick-commerce fashion startup
 - **Warehouse Store Manager (SM):** Raises purchase requests, records goods receipts (GRNs), prints barcode labels, and resolves receiving exceptions. Spends long stretches in list and detail views, often under time pressure during inbound operations.
 - **Ops Head:** Approves requests, governs vendors and catalog, and needs full visibility across procurement, serial governance, and fulfillment. Switches between oversight dashboards and deep detail pages.
 - **Finance:** Processes payables: invoice settlement, vendor advances, payment register, and read-only PO financials. Lands on Invoice settlement by default; works through approval and allocation workflows.
+- **Admin:** Platform super-user with global warehouse scope — full procurement, payables, master data, and serial governance overrides. Lands on Platform control; intended for a small set of operators only.
 
 All users are repeat operators, not occasional visitors. They use the system for hours daily, typically in warehouse offices or corporate environments with normal ambient lighting.
 

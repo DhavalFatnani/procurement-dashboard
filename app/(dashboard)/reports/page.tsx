@@ -7,13 +7,13 @@ import { getFinanceReports } from "@/lib/queries/finance-reports";
 import { getReports } from "@/lib/queries/reports";
 import { ACCESS } from "@/lib/route-access";
 import { assertRole, getRequestSession } from "@/lib/session";
-import { assignedWarehouseIds } from "@/lib/warehouse-scope";
+import { scopeWarehouseIdsForUser } from "@/lib/warehouse-scope";
 
 export const dynamic = "force-dynamic";
 
 export default async function ReportsPage() {
   const user = assertRole(await getRequestSession(), [...ACCESS.reports]);
-  const scopeWarehouseIds = assignedWarehouseIds(user);
+  const scopeWarehouseIds = scopeWarehouseIdsForUser(user);
 
   if (user.role === Role.FINANCE) {
     const data = await getFinanceReports(scopeWarehouseIds);

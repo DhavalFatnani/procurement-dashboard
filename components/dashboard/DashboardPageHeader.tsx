@@ -12,6 +12,8 @@ const SUBTITLES: Record<Role, string> = {
     "Governance queue — approvals, vendor onboarding, PO setup, and exception resolution.",
   [Role.FINANCE]:
     "Payables overview — settlement queue, advances, and payment ageing.",
+  [Role.ADMIN]:
+    "Platform-wide control — procurement, payables, master data, and serial governance.",
 };
 
 const INBOX_HREF: Partial<Record<Role, string>> = {

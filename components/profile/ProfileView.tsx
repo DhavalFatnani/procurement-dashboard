@@ -25,10 +25,11 @@ import { ROLE_LABELS } from "@/lib/navigation";
 import type { UserProfile } from "@/lib/queries/profile";
 import { roleUsesMultiWarehouseAssignment } from "@/lib/warehouse-scope";
 
-const ROLE_TONE: Record<Role, "info" | "accent" | "neutral"> = {
+const ROLE_TONE: Record<Role, "info" | "accent" | "neutral" | "warning"> = {
   [Role.SM]: "neutral",
   [Role.OPS_HEAD]: "info",
   [Role.FINANCE]: "accent",
+  [Role.ADMIN]: "warning",
 };
 
 function DetailRow({

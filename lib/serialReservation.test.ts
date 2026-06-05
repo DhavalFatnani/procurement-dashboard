@@ -1,10 +1,13 @@
-import { ExecutionType, PRStatus, Prisma, SerialSeries } from "@/lib/prisma-client";
+import { ExecutionType, PRStatus, Prisma } from "@/lib/prisma-client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { SeriesCode } from "@/lib/series-codes";
+import { SERIES_CODES } from "@/lib/series-codes";
 
 // Mock the prisma singleton before importing the module under test.
 const findUnique = vi.fn();
 const txFindUnique = vi.fn();
 const txFindFirst = vi.fn();
+const txFindMany = vi.fn();
 const txSeriesConfigFindUnique = vi.fn();
 const txCreate = vi.fn();
 const txPrFindUnique = vi.fn();
@@ -40,6 +43,7 @@ function makeTx() {
     serialReservation: {
       findUnique: txFindUnique,
       findFirst: txFindFirst,
+      findMany: txFindMany,
       create: txCreate,
     },
     seriesConfig: { findUnique: txSeriesConfigFindUnique },
@@ -59,6 +63,7 @@ beforeEach(() => {
   );
   txFindUnique.mockResolvedValue(null);
   txFindFirst.mockResolvedValue(null);
+  txFindMany.mockResolvedValue([]);
   txSeriesConfigFindUnique.mockResolvedValue(null);
   txPrFindUnique.mockResolvedValue({ id: baseInput.prId, status: PRStatus.DRAFT });
   txPrUpdate.mockResolvedValue({});
@@ -76,7 +81,7 @@ describe("atomicReserveSerialRange — internal print PR", () => {
     await atomicReserveSerialRange({
       ...baseInput,
       prId: "pr-new",
-      series: SerialSeries.APPAREL_BARCODES,
+      series: SERIES_CODES.APPAREL_BARCODES,
       purpose: "internal_print",
       internalPrintPR: {
         categoryId: "cat-1",
@@ -105,7 +110,7 @@ describe("atomicReserveSerialRange — idempotency", () => {
 
     const result = await atomicReserveSerialRange({
       ...baseInput,
-      series: SerialSeries.LOCK_TAGS,
+      series: SERIES_CODES.LOCK_TAGS,
     });
 
     expect(result).toEqual({ success: true, reservation: existing });
@@ -114,10 +119,10 @@ describe("atomicReserveSerialRange — idempotency", () => {
 });
 
 describe("atomicReserveSerialRange — range allocation start numbers", () => {
-  const cases: [SerialSeries, bigint][] = [
-    [SerialSeries.LOCK_TAGS, BigInt(100_000)],
-    [SerialSeries.JEWELLERY_BARCODES, BigInt(1_000_000_000)],
-    [SerialSeries.APPAREL_BARCODES, BigInt(2_000_000_000)],
+  const cases: [SeriesCode, bigint][] = [
+    [SERIES_CODES.LOCK_TAGS, BigInt(100_000)],
+    [SERIES_CODES.JEWELLERY_BARCODES, BigInt(1_000_000_000)],
+    [SERIES_CODES.APPAREL_BARCODES, BigInt(2_000_000_000)],
   ];
 
   it.each(cases)(
@@ -150,7 +155,7 @@ describe("atomicReserveSerialRange — range allocation start numbers", () => {
 
     await atomicReserveSerialRange({
       ...baseInput,
-      series: SerialSeries.LOCK_TAGS,
+      series: SERIES_CODES.LOCK_TAGS,
       purpose: "internal_print",
     });
 
@@ -168,7 +173,7 @@ describe("atomicReserveSerialRange — range allocation start numbers", () => {
 
     await atomicReserveSerialRange({
       ...baseInput,
-      series: SerialSeries.JEWELLERY_BARCODES,
+      series: SERIES_CODES.JEWELLERY_BARCODES,
       purpose: "internal_print",
     });
 
@@ -205,7 +210,7 @@ describe("atomicReserveSerialRange — serialization conflict retries", () => {
 
     const promise = atomicReserveSerialRange({
       ...baseInput,
-      series: SerialSeries.LOCK_TAGS,
+      series: SERIES_CODES.LOCK_TAGS,
     });
     await vi.runAllTimersAsync();
     const result = await promise;
@@ -225,7 +230,7 @@ describe("atomicReserveSerialRange — serialization conflict retries", () => {
 
     const promise = atomicReserveSerialRange({
       ...baseInput,
-      series: SerialSeries.LOCK_TAGS,
+      series: SERIES_CODES.LOCK_TAGS,
     });
     await vi.runAllTimersAsync();
     const result = await promise;
@@ -256,7 +261,7 @@ describe("atomicReserveSerialRange — serialization conflict retries", () => {
 
     const promise = atomicReserveSerialRange({
       ...baseInput,
-      series: SerialSeries.LOCK_TAGS,
+      series: SERIES_CODES.LOCK_TAGS,
     });
     await vi.runAllTimersAsync();
     const result = await promise;
@@ -275,7 +280,7 @@ describe("atomicReserveSerialRange — serialization conflict retries", () => {
 
     const result = await atomicReserveSerialRange({
       ...baseInput,
-      series: SerialSeries.LOCK_TAGS,
+      series: SERIES_CODES.LOCK_TAGS,
     });
 
     expect(result).toEqual({ success: false, error: "boom" });
@@ -290,7 +295,7 @@ describe("reserveSerialRangeInTransaction — vendor lock tags", () => {
 
     await reserveSerialRangeInTransaction(makeTx() as never, {
       ...baseInput,
-      series: SerialSeries.LOCK_TAGS,
+      series: SERIES_CODES.LOCK_TAGS,
       poId: "po-1",
       idempotencyKey: "po-po-1-lock-tags",
       purpose: "vendor_lock_tags",
@@ -313,7 +318,7 @@ describe("reserveSerialRangeInTransaction — vendor lock tags", () => {
     await expect(
       reserveSerialRangeInTransaction(makeTx() as never, {
         ...baseInput,
-        series: SerialSeries.LOCK_TAGS,
+        series: SERIES_CODES.LOCK_TAGS,
         poId: "po-1",
         idempotencyKey: "po-po-1-lock-tags",
         purpose: "vendor_lock_tags",
@@ -331,7 +336,7 @@ describe("atomicReserveSerialRange — ceiling enforcement", () => {
 
     const result = await atomicReserveSerialRange({
       ...baseInput,
-      series: SerialSeries.LOCK_TAGS,
+      series: SERIES_CODES.LOCK_TAGS,
     });
 
     expect(result.success).toBe(false);
@@ -351,7 +356,7 @@ describe("atomicReserveSerialRange — ceiling enforcement", () => {
 
     const result = await atomicReserveSerialRange({
       ...baseInput,
-      series: SerialSeries.JEWELLERY_BARCODES,
+      series: SERIES_CODES.JEWELLERY_BARCODES,
     });
 
     expect(result.success).toBe(true);

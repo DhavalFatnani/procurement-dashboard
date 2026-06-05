@@ -185,18 +185,18 @@ function SummaryTile({
 }
 
 const QUICK_ACTIONS_BY_ROLE: Record<Role, { label: string; href: string; icon: LucideIcon }[]> = {
-  [Role.SM]: [
+  SM: [
     { label: "Create PR", href: "/purchase-requests/new", icon: FilePlus },
     { label: "Record GRN", href: "/goods-receipt/new", icon: PackageCheck },
     { label: "Upload invoice", href: "/invoices/new", icon: Receipt },
   ],
-  [Role.OPS_HEAD]: [
+  OPS_HEAD: [
     { label: "Review approvals", href: "/purchase-requests?status=PENDING_APPROVAL", icon: ClipboardList },
     { label: "Configure PO", href: "/purchase-orders/configure", icon: ClipboardList },
     { label: "Review vendors", href: "/vendors?tab=pending", icon: UserPlus },
     { label: "Create PR", href: "/purchase-requests/new", icon: FilePlus },
   ],
-  [Role.FINANCE]: [
+  FINANCE: [
     {
       label: "Pay invoices",
       href: `${FINANCE_ROUTES.invoiceSettlement}?paymentStatus=UNPAID`,
@@ -213,10 +213,24 @@ const QUICK_ACTIONS_BY_ROLE: Record<Role, { label: string; href: string; icon: L
       icon: Wallet,
     },
   ],
+  ADMIN: [
+    { label: "Platform control", href: "/admin/platform", icon: ClipboardList },
+    {
+      label: "Review approvals",
+      href: "/purchase-requests?status=PENDING_APPROVAL",
+      icon: ClipboardList,
+    },
+    {
+      label: "Settle invoices",
+      href: `${FINANCE_ROUTES.invoiceSettlement}?paymentStatus=UNPAID`,
+      icon: Receipt,
+    },
+    { label: "Users", href: "/admin/users", icon: UserPlus },
+  ],
 };
 
 export function InboxView({ role, data }: { role: Role; data: InboxData }) {
-  const quickActions = QUICK_ACTIONS_BY_ROLE[role];
+  const quickActions = QUICK_ACTIONS_BY_ROLE[role] ?? [];
 
   return (
     <div className="space-y-6">

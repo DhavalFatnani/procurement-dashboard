@@ -9,7 +9,7 @@ import { listBreadcrumbs } from "@/lib/lineage";
 import { getAdvancePaymentHistory, getPendingAdvanceRequests } from "@/lib/queries/po-advance";
 import { ACCESS } from "@/lib/route-access";
 import { assertRole, getRequestSession, type SessionUser } from "@/lib/session";
-import { assignedWarehouseIds } from "@/lib/warehouse-scope";
+import { scopeWarehouseIdsForUser } from "@/lib/warehouse-scope";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
@@ -44,7 +44,7 @@ async function VendorAdvancesLoader({
   user: SessionUser;
   initialRequestId?: string;
 }) {
-  const scopeWarehouseIds = assignedWarehouseIds(user);
+  const scopeWarehouseIds = scopeWarehouseIdsForUser(user);
   const [advanceRows, advanceHistoryRows] = await dbParallel(
     () => getPendingAdvanceRequests(scopeWarehouseIds),
     () => getAdvancePaymentHistory(scopeWarehouseIds),

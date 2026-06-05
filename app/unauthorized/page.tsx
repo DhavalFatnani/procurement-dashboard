@@ -19,8 +19,8 @@ export default async function UnauthorizedPage() {
       <div className="max-w-md space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight">Unauthorized</h1>
         <p className="text-muted-foreground">
-          You do not have permission to view this area, or your account is missing a valid role in
-          Supabase user metadata.
+          You do not have permission to view this area. If you were recently promoted to Admin,
+          sign out and back in so your session picks up the change.
         </p>
       </div>
 

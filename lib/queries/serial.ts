@@ -1,6 +1,6 @@
-import { Prisma, SerialSeries } from "@/lib/prisma-client";
+import { Prisma } from "@/lib/prisma-client";
 
-import { getCachedSeriesConfigs, getCachedWarehouses } from "@/lib/cache";
+import { getCachedSeriesRegistry, getCachedWarehouses } from "@/lib/cache";
 import { dbParallel } from "@/lib/db-parallel";
 import {
   formatWarehouseLabel,
@@ -18,19 +18,20 @@ import type {
   WarehouseSeriesSnapshot,
 } from "@/lib/serial-governance-types";
 import { buildSerialRangeMap, type RawSerialReservationRow } from "@/lib/serial-range-map";
+import { resolveSeriesDisplayName, resolveSeriesPrefix } from "@/lib/series-config-resolve";
+import type { SeriesCode } from "@/lib/series-codes";
 import {
+  activeReservationsForSeriesWhere,
   computeNextRangeStart,
   computeRangeUsedPct,
   formatSerialNumber,
   formatSerialNumberForSeries,
-  getDefaultSeriesCeiling,
-  getSeriesDisplayName,
-  getSeriesPrefix,
+  GLOBAL_SERIAL_BLOCK_SCOPE_LABEL,
+  getSeriesCeiling,
   getSeriesStartNumber,
   parseSerialBigInt,
   reservationEventType,
   resolveSeriesCeiling,
-  SERIAL_SERIES_ORDER,
   validReservationsForSeriesWhere,
   validReservationsUnionWhere,
   type ReservationEventType,
@@ -47,7 +48,7 @@ export type {
 } from "@/lib/serial-governance-types";
 
 export type SerialActivityFilters = {
-  series?: SerialSeries;
+  series?: SeriesCode;
   type?: ReservationEventType;
   warehouseId?: string;
   dateFrom?: string;
@@ -58,7 +59,9 @@ export type SerialActivityFilters = {
 };
 
 function buildSerialActivityWhere(filters: SerialActivityFilters): Prisma.SerialReservationWhereInput {
-  const clauses: Prisma.SerialReservationWhereInput[] = [];
+  const clauses: Prisma.SerialReservationWhereInput[] = [
+    { status: { in: ["PENDING", "RESERVED"] } },
+  ];
   if (filters.series) {
     clauses.push({ series: filters.series });
   }
@@ -97,6 +100,7 @@ function buildSerialActivityWhere(filters: SerialActivityFilters): Prisma.Serial
 export async function getSerialActivity(
   filters: SerialActivityFilters,
 ): Promise<Paginated<SerialActivityRow>> {
+  const registry = await getCachedSeriesRegistry();
   const page = Math.max(1, filters.page ?? 1);
   const pageSize = Math.min(100, Math.max(10, filters.pageSize ?? 25));
   const where = buildSerialActivityWhere(filters);
@@ -137,6 +141,7 @@ export async function getSerialActivity(
           rows.map((r) => ({
             id: r.id,
             series: r.series,
+            seriesName: resolveSeriesDisplayName(r.series, registry),
             rangeStart: formatSerialNumberForSeries(r.series, r.rangeStart),
             rangeEnd: formatSerialNumberForSeries(r.series, r.rangeEnd),
             quantity: r.quantity,
@@ -145,11 +150,10 @@ export async function getSerialActivity(
               hasGrn: (r.po?._count.grns ?? 0) > 0,
             }),
             reservationStatus: r.status,
-            warehouseId: r.warehouseId,
-            warehouseName: formatWarehouseLabel(
-              r.warehouse.name,
-              r.warehouse.location,
-            ),
+            warehouseId: r.warehouseId ?? "",
+            warehouseName: r.warehouse
+              ? formatWarehouseLabel(r.warehouse.name, r.warehouse.location)
+              : GLOBAL_SERIAL_BLOCK_SCOPE_LABEL,
             linkedPrId: r.prId,
             linkedPoId: r.poId,
             poStatus: r.po?.status ?? null,
@@ -162,24 +166,24 @@ export async function getSerialActivity(
 }
 
 export async function getSeriesUsageSummary(): Promise<SeriesUsageSummary[]> {
-  const [configs, warehouses] = await dbParallel(
-    () => getCachedSeriesConfigs(),
+  const [registry, warehouses] = await dbParallel(
+    () => getCachedSeriesRegistry(),
     () => getCachedWarehouses(),
   );
-  const configBySeries = new Map(configs.map((c) => [c.series, c]));
   const warehouseById = new Map(
     warehouses.map((w) => [w.id, formatWarehouseLabel(w.name, w.location)]),
   );
 
   const summaries: SeriesUsageSummary[] = [];
-  for (const series of SERIAL_SERIES_ORDER) {
-    const validWhere = validReservationsForSeriesWhere(series);
-    const config = configBySeries.get(series);
+  for (const series of registry.activeCodes) {
+    const validWhere = validReservationsForSeriesWhere(series, registry);
+    const config = registry.byCode.get(series);
     const ceiling = resolveSeriesCeiling(
       series,
       config ? BigInt(config.ceilingNumber) : undefined,
+      registry,
     );
-    const seriesStart = getSeriesStartNumber(series);
+    const seriesStart = getSeriesStartNumber(series, registry);
 
     // Native Promise.all here (not dbParallel): its built-in tuple overloads
     // infer groupBy's heavy result type precisely, whereas dbParallel's variadic
@@ -216,9 +220,10 @@ export async function getSeriesUsageSummary(): Promise<SeriesUsageSummary[]> {
     ]);
 
     const lastEnd = agg._max.rangeEnd ?? null;
-    const nextStart = computeNextRangeStart(series, lastEnd);
+    const nextStart = computeNextRangeStart(series, lastEnd, registry);
 
     const warehouseUsage = warehouseGrouped
+      .filter((g): g is typeof g & { warehouseId: string } => g.warehouseId != null)
       .map((g) => ({
         warehouseId: g.warehouseId,
         warehouseName: warehouseById.get(g.warehouseId) ?? g.warehouseId,
@@ -232,14 +237,14 @@ export async function getSeriesUsageSummary(): Promise<SeriesUsageSummary[]> {
 
     summaries.push({
       series,
-      displayName: getSeriesDisplayName(series),
-      prefix: getSeriesPrefix(series),
+      displayName: resolveSeriesDisplayName(series, registry),
+      prefix: resolveSeriesPrefix(series, registry),
       seriesStart: formatSerialNumberForSeries(series, seriesStart),
       lastRangeEnd:
         lastEnd != null ? formatSerialNumberForSeries(series, lastEnd) : null,
       nextStart: formatSerialNumberForSeries(series, nextStart),
       reservationCount: agg._count._all,
-      usedPct: computeRangeUsedPct(series, lastEnd, ceiling),
+      usedPct: computeRangeUsedPct(series, lastEnd, ceiling, registry),
       lastEventType: latest
         ? reservationEventType(latest.poId, latest.prId, latest.status, {
             status: latest.po?.status ?? null,
@@ -258,6 +263,7 @@ export async function getSeriesUsageSummary(): Promise<SeriesUsageSummary[]> {
 export async function getWarehouseSeriesSnapshot(options?: {
   ensureWarehouseIds?: string[];
 }): Promise<WarehouseSeriesSnapshot[]> {
+  const registry = await getCachedSeriesRegistry();
   const warehouses = await getCachedWarehouses();
   const warehouseById = new Map(
     warehouses.map((w) => [w.id, formatWarehouseLabel(w.name, w.location)]),
@@ -265,13 +271,13 @@ export async function getWarehouseSeriesSnapshot(options?: {
 
   const grouped = await prisma.serialReservation.groupBy({
     by: ["series", "warehouseId"],
-    where: validReservationsUnionWhere(),
+    where: validReservationsUnionWhere(registry),
     _count: { _all: true },
     _max: { rangeEnd: true },
   });
 
   const latestRows = await prisma.serialReservation.findMany({
-    where: validReservationsUnionWhere(),
+    where: validReservationsUnionWhere(registry),
     orderBy: { createdAt: "desc" },
     take: 500,
     select: {
@@ -299,7 +305,9 @@ export async function getWarehouseSeriesSnapshot(options?: {
 
   const warehouseIds = new Set<string>();
   for (const g of grouped) {
-    warehouseIds.add(g.warehouseId);
+    if (g.warehouseId) {
+      warehouseIds.add(g.warehouseId);
+    }
   }
   for (const id of options?.ensureWarehouseIds ?? []) {
     if (id) {
@@ -313,14 +321,14 @@ export async function getWarehouseSeriesSnapshot(options?: {
     const warehouseName = warehouseById.get(warehouseId) ?? warehouseId;
     const seriesRows: WarehouseSeriesRow[] = [];
 
-    for (const series of SERIAL_SERIES_ORDER) {
+    for (const series of registry.activeCodes) {
       const key = `${series}:${warehouseId}`;
       const stats = statsByKey.get(key);
       const latest = latestByKey.get(key);
 
       seriesRows.push({
         series,
-        displayName: getSeriesDisplayName(series),
+        displayName: resolveSeriesDisplayName(series, registry),
         reservationCount: stats?.count ?? 0,
         lastRangeEnd:
           stats?.rangeEnd != null
@@ -339,16 +347,14 @@ export async function getWarehouseSeriesSnapshot(options?: {
 }
 
 export async function getSeriesConfigsForAdvanced(): Promise<SeriesConfigSummary[]> {
-  const configs = await getCachedSeriesConfigs();
-  const configBySeries = new Map(configs.map((c) => [c.series, c]));
+  const registry = await getCachedSeriesRegistry();
 
-  return SERIAL_SERIES_ORDER.map((series) => {
-    const config = configBySeries.get(series);
+  return registry.activeCodes.map((series) => {
+    const config = registry.byCode.get(series);
     return {
       series,
-      displayName: getSeriesDisplayName(series),
-      ceilingNumber:
-        config?.ceilingNumber ?? getDefaultSeriesCeiling(series).toString(),
+      displayName: resolveSeriesDisplayName(series, registry),
+      ceilingNumber: config?.ceilingNumber ?? getSeriesCeiling(series, registry).toString(),
     };
   });
 }
@@ -366,14 +372,19 @@ export async function searchSerialNumber(
     return null;
   }
 
-  if (value < getSeriesStartNumber(SerialSeries.LOCK_TAGS)) {
+  const registry = await getCachedSeriesRegistry();
+  const minStart = registry.activeCodes.reduce((min, code) => {
+    const start = getSeriesStartNumber(code, registry);
+    return min === null || start < min ? start : min;
+  }, null as bigint | null);
+  if (minStart != null && value < minStart) {
     return null;
   }
 
   const match = await prisma.serialReservation.findFirst({
     where: {
       AND: [
-        validReservationsUnionWhere(),
+        validReservationsUnionWhere(registry),
         { rangeStart: { lte: value }, rangeEnd: { gte: value } },
       ],
     },
@@ -397,7 +408,7 @@ export async function searchSerialNumber(
   return {
     id: match.id,
     series: match.series,
-    seriesName: getSeriesDisplayName(match.series),
+    seriesName: resolveSeriesDisplayName(match.series, registry),
     rangeStart: formatSerialNumberForSeries(match.series, match.rangeStart),
     rangeEnd: formatSerialNumberForSeries(match.series, match.rangeEnd),
     createdByName: match.createdBy.name,
@@ -408,23 +419,33 @@ export async function searchSerialNumber(
 }
 
 export async function getSerialGovernanceFilterOptions() {
-  const warehouses = await getCachedWarehouses();
-  return { warehouses: warehouseOptionsFromRows(warehouses) };
+  const [warehouses, registry] = await Promise.all([
+    getCachedWarehouses(),
+    getCachedSeriesRegistry(),
+  ]);
+  return {
+    warehouses: warehouseOptionsFromRows(warehouses),
+    series: registry.activeCodes.map((code) => ({
+      code,
+      displayName: resolveSeriesDisplayName(code, registry),
+    })),
+  };
 }
 
 export async function getSerialRangeMap(input: {
-  series: SerialSeries;
+  series: SeriesCode;
   zoomToActive?: boolean;
 }): Promise<SerialRangeMapData> {
-  const configs = await getCachedSeriesConfigs();
-  const config = configs.find((c) => c.series === input.series);
+  const registry = await getCachedSeriesRegistry();
+  const config = registry.byCode.get(input.series);
   const ceiling = resolveSeriesCeiling(
     input.series,
     config ? BigInt(config.ceilingNumber) : undefined,
+    registry,
   );
 
   const rows = await prisma.serialReservation.findMany({
-    where: validReservationsForSeriesWhere(input.series),
+    where: activeReservationsForSeriesWhere(input.series, registry),
     orderBy: { rangeStart: "asc" },
     select: {
       id: true,
@@ -435,6 +456,7 @@ export async function getSerialRangeMap(input: {
       prId: true,
       poId: true,
       warehouseId: true,
+      purpose: true,
       createdAt: true,
       createdBy: { select: { name: true } },
       warehouse: { select: { name: true, location: true } },
@@ -455,17 +477,21 @@ export async function getSerialRangeMap(input: {
     status: r.status,
     prId: r.prId,
     poId: r.poId,
-    warehouseId: r.warehouseId,
-    warehouseName: formatWarehouseLabel(r.warehouse.name, r.warehouse.location),
+    warehouseId: r.warehouseId ?? "",
+    warehouseName: r.warehouse
+      ? formatWarehouseLabel(r.warehouse.name, r.warehouse.location)
+      : "All warehouses",
+    purpose: r.purpose,
     createdByName: r.createdBy.name,
     createdAt: r.createdAt.toISOString(),
     poStatus: r.po?.status ?? null,
     poHasGrn: (r.po?._count.grns ?? 0) > 0,
   }));
 
+  const displayName = resolveSeriesDisplayName(input.series, registry);
   const built = buildSerialRangeMap({
     series: input.series,
-    displayName: getSeriesDisplayName(input.series),
+    displayName,
     ceiling,
     reservations,
     zoomToActive: input.zoomToActive,
@@ -473,7 +499,7 @@ export async function getSerialRangeMap(input: {
 
   return {
     series: input.series,
-    displayName: getSeriesDisplayName(input.series),
+    displayName,
     ...built,
   };
 }

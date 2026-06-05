@@ -1,5 +1,6 @@
 "use client";
 
+import { canManageFinance } from "@/lib/admin-access";
 import { InvoiceMatchStatus, PaymentStatus, Role } from "@/lib/prisma-enums";
 import { useSearchParams } from "next/navigation";
 import { AlertTriangle } from "lucide-react";
@@ -70,7 +71,7 @@ export function PaymentsView({
 }) {
   const searchParams = useSearchParams();
   const { navigate, refresh } = useListNavigation();
-  const isFinance = role === Role.FINANCE;
+  const isFinance = canManageFinance(role);
   const rows = initialRows;
   const [sheetOpen, setSheetOpen] = React.useState(false);
   const [detail, setDetail] = React.useState<

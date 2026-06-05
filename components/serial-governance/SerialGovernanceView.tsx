@@ -1,7 +1,7 @@
 "use client";
 
 import { Role } from "@/lib/prisma-enums";
-import { Map } from "lucide-react";
+import { Map, Settings2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import * as React from "react";
@@ -92,6 +92,8 @@ export function SerialGovernanceView({
   const searchParams = useSearchParams();
   const [, startTransition] = React.useTransition();
   const isOps = role === Role.OPS_HEAD;
+  const isAdmin = role === Role.ADMIN;
+  const showAdvancedConfig = (isOps || isAdmin) && seriesConfigs.length > 0;
 
   const [activeTab, setActiveTab] = React.useState<TabId>(() => parseTab(initialTab));
 
@@ -121,15 +123,28 @@ export function SerialGovernanceView({
             : "View serial usage and reserved ranges from print and receipt."
         }
         action={
-          <Button
-            render={<Link href="/serial-governance/range-map" />}
-            variant="soft"
-            size="sm"
-            className="gap-1.5"
-          >
-            <Map className="size-3.5" strokeWidth={1.75} aria-hidden />
-            Range map
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            {isAdmin ? (
+              <Button
+                render={<Link href="/admin/platform/series" />}
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+              >
+                <Settings2 className="size-3.5" strokeWidth={1.75} aria-hidden />
+                Series config
+              </Button>
+            ) : null}
+            <Button
+              render={<Link href="/serial-governance/range-map" />}
+              variant="soft"
+              size="sm"
+              className="gap-1.5"
+            >
+              <Map className="size-3.5" strokeWidth={1.75} aria-hidden />
+              Range map
+            </Button>
+          </div>
         }
       />
 
@@ -156,8 +171,8 @@ export function SerialGovernanceView({
                 highlightBatchId={filters.batch}
                 filters={filters}
               />
-              {isOps && seriesConfigs.length > 0 ? (
-                <SerialAdvancedConfig configs={seriesConfigs} />
+              {showAdvancedConfig ? (
+                <SerialAdvancedConfig configs={seriesConfigs} role={role} />
               ) : null}
             </div>
           </SerialGovernanceListClient>

@@ -14,7 +14,8 @@ import { prisma } from "@/lib/prisma";
 import { getPendingAdvanceRequests } from "@/lib/queries/po-advance";
 import type { SessionUser } from "@/lib/session";
 import {
-  assignedWarehouseIds,
+  scopeWarehouseIdsForUser,
+  invoiceViaPoWarehouseWhere,
   nestedPurchaseOrderWarehouseScope,
   nestedPurchaseRequestWarehouseScope,
   warehouseScopeForUser,
@@ -461,8 +462,8 @@ async function fetchOpsHeadInbox(user: SessionUser): Promise<InboxData> {
 }
 
 async function fetchFinanceInbox(user: SessionUser): Promise<InboxData> {
-  const invoiceScope = nestedPurchaseOrderWarehouseScope(user);
-  const prWarehouseFilter = invoiceScope.purchaseOrder?.purchaseRequest ?? {};
+  const invoiceScope = invoiceViaPoWarehouseWhere(user);
+  const prWarehouseFilter = warehouseScopeForUser(user);
 
   const [readyToPay, partials, atRiskInvoices, vendorChanged, recent, pendingAdvances] =
     await dbSerial(
@@ -551,7 +552,7 @@ async function fetchFinanceInbox(user: SessionUser): Promise<InboxData> {
         orderBy: { createdAt: "desc" },
         take: ITEMS_PER_GROUP,
       }),
-      () => getPendingAdvanceRequests(assignedWarehouseIds(user)),
+      () => getPendingAdvanceRequests(scopeWarehouseIdsForUser(user)),
     );
 
   const advanceItems: InboxItem[] = pendingAdvances.map((r) => ({
@@ -694,6 +695,7 @@ async function fetchInboxForRole(user: SessionUser): Promise<InboxData> {
     case Role.SM:
       return fetchSmInbox(user);
     case Role.OPS_HEAD:
+    case Role.ADMIN:
       return fetchOpsHeadInbox(user);
     case Role.FINANCE:
       return fetchFinanceInbox(user);

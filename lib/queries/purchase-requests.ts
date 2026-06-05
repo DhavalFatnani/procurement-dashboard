@@ -5,6 +5,7 @@ import {
   getCachedActiveCatalogItems,
   getCachedCategories,
   getCachedCreators,
+  getCachedSeriesRegistry,
   getCachedWarehouses,
 } from "@/lib/cache";
 import { mapPrLinesFromDb, prLinesInclude } from "@/lib/map-pr-lines";
@@ -22,6 +23,7 @@ import {
 } from "@/lib/po-closure-snapshot";
 import { prVersionActionLabel } from "@/lib/pr-version-label";
 import { prisma } from "@/lib/prisma";
+import { resolveSeriesDisplayName } from "@/lib/series-config-resolve";
 import { timed } from "@/lib/server-timing";
 import {
   formatLineSummary,
@@ -144,6 +146,7 @@ export type PRDetail = {
   serialReservation: {
     id: string;
     series: string;
+    seriesName: string;
     rangeStart: string;
     rangeEnd: string;
     quantity: number;
@@ -480,6 +483,8 @@ async function fetchPRById(user: SessionUser, id: string): Promise<PRDetail | nu
     return null;
   }
 
+  const registry = await getCachedSeriesRegistry();
+
   const lines = mapPrLinesFromDb(pr.lines);
   const summary = formatLineSummary(lines);
   const totalQty = lines.length > 0 ? sumLineQuantities(lines) : (pr.quantity ?? 0);
@@ -584,6 +589,7 @@ async function fetchPRById(user: SessionUser, id: string): Promise<PRDetail | nu
       ? {
           id: pr.serialReservation.id,
           series: pr.serialReservation.series,
+          seriesName: resolveSeriesDisplayName(pr.serialReservation.series, registry),
           rangeStart: pr.serialReservation.rangeStart.toString(),
           rangeEnd: pr.serialReservation.rangeEnd.toString(),
           quantity: pr.serialReservation.quantity,

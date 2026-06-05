@@ -133,7 +133,9 @@ function cashPaymentDate(payment: { paidAt: Date | null; createdAt: Date }): Dat
   return payment.paidAt ?? payment.createdAt;
 }
 
-async function countAdvanceOverCommitment(scopeWarehouseIds: string[]): Promise<number> {
+async function countAdvanceOverCommitment(
+  scopeWarehouseIds?: string[],
+): Promise<number> {
   const poScope = purchaseOrderWhereFromScopeIds(scopeWarehouseIds);
   const posWithAdvance = await prisma.purchaseOrder.findMany({
     where: {
@@ -179,11 +181,15 @@ async function countAdvanceOverCommitment(scopeWarehouseIds: string[]): Promise<
 }
 
 export async function getFinanceReports(
-  scopeWarehouseIds: string[],
+  scopeWarehouseIds?: string[],
 ): Promise<FinanceReportsData> {
+  const scopeKey =
+    scopeWarehouseIds === undefined
+      ? "__global__"
+      : scopeWarehouseIds.slice().sort().join(",");
   return cachedQuery(
     "finance-reports",
-    [scopeWarehouseIds.slice().sort().join(",")],
+    [scopeKey],
     () => computeFinanceReports(scopeWarehouseIds),
     {
       revalidate: 120,
@@ -193,7 +199,7 @@ export async function getFinanceReports(
 }
 
 async function computeFinanceReports(
-  scopeWarehouseIds: string[],
+  scopeWarehouseIds?: string[],
 ): Promise<FinanceReportsData> {
   const invoiceScope = invoiceWhereFromScopeIds(scopeWarehouseIds);
   const poScope = purchaseOrderWhereFromScopeIds(scopeWarehouseIds);

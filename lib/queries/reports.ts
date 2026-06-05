@@ -11,6 +11,7 @@ import { advanceOverageForPo, committedTotalFromPo } from "@/lib/po-advance";
 import { prisma } from "@/lib/prisma";
 import {
   invoiceWhereFromScopeIds,
+  prWarehouseWhereFromScopeIds,
   purchaseOrderWhereFromScopeIds,
   warehouseIdFilter,
 } from "@/lib/warehouse-scope";
@@ -54,7 +55,10 @@ function startOf(day: Date): Date {
   return d;
 }
 
-function grnExceptionWarehouseWhere(scopeWarehouseIds: string[]) {
+function grnExceptionWarehouseWhere(scopeWarehouseIds?: string[]) {
+  if (scopeWarehouseIds === undefined) {
+    return {};
+  }
   return {
     grn: {
       purchaseOrder: {
@@ -64,10 +68,16 @@ function grnExceptionWarehouseWhere(scopeWarehouseIds: string[]) {
   };
 }
 
-export async function getReports(scopeWarehouseIds: string[]): Promise<ReportsData> {
+export async function getReports(
+  scopeWarehouseIds?: string[],
+): Promise<ReportsData> {
+  const scopeKey =
+    scopeWarehouseIds === undefined
+      ? "__global__"
+      : scopeWarehouseIds.slice().sort().join(",");
   return cachedQuery(
     "reports",
-    [scopeWarehouseIds.slice().sort().join(",")],
+    [scopeKey],
     () => computeReports(scopeWarehouseIds),
     {
       revalidate: 120,
@@ -80,7 +90,9 @@ export async function getReports(scopeWarehouseIds: string[]): Promise<ReportsDa
   );
 }
 
-async function computeReports(scopeWarehouseIds: string[]): Promise<ReportsData> {
+async function computeReports(
+  scopeWarehouseIds?: string[],
+): Promise<ReportsData> {
   const since = startOf(new Date());
   since.setDate(since.getDate() - DAYS + 1);
 
@@ -93,7 +105,7 @@ async function computeReports(scopeWarehouseIds: string[]): Promise<ReportsData>
         prisma.purchaseRequest.findMany({
           where: {
             createdAt: { gte: since },
-            warehouseId: warehouseIdFilter(scopeWarehouseIds),
+            ...prWarehouseWhereFromScopeIds(scopeWarehouseIds),
           },
           select: { createdAt: true },
         }),
@@ -229,7 +241,7 @@ const poAdvanceInclude = {
   advanceRequests: { select: { status: true, requestedAmount: true } },
 };
 
-async function advanceMetrics(scopeWarehouseIds: string[]) {
+async function advanceMetrics(scopeWarehouseIds?: string[]) {
   const poScope = purchaseOrderWhereFromScopeIds(scopeWarehouseIds);
 
   const [pendingRequests, posWithAdvance] = await dbParallel(
@@ -297,7 +309,7 @@ async function advanceMetrics(scopeWarehouseIds: string[]) {
 }
 
 async function monthlyMetrics(
-  scopeWarehouseIds: string[],
+  scopeWarehouseIds?: string[],
 ): Promise<ReportsData["summary"]> {
   const startMonth = startOf(new Date());
   startMonth.setDate(1);
@@ -311,7 +323,7 @@ async function monthlyMetrics(
       prisma.purchaseRequest.count({
         where: {
           createdAt: { gte: startMonth },
-          warehouseId: warehouseIdFilter(scopeWarehouseIds),
+          ...prWarehouseWhereFromScopeIds(scopeWarehouseIds),
         },
       }),
     () =>
@@ -381,7 +393,7 @@ function ageingBucketForDays(ageDays: number): string {
 }
 
 export async function getPaymentAgeingExportRows(
-  scopeWarehouseIds: string[],
+  scopeWarehouseIds?: string[],
 ): Promise<PaymentAgeingExportRow[]> {
   const invoiceScope = invoiceWhereFromScopeIds(scopeWarehouseIds);
   const rows = await prisma.invoice.findMany({

@@ -5,6 +5,7 @@ import { Role } from "@/lib/prisma-enums";
 
 import { getVerifiedIdentity } from "@/lib/auth-claims";
 import { identityFromHeaders, warehouseIdFromMetadata } from "@/lib/auth-headers";
+import { getAppSessionUserRecord } from "@/lib/queries/session-user";
 import { createServerSupabaseClient } from "@/lib/supabase";
 import type { Role as AppRole } from "@/types";
 import { isRole } from "@/types";
@@ -21,7 +22,7 @@ export type SessionUser = {
   role: AppRole;
   /** Primary warehouse — SM single scope; first assigned warehouse for Ops Head / Finance. */
   warehouseId: string | null;
-  /** All assigned warehouses for Ops Head / Finance (from JWT app_metadata). */
+  /** All assigned warehouses for Ops Head / Finance / Admin (from app User row when present). */
   warehouseIds: string[];
 };
 
@@ -46,7 +47,10 @@ async function fetchRequestSession(): Promise<SessionUser | null> {
     return null;
   }
 
-  const role = roleFromMetadata(identity.userMetadata, identity.appMetadata);
+  const appUser = await getAppSessionUserRecord(identity.id);
+
+  const role =
+    appUser?.role ?? roleFromMetadata(identity.userMetadata, identity.appMetadata);
   if (!role) {
     return null;
   }
@@ -57,7 +61,10 @@ async function fetchRequestSession(): Promise<SessionUser | null> {
   let warehouseId: string | null = null;
   let warehouseIds: string[] = [];
 
-  if (role === Role.SM) {
+  if (appUser) {
+    warehouseId = appUser.warehouseId;
+    warehouseIds = appUser.warehouseIds;
+  } else if (role === Role.SM) {
     warehouseId = metadataWarehouseId;
     warehouseIds = metadataWarehouseId ? [metadataWarehouseId] : [];
   } else if (roleUsesMultiWarehouseAssignment(role)) {
@@ -68,6 +75,14 @@ async function fetchRequestSession(): Promise<SessionUser | null> {
           ? [metadataWarehouseId]
           : [];
     warehouseId = warehouseIds[0] ?? null;
+  } else if (role === Role.ADMIN) {
+    warehouseIds =
+      metadataWarehouseIds.length > 0
+        ? metadataWarehouseIds
+        : metadataWarehouseId
+          ? [metadataWarehouseId]
+          : [];
+    warehouseId = warehouseIds[0] ?? metadataWarehouseId;
   }
 
   return {

@@ -7,7 +7,7 @@ import { parsePurchaseOrderPageParams } from "@/lib/list-search-params";
 import { getPOFilterOptions, getPurchaseOrders } from "@/lib/queries/purchase-orders";
 import { ACCESS } from "@/lib/route-access";
 import { assertRole, getRequestSession, type SessionUser } from "@/lib/session";
-import { assignedWarehouseIds } from "@/lib/warehouse-scope";
+import { scopeWarehouseIdsForUser } from "@/lib/warehouse-scope";
 import { dbParallel } from "@/lib/db-parallel";
 import { timed } from "@/lib/server-timing";
 
@@ -43,7 +43,7 @@ async function PurchaseOrdersTableLoader({
   user: SessionUser;
   parsed: ReturnType<typeof parsePurchaseOrderPageParams>;
 }) {
-  const scopeWarehouseIds = assignedWarehouseIds(user);
+  const scopeWarehouseIds = scopeWarehouseIdsForUser(user);
   const [filterOptions, rows] = await dbParallel(
     () => timed("PO.filterOptions", () => getPOFilterOptions()),
     () =>

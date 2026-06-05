@@ -1,5 +1,6 @@
 import { Role } from "@/lib/prisma-enums";
 
+import { getCachedWarehouses } from "@/lib/cache";
 import { SerialGovernanceView } from "@/components/serial-governance/SerialGovernanceView";
 import { parseSerialGovernancePageParams } from "@/lib/list-search-params";
 import { toPaginated } from "@/lib/pagination";
@@ -13,7 +14,7 @@ import {
 } from "@/lib/queries/serial";
 import { ACCESS } from "@/lib/route-access";
 import { assertRole, getRequestSession } from "@/lib/session";
-import { assignedWarehouseIds } from "@/lib/warehouse-scope";
+import { scopeWarehouseIdsForUser } from "@/lib/warehouse-scope";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
@@ -53,13 +54,18 @@ export default async function SerialGovernancePage({
     // Activity rows and the advanced series configs don't depend on each other.
     [activity, seriesConfigs] = await Promise.all([
       getSerialActivity(activityFilters),
-      user.role === Role.OPS_HEAD
+      user.role === Role.OPS_HEAD || user.role === Role.ADMIN
         ? getSeriesConfigsForAdvanced()
         : Promise.resolve(seriesConfigs),
     ]);
   } else if (tab === "warehouses") {
+    const scoped = scopeWarehouseIdsForUser(user);
+    const ensureWarehouseIds =
+      scoped === undefined
+        ? (await getCachedWarehouses()).map((w) => w.id)
+        : scoped;
     warehouseSnapshots = await getWarehouseSeriesSnapshot({
-      ensureWarehouseIds: assignedWarehouseIds(user),
+      ensureWarehouseIds,
     });
   }
 

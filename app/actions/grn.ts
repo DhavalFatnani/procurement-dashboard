@@ -34,8 +34,9 @@ import type {
 } from "@/lib/queries/grn";
 import { revalidateGRNMutation } from "@/lib/revalidate-tags";
 import { requireRoles } from "@/lib/server-action-guard";
+import { ALL_DASHBOARD_ROLES, FINANCE_OR_ADMIN_ROLES, OPS_FINANCE_OR_ADMIN_ROLES, OPS_OR_ADMIN_ROLES, SM_OPS_OR_ADMIN_ROLES } from "@/lib/admin-access";
 import { assertSessionGrnAccess, assertSessionPurchaseOrderAccess } from "@/lib/warehouse-access";
-import { assignedWarehouseIds } from "@/lib/warehouse-scope";
+import { scopeWarehouseIdsForUser } from "@/lib/warehouse-scope";
 
 export type CreateGRNInput = {
   poId: string;
@@ -53,15 +54,15 @@ export type CreateGRNInput = {
 };
 
 export async function getGRNs(filters: GRNFilters): Promise<Paginated<GRNListRow>> {
-  const user = await requireRoles([Role.SM, Role.OPS_HEAD]);
+  const user = await requireRoles([...SM_OPS_OR_ADMIN_ROLES]);
   return getGRNsQuery({
     ...filters,
-    scopeWarehouseIds: assignedWarehouseIds(user),
+    scopeWarehouseIds: scopeWarehouseIdsForUser(user),
   });
 }
 
 export async function getGRNById(id: string): Promise<GRNDetail | null> {
-  const user = await requireRoles([Role.SM, Role.OPS_HEAD]);
+  const user = await requireRoles([...SM_OPS_OR_ADMIN_ROLES]);
   const access = await assertSessionGrnAccess(user, id);
   if (!access.ok) {
     return null;
@@ -70,33 +71,33 @@ export async function getGRNById(id: string): Promise<GRNDetail | null> {
 }
 
 export async function getPOsForGRN(): Promise<POForGRNOption[]> {
-  const user = await requireRoles([Role.SM, Role.OPS_HEAD]);
-  return getPOsForGRNQuery(assignedWarehouseIds(user));
+  const user = await requireRoles([...SM_OPS_OR_ADMIN_ROLES]);
+  return getPOsForGRNQuery(scopeWarehouseIdsForUser(user));
 }
 
 export async function searchPOsForGRN(q: string): Promise<POForGRNOption[]> {
-  const user = await requireRoles([Role.SM, Role.OPS_HEAD]);
-  return searchPOsForGRNQuery(q, 20, assignedWarehouseIds(user));
+  const user = await requireRoles([...SM_OPS_OR_ADMIN_ROLES]);
+  return searchPOsForGRNQuery(q, 20, scopeWarehouseIdsForUser(user));
 }
 
 export async function getPOForGRN(poId: string): Promise<POForGRNOption | null> {
-  const user = await requireRoles([Role.SM, Role.OPS_HEAD]);
+  const user = await requireRoles([...SM_OPS_OR_ADMIN_ROLES]);
   const access = await assertSessionPurchaseOrderAccess(user, poId);
   if (!access.ok) {
     return null;
   }
-  return getPOForGRNByIdQuery(poId, assignedWarehouseIds(user));
+  return getPOForGRNByIdQuery(poId, scopeWarehouseIdsForUser(user));
 }
 
 export async function getGRNFilterOptions() {
-  await requireRoles([Role.SM, Role.OPS_HEAD]);
+  await requireRoles([...SM_OPS_OR_ADMIN_ROLES]);
   return getGRNFilterOptionsQuery();
 }
 
 export async function createGRN(
   data: CreateGRNInput,
 ): Promise<{ ok: boolean; grnId?: string; message?: string }> {
-  const user = await requireRoles([Role.SM, Role.OPS_HEAD]);
+  const user = await requireRoles([...SM_OPS_OR_ADMIN_ROLES]);
 
   const poAccess = await assertSessionPurchaseOrderAccess(user, data.poId);
   if (!poAccess.ok) {

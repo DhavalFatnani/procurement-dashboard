@@ -1,5 +1,6 @@
 "use client";
 
+import { canManageFinance } from "@/lib/admin-access";
 import { POAdvanceRequestStatus, Role } from "@/lib/prisma-enums";
 import * as React from "react";
 import { toast } from "sonner";
@@ -80,7 +81,7 @@ export function AdvancePaymentsPanel({
   onExportCsv?: () => void;
 }) {
   const { refresh } = useListNavigation();
-  const isFinance = role === Role.FINANCE;
+  const isFinance = canManageFinance(role);
   const [exporting, setExporting] = React.useState(false);
   const [sheetOpen, setSheetOpen] = React.useState(false);
   const [detail, setDetail] = React.useState<AdvanceRequestDetail | null>(null);

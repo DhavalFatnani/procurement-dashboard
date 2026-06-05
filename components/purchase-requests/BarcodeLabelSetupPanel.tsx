@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import * as React from "react";
-import { SerialSeries } from "@/lib/prisma-enums";
+import type { SeriesCode } from "@/lib/series-codes";
 
 import { BarcodeFontSizeStepper } from "@/components/purchase-requests/BarcodeFontSizeStepper";
 import { BarcodeLabelPreview } from "@/components/purchase-requests/BarcodeLabelPreview";
@@ -263,7 +263,7 @@ export function BarcodeLabelSetupPanel({
   layoutLocked?: boolean;
   onLockLayout?: () => void;
   onUnlockLayout?: () => void;
-  series?: SerialSeries;
+  series?: SeriesCode;
   seriesName?: string;
   sampleSerial?: string;
   className?: string;

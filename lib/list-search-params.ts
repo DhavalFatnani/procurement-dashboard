@@ -4,10 +4,10 @@ import {
   PaymentStatus,
   POStatus,
   PRStatus,
-  SerialSeries,
   VendorStatus,
 } from "@/lib/prisma-enums";
 import type { ReservationEventType } from "@/lib/serial-series";
+import type { SeriesCode } from "@/lib/series-codes";
 
 export function parsePurchaseRequestSearchParams(
   params: URLSearchParams,
@@ -283,7 +283,7 @@ export function parseSerialGovernancePageParams(
   sp: Record<string, string | string[] | undefined>,
 ): {
   tab: string;
-  series: SerialSeries | "";
+  series: SeriesCode | "";
   type: ReservationEventType | "";
   warehouseId: string;
   dateFrom: string;
@@ -297,9 +297,7 @@ export function parseSerialGovernancePageParams(
 
   const tab = str(sp.tab) || "summary";
   const seriesRaw = str(sp.series);
-  const series = (Object.values(SerialSeries) as string[]).includes(seriesRaw)
-    ? (seriesRaw as SerialSeries)
-    : "";
+  const series = seriesRaw.trim();
 
   const typeRaw = str(sp.type);
   const type =
