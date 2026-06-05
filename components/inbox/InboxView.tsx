@@ -213,20 +213,7 @@ const QUICK_ACTIONS_BY_ROLE: Record<Role, { label: string; href: string; icon: L
       icon: Wallet,
     },
   ],
-  ADMIN: [
-    { label: "Platform control", href: "/admin/platform", icon: ClipboardList },
-    {
-      label: "Review approvals",
-      href: "/purchase-requests?status=PENDING_APPROVAL",
-      icon: ClipboardList,
-    },
-    {
-      label: "Settle invoices",
-      href: `${FINANCE_ROUTES.invoiceSettlement}?paymentStatus=UNPAID`,
-      icon: Receipt,
-    },
-    { label: "Users", href: "/admin/users", icon: UserPlus },
-  ],
+  ADMIN: [],
 };
 
 export function InboxView({ role, data }: { role: Role; data: InboxData }) {

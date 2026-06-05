@@ -21,6 +21,8 @@ const INBOX_HREF: Partial<Record<Role, string>> = {
 };
 
 export function DashboardPageHeader({ role }: { role: Role }) {
+  const inboxHref = INBOX_HREF[role] ?? (role === Role.ADMIN ? null : "/inbox");
+
   return (
     <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
       <div className="space-y-1">
@@ -29,14 +31,16 @@ export function DashboardPageHeader({ role }: { role: Role }) {
         </h1>
         <p className="text-ds-sm text-muted-foreground">{SUBTITLES[role]}</p>
       </div>
-      <Button
-        variant="soft"
-        size="sm"
-        render={<Link href={INBOX_HREF[role] ?? "/inbox"} />}
-      >
-        <Inbox className="size-3.5" strokeWidth={1.5} aria-hidden />
-        {role === Role.FINANCE ? "Open settlement queue" : "Open inbox"}
-      </Button>
+      {inboxHref ? (
+        <Button
+          variant="soft"
+          size="sm"
+          render={<Link href={inboxHref} />}
+        >
+          <Inbox className="size-3.5" strokeWidth={1.5} aria-hidden />
+          {role === Role.FINANCE ? "Open settlement queue" : "Open inbox"}
+        </Button>
+      ) : null}
     </div>
   );
 }

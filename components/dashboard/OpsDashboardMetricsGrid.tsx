@@ -10,9 +10,18 @@ import {
 
 import { AnimatedGrid, AnimatedGridItem } from "@/components/shared/AnimatedGrid";
 import { MetricTile } from "@/components/shared/MetricTile";
+import { Role } from "@/lib/prisma-enums";
 import type { OpsDashboardMetrics } from "@/lib/queries/dashboard";
 
-export function OpsDashboardMetricsGrid({ metrics }: { metrics: OpsDashboardMetrics }) {
+export function OpsDashboardMetricsGrid({
+  metrics,
+  role = Role.OPS_HEAD,
+}: {
+  metrics: OpsDashboardMetrics;
+  role?: Role;
+}) {
+  const grnExceptionsHref = role === Role.ADMIN ? "/goods-receipt" : "/inbox";
+  const matchExceptionsHref = role === Role.ADMIN ? "/invoices" : "/inbox";
   return (
     <AnimatedGrid className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
       <AnimatedGridItem>
@@ -52,7 +61,7 @@ export function OpsDashboardMetricsGrid({ metrics }: { metrics: OpsDashboardMetr
           hint="Unresolved receipt disputes"
           icon={AlertTriangle}
           iconTone={metrics.openGrnExceptions > 0 ? "error" : "success"}
-          href="/inbox"
+          href={grnExceptionsHref}
         />
       </AnimatedGridItem>
       <AnimatedGridItem>
@@ -62,7 +71,7 @@ export function OpsDashboardMetricsGrid({ metrics }: { metrics: OpsDashboardMetr
           hint="Invoices blocked without override"
           icon={CheckSquare}
           iconTone={metrics.matchExceptions > 0 ? "error" : "success"}
-          href="/inbox"
+          href={matchExceptionsHref}
         />
       </AnimatedGridItem>
       <AnimatedGridItem>

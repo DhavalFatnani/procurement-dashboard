@@ -61,6 +61,21 @@ describe("getNavGroupsForRole", () => {
     }
   });
 
+  it("omits Inbox from Admin navigation", () => {
+    const hrefs = getNavItemsForRole(Role.ADMIN).map((item) => item.href);
+    expect(hrefs).not.toContain("/inbox");
+
+    const payables = getNavGroupsForRole(Role.ADMIN).find((g) => g.id === "payables")!;
+    expect(payables.items.map((item) => item.href)).not.toContain("/inbox");
+
+    const work = getNavGroupsForRole(Role.ADMIN).find((g) => g.id === "work")!;
+    expect(work.items.map((item) => item.href)).toEqual([
+      "/purchase-requests",
+      "/purchase-orders/configure",
+      "/purchase-orders",
+    ]);
+  });
+
   it("includes Inbox at the top of Payables for Finance", () => {
     const payables = getNavGroupsForRole(Role.FINANCE).find((g) => g.id === "payables")!;
     expect(payables.items[0]?.href).toBe("/inbox");

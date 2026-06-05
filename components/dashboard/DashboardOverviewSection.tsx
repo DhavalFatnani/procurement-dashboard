@@ -50,7 +50,7 @@ export async function DashboardOverviewSection({
           role={user.role}
           metrics={metrics}
         />
-        <OpsDashboardMetricsGrid metrics={metrics} />
+        <OpsDashboardMetricsGrid metrics={metrics} role={user.role} />
       </>
     );
   }

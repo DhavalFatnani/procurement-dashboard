@@ -695,9 +695,10 @@ async function fetchInboxForRole(user: SessionUser): Promise<InboxData> {
     case Role.SM:
       return fetchSmInbox(user);
     case Role.OPS_HEAD:
-    case Role.ADMIN:
       return fetchOpsHeadInbox(user);
     case Role.FINANCE:
       return fetchFinanceInbox(user);
+    case Role.ADMIN:
+      throw new Error("Inbox is not available for Admin users.");
   }
 }

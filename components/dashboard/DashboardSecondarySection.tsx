@@ -89,8 +89,12 @@ export async function DashboardSecondarySection({
             title="Governance queue"
             description="Approvals, vendor onboarding, PO configuration, and exceptions blocking downstream teams."
             items={queue}
-            viewAllHref="/inbox"
-            viewAllLabel="Open inbox"
+            viewAllHref={
+              user.role === Role.ADMIN
+                ? "/purchase-requests?status=PENDING_APPROVAL"
+                : "/inbox"
+            }
+            viewAllLabel={user.role === Role.ADMIN ? "Review approvals" : "Open inbox"}
           />
         </div>
         <RecentActivityCard

@@ -127,7 +127,7 @@ const INBOX_ITEM: NavItem = {
 function payablesItemsFor(role: Role): NavItem[] {
   if (role !== Role.FINANCE && role !== Role.ADMIN) return [];
   return [
-    INBOX_ITEM,
+    ...(role === Role.FINANCE ? [INBOX_ITEM] : []),
     {
       href: FINANCE_ROUTES.invoiceSettlement,
       label: "Invoice settlement",
@@ -152,8 +152,9 @@ function workItemsFor(role: Role): NavItem[] {
     case Role.SM:
       return [INBOX_ITEM, PURCHASE_REQUESTS_ITEM, poHub];
     case Role.OPS_HEAD:
-    case Role.ADMIN:
       return [INBOX_ITEM, PURCHASE_REQUESTS_ITEM, CONFIGURE_PO_ITEM, poHub];
+    case Role.ADMIN:
+      return [PURCHASE_REQUESTS_ITEM, CONFIGURE_PO_ITEM, poHub];
     case Role.FINANCE:
       return [poHub];
   }
