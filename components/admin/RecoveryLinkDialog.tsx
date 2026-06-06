@@ -43,7 +43,9 @@ export function RecoveryLinkDialog({
           <AlertDialogDescription>
             The setup email could not be delivered to{" "}
             <span className="font-medium">{email}</span>. Share this one-time link
-            manually — it opens the password setup page.
+            manually. The recipient must tap <span className="font-medium">Continue</span>{" "}
+            on the page that opens — chat apps like WhatsApp can invalidate the link
+            if they only preview it.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <div className="space-y-2">

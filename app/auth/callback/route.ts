@@ -11,10 +11,17 @@ import { getSupabasePublishableKey, getSupabaseUrl } from "@/lib/supabase-env";
  * server-side (admin createUser / sendPasswordReset). Update the Supabase
  * "Reset password" email template to:
  *
- *   {{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=recovery&next=/login/reset-password
+ *   {{ .RedirectTo }}&token_hash={{ .TokenHash }}&type=recovery
+ *   (RedirectTo targets /auth/verify-recovery — never verify token_hash in this route.)
  *
- * Set Supabase Auth → URL Configuration → Site URL to your app origin
- * (e.g. http://localhost:3000) and add .../auth/callback to Redirect URLs.
+ * Set Supabase Auth → URL Configuration → Site URL to your production app
+ * origin (e.g. https://procurement.example.com). Add each environment origin
+ * (production, preview, http://localhost:3000) to Redirect URLs.
+ *
+ * Prefer `{{ .ConfirmationURL }}` in the reset-password email template so links
+ * use the `redirectTo` origin from the app. Custom templates that hardcode
+ * `{{ .SiteURL }}` will ignore per-request redirects and stay on localhost if
+ * Site URL was never updated after local development.
  */
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = request.nextUrl;
@@ -46,11 +53,13 @@ export async function GET(request: NextRequest) {
   });
 
   if (token_hash && type) {
-    const { error } = await supabase.auth.verifyOtp({ type, token_hash });
-    if (error) {
-      return loginError(error.message);
-    }
-    return response;
+    // Do not verify here — chat apps prefetch /auth/callback links and would
+    // consume one-time tokens before the recipient opens them.
+    const verify = new URL(`${origin}/auth/verify-recovery`);
+    verify.searchParams.set("token_hash", token_hash);
+    verify.searchParams.set("type", type);
+    verify.searchParams.set("next", next);
+    return NextResponse.redirect(verify);
   }
 
   if (code) {
