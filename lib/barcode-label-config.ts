@@ -13,6 +13,7 @@ export type BarcodePageSize =
   | "label-100x50"
   | "label-100x150"
   | "label-2x1"
+  | "label-3x1"
   | "label-3x2"
   | "label-4x6";
 
@@ -170,6 +171,15 @@ export const BARCODE_PAGE_SPECS: Record<BarcodePageSize, BarcodePageSpec> = {
     cssSize: "2in 1in",
     aspectRatio: 2 / 1,
     widthMm: 50.8,
+    heightMm: 25.4,
+  },
+  "label-3x1": {
+    label: "3 × 1 in",
+    hint: "Wide US product / shelf label",
+    group: "label",
+    cssSize: "3in 1in",
+    aspectRatio: 3 / 1,
+    widthMm: 76.2,
     heightMm: 25.4,
   },
   "label-3x2": {

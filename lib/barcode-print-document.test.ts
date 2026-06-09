@@ -24,6 +24,18 @@ describe("buildBarcodePrintStylesheet", () => {
     expect(css).toContain("page-break-after: always");
   });
 
+  it("uses 3 × 1 in label die dimensions", () => {
+    const css = buildBarcodePrintStylesheet({
+      ...DEFAULT_BARCODE_LABEL_CONFIG,
+      pageSize: "label-3x1",
+      marginMm: 3,
+    });
+    expect(css).toContain("size: 3in 1in");
+    expect(css).toContain("width: 76.2mm");
+    expect(css).toContain("height: 25.4mm");
+    expect(css).toContain("page-break-after: always");
+  });
+
   it("uses sheet page margins for A4", () => {
     const css = buildBarcodePrintStylesheet({
       ...DEFAULT_BARCODE_LABEL_CONFIG,
