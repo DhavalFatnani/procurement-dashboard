@@ -14,7 +14,10 @@ import {
   getBarcodeLayoutPresetsForContext,
   getBarcodeLayoutCssVars,
   getLatestBarcodeLabelConfigForLock,
+  getBarcodePreviewFrameMetrics,
+  getBarcodePreviewMaxWidthPx,
   getPreviewMarginInsets,
+  mmToCssPx,
   jsBarcodeOptionsFromConfig,
   loadBarcodeLabelDefaults,
   lockBarcodeLabelDefaults,
@@ -308,9 +311,48 @@ describe("getPreviewMarginInsets", () => {
     const standard = getPreviewMarginInsets("a4", 8);
 
     expect(none.xPercent).toBe(0);
+    expect(none.previewPaddingPercent).toBe(0);
     expect(minimal.xPercent).toBeCloseTo((4 / 210) * 100, 4);
     expect(standard.xPercent).toBeCloseTo((8 / 210) * 100, 4);
     expect(standard.yPercent).toBeCloseTo((8 / 297) * 100, 4);
+    expect(standard.previewPaddingPercent).toBe(standard.xPercent);
+  });
+
+  it("uses width ratio for preview padding on wide 3×1 in labels", () => {
+    const insets = getPreviewMarginInsets("label-3x1", 8);
+    expect(insets.xPercent).toBeCloseTo((8 / 76.2) * 100, 4);
+    expect(insets.yPercent).toBeCloseTo((8 / 25.4) * 100, 4);
+    expect(insets.previewPaddingPercent).toBe(insets.xPercent);
+    expect(insets.previewPaddingPercent).not.toBe(insets.yPercent);
+  });
+});
+
+describe("getBarcodePreviewMaxWidthPx", () => {
+  it("allocates more width for landscape label stock", () => {
+    expect(getBarcodePreviewMaxWidthPx("label-3x1", false)).toBeGreaterThan(
+      getBarcodePreviewMaxWidthPx("label-58x40", false),
+    );
+  });
+});
+
+describe("getBarcodePreviewFrameMetrics", () => {
+  it("renders 3×1 in label stock at true physical size when it fits the panel", () => {
+    const frame = getBarcodePreviewFrameMetrics("label-3x1", 8, false);
+    expect(frame.widthMm).toBeCloseTo(76.2, 1);
+    expect(frame.heightMm).toBeCloseTo(25.4, 1);
+    expect(frame.marginMm).toBe(8);
+    expect(frame.isTrueSize).toBe(true);
+    expect(frame.frameScale).toBe(1);
+    expect(frame.displayWidthPx).toBeCloseTo(mmToCssPx(76.2), 0);
+    expect(frame.displayHeightPx).toBeCloseTo(mmToCssPx(25.4), 0);
+  });
+
+  it("scales large sheets down while preserving die dimensions", () => {
+    const frame = getBarcodePreviewFrameMetrics("a4", 8, false);
+    expect(frame.frameScale).toBeLessThan(1);
+    expect(frame.isTrueSize).toBe(false);
+    expect(frame.displayWidthPx).toBeLessThan(mmToCssPx(210));
+    expect(frame.displayWidthPx / frame.displayHeightPx).toBeCloseTo(210 / 297, 3);
   });
 });
 

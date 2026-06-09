@@ -701,7 +701,14 @@ export function applyLabelContentFitScale(label: HTMLElement): number {
 export function getPreviewMarginInsets(
   pageSize: BarcodePageSize,
   marginMm: number,
-): { xPercent: number; yPercent: number; marginMm: number; label: string } {
+): {
+  xPercent: number;
+  yPercent: number;
+  /** Uniform CSS padding % for aspect-ratio preview frames (% always refs width). */
+  previewPaddingPercent: number;
+  marginMm: number;
+  label: string;
+} {
   const spec = getBarcodePageSpec(pageSize);
   const xPercent = spec.widthMm > 0 ? (marginMm / spec.widthMm) * 100 : 0;
   const yPercent = spec.heightMm > 0 ? (marginMm / spec.heightMm) * 100 : 0;
@@ -709,8 +716,64 @@ export function getPreviewMarginInsets(
   return {
     xPercent,
     yPercent,
+    previewPaddingPercent: xPercent,
     marginMm,
     label: marginMm === 0 ? "no margins" : `${marginMm} mm margins`,
+  };
+}
+
+/** Max preview frame width (px) — wide label stock needs more horizontal room. */
+export function getBarcodePreviewMaxWidthPx(
+  pageSize: BarcodePageSize,
+  compact: boolean,
+): number {
+  const aspect = getBarcodePageSpec(pageSize).aspectRatio;
+  if (aspect >= 2.5) {
+    return compact ? 320 : 400;
+  }
+  if (aspect >= 1.5) {
+    return compact ? 260 : 340;
+  }
+  return compact ? 200 : 280;
+}
+
+/** CSS reference: 1mm ≈ 96/25.4 px at default browser density. */
+export function mmToCssPx(mm: number): number {
+  return (mm * 96) / 25.4;
+}
+
+/**
+ * Preview frame sized to the selected page/label die.
+ * Label stock renders at true physical size when it fits the panel (scale = 1).
+ * Large sheets scale down uniformly so aspect ratio and margin proportions stay exact.
+ */
+export function getBarcodePreviewFrameMetrics(
+  pageSize: BarcodePageSize,
+  marginMm: number,
+  compact: boolean,
+): {
+  widthMm: number;
+  heightMm: number;
+  marginMm: number;
+  frameScale: number;
+  displayWidthPx: number;
+  displayHeightPx: number;
+  isTrueSize: boolean;
+} {
+  const spec = getBarcodePageSpec(pageSize);
+  const maxWidthPx = getBarcodePreviewMaxWidthPx(pageSize, compact);
+  const naturalWidthPx = mmToCssPx(spec.widthMm);
+  const naturalHeightPx = mmToCssPx(spec.heightMm);
+  const frameScale = Math.min(1, maxWidthPx / naturalWidthPx);
+
+  return {
+    widthMm: spec.widthMm,
+    heightMm: spec.heightMm,
+    marginMm,
+    frameScale,
+    displayWidthPx: naturalWidthPx * frameScale,
+    displayHeightPx: naturalHeightPx * frameScale,
+    isTrueSize: frameScale >= 0.999,
   };
 }
 

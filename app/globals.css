@@ -470,7 +470,7 @@
 
 .serial-label-barcode {
   display: flex;
-  width: min(var(--serial-barcode-max-width, 92%), 140mm);
+  width: min(var(--serial-barcode-max-width, 92%), 100%);
   flex: 0 1 auto;
   flex-direction: column;
   align-items: center;
@@ -506,7 +506,7 @@
 
 .serial-label-series {
   margin: 0;
-  max-width: min(92%, 140mm);
+  max-width: min(92%, 100%);
   overflow: hidden;
   color: #444;
   font-family: ui-sans-serif, system-ui, sans-serif;

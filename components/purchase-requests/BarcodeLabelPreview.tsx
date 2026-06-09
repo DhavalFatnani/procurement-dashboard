@@ -5,9 +5,11 @@ import * as React from "react";
 import {
   BARCODE_BRAND_SIZE_CHIPS,
   BARCODE_LABEL_PREVIEW_SCALE,
+  computeLabelContentFitScale,
   formatTypographyScalePercent,
   getBarcodeLayoutCssVars,
   getBarcodePageSpec,
+  getBarcodePreviewFrameMetrics,
   getBarcodeTypographyMode,
   getPreviewMarginInsets,
   jsBarcodeOptionsFromConfig,
@@ -15,6 +17,7 @@ import {
   type BarcodeLabelConfig,
   type BarcodePreviewHighlight,
 } from "@/lib/barcode-label-config";
+import { getBarcodePrintCssVars } from "@/lib/barcode-print-document";
 import { cn } from "@/lib/utils";
 
 const PREVIEW_BARCODE_SCALE = BARCODE_LABEL_PREVIEW_SCALE;
@@ -50,15 +53,17 @@ export function BarcodeLabelPreview({
   const svgRef = React.useRef<SVGSVGElement>(null);
   const pageSpec = getBarcodePageSpec(config.pageSize);
   const marginInsets = getPreviewMarginInsets(config.pageSize, config.marginMm);
+  const frame = getBarcodePreviewFrameMetrics(config.pageSize, config.marginMm, compact);
   const typographyMode = getBarcodeTypographyMode(config);
   const typography = resolveBarcodeTypography(config, typographyMode);
   const layoutVars = getBarcodeLayoutCssVars(config);
   const usePrintSizing = typographyMode === "label";
+  const labelFitScale = usePrintSizing ? computeLabelContentFitScale(config) : 1;
   const brandChipLabel =
     BARCODE_BRAND_SIZE_CHIPS.find((chip) => chip.value === config.brandSize)?.label ?? "M";
 
   const previewLayoutVars: Record<string, string> = usePrintSizing
-    ? layoutVars
+    ? getBarcodePrintCssVars(config)
     : {
         ...layoutVars,
         "--serial-brand-font-pt": scaledPreviewFontPt(typography.brandFontPt),
@@ -66,7 +71,7 @@ export function BarcodeLabelPreview({
         "--serial-barcode-value-font-pt": scaledPreviewFontPt(typography.barcodeValueFontPt),
       };
 
-  const barcodeRenderScale = usePrintSizing ? 1 : PREVIEW_BARCODE_SCALE;
+  const barcodeRenderScale = usePrintSizing ? labelFitScale : PREVIEW_BARCODE_SCALE;
 
   React.useEffect(() => {
     let cancelled = false;
@@ -108,78 +113,87 @@ export function BarcodeLabelPreview({
         </p>
         {!compact ? (
           <span className="rounded-full bg-muted px-2 py-0.5 text-ds-2xs text-muted-foreground">
-            1 per page
+            {frame.isTrueSize ? "Actual size" : `${Math.round(frame.frameScale * 100)}% scale`} · 1
+            per page
           </span>
         ) : null}
       </div>
 
-      <div className={cn("mx-auto w-full", compact ? "max-w-[200px]" : "max-w-[280px]")}>
+      <div className="mx-auto w-full overflow-hidden" style={{ maxWidth: frame.displayWidthPx }}>
         <div
-          className={cn(
-            "relative overflow-hidden rounded-md border border-border-default shadow-ds transition-shadow",
-            highlight === "margin" && "ring-2 ring-primary/50",
-          )}
+          className="relative"
           style={{
-            aspectRatio: pageSpec.aspectRatio,
-            padding: `${marginInsets.yPercent}% ${marginInsets.xPercent}%`,
-            backgroundColor: "#d4d4d8",
-            backgroundImage:
-              marginInsets.marginMm > 0
-                ? "repeating-linear-gradient(-45deg, transparent, transparent 4px, rgba(255,255,255,0.35) 4px, rgba(255,255,255,0.35) 8px)"
-                : undefined,
+            width: frame.displayWidthPx,
+            height: frame.displayHeightPx,
           }}
         >
           <div
             className={cn(
-              "serial-label-preview-inner flex h-full w-full items-center justify-center overflow-hidden bg-white",
-              marginInsets.marginMm > 0 && "ring-1 ring-inset ring-zinc-300/80",
+              "relative box-border overflow-hidden rounded-md border border-border-default shadow-ds transition-shadow",
+              highlight === "margin" && "ring-2 ring-primary/50",
             )}
+            style={{
+              width: `${frame.widthMm}mm`,
+              height: `${frame.heightMm}mm`,
+              padding: `${frame.marginMm}mm`,
+              transform: frame.frameScale < 1 ? `scale(${frame.frameScale})` : undefined,
+              transformOrigin: "top left",
+              backgroundColor: "#d4d4d8",
+              backgroundImage:
+                frame.marginMm > 0
+                  ? "repeating-linear-gradient(-45deg, transparent, transparent 4px, rgba(255,255,255,0.35) 4px, rgba(255,255,255,0.35) 8px)"
+                  : undefined,
+            }}
           >
             <div
-              className="serial-label-content text-[#111]"
-              style={previewLayoutVars}
+              className={cn(
+                "serial-label-preview-inner flex h-full w-full items-center justify-center overflow-hidden bg-white",
+                frame.marginMm > 0 && "ring-1 ring-inset ring-zinc-300/80",
+              )}
             >
-              <p
-                className={cn(
-                  "serial-label-brand shrink-0 font-extrabold uppercase leading-none",
-                  highlightRingClass(highlight, "knot"),
-                )}
-              >
-                KNOT
-              </p>
-
-              <div className="serial-label-stack w-full">
-                <div
+              <div className="serial-label-content text-[#111]" style={previewLayoutVars}>
+                <p
                   className={cn(
-                    "serial-label-barcode",
-                    highlightRingClass(highlight, "barcode"),
+                    "serial-label-brand shrink-0 font-extrabold uppercase leading-none",
+                    highlightRingClass(highlight, "knot"),
                   )}
-                  style={{ maxWidth: previewLayoutVars["--serial-barcode-max-width"] }}
                 >
-                  <svg ref={svgRef} className="max-w-full" role="img" aria-hidden />
+                  KNOT
+                </p>
+
+                <div className="serial-label-stack w-full">
+                  <div
+                    className={cn(
+                      "serial-label-barcode",
+                      highlightRingClass(highlight, "barcode"),
+                    )}
+                    style={{ maxWidth: previewLayoutVars["--serial-barcode-max-width"] }}
+                  >
+                    <svg ref={svgRef} className="max-w-full" role="img" aria-hidden />
+                  </div>
+
+                  {config.showBarcodeValue ? (
+                    <p
+                      className={cn(
+                        "serial-label-value m-0 max-w-full shrink-0 truncate text-center",
+                        highlightRingClass(highlight, "serial"),
+                      )}
+                    >
+                      {sampleSerial}
+                    </p>
+                  ) : null}
+
+                  {config.showSeriesName ? (
+                    <p
+                      className={cn(
+                        "serial-label-series m-0 max-w-full shrink-0 truncate text-center text-[#444] leading-snug",
+                        highlightRingClass(highlight, "series"),
+                      )}
+                    >
+                      {seriesName ?? "Series name"}
+                    </p>
+                  ) : null}
                 </div>
-
-                {config.showBarcodeValue ? (
-                  <p
-                    className={cn(
-                      "serial-label-value m-0 max-w-full shrink-0 truncate text-center",
-                      highlightRingClass(highlight, "serial"),
-                    )}
-                  >
-                    {sampleSerial}
-                  </p>
-                ) : null}
-
-                {config.showSeriesName ? (
-                  <p
-                    className={cn(
-                      "serial-label-series m-0 max-w-full shrink-0 truncate text-center text-[#444] leading-snug",
-                      highlightRingClass(highlight, "series"),
-                    )}
-                  >
-                    {seriesName ?? "Series name"}
-                  </p>
-                ) : null}
               </div>
             </div>
           </div>
@@ -205,6 +219,12 @@ export function BarcodeLabelPreview({
             <span>{pageSpec.label}</span>
             <span aria-hidden>·</span>
             <span className="font-medium text-foreground">{marginInsets.label}</span>
+            {!frame.isTrueSize ? (
+              <>
+                <span aria-hidden>·</span>
+                <span>preview scaled to fit panel</span>
+              </>
+            ) : null}
             <span aria-hidden>·</span>
             <span>
               KNOT {typography.brandFontPt}pt · Serial {typography.barcodeValueFontPt}pt · Series{" "}
