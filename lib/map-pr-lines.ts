@@ -7,7 +7,7 @@ type DbLine = {
   subcategoryId: string;
   quantity: number | null;
   notes: string | null;
-  category: { name: string };
+  category: { name: string; billingGranularity: import("@/lib/prisma-enums").CategoryBillingGranularity };
   subcategory: { name: string };
   items?: {
     id: string;
@@ -45,6 +45,7 @@ export function mapPrLinesFromDb(lines: DbLine[]): PRLineRow[] {
       lineNumber: line.lineNumber,
       categoryId: line.categoryId,
       categoryName: line.category.name,
+      billingGranularity: line.category.billingGranularity,
       subcategoryId: line.subcategoryId,
       subcategoryName: line.subcategory.name,
       quantity,
@@ -64,7 +65,7 @@ export const prLinesAwaitingPoSelect = {
     subcategoryId: true,
     quantity: true,
     notes: true,
-    category: { select: { name: true } },
+    category: { select: { name: true, billingGranularity: true } },
     subcategory: { select: { name: true } },
     items: {
       orderBy: { lineItemNumber: "asc" as const },
@@ -85,7 +86,7 @@ export const prLinesAwaitingPoSelect = {
 export const prLinesInclude = {
   orderBy: { lineNumber: "asc" as const },
   include: {
-    category: { select: { name: true } },
+    category: { select: { name: true, billingGranularity: true } },
     subcategory: { select: { name: true } },
     items: {
       orderBy: { lineItemNumber: "asc" as const },

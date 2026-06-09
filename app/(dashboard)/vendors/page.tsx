@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { isOpsHeadOrAdmin } from "@/lib/admin-access";
 import { Role, type VendorStatus } from "@/lib/prisma-enums";
 
 import { VendorsPageHeader } from "@/components/vendors/VendorsPageHeader";
@@ -34,7 +35,7 @@ export default async function VendorsPage({ searchParams }: { searchParams: Sear
 
   const tabRaw = typeof sp.tab === "string" ? sp.tab : "all";
   const tab =
-    user.role === Role.OPS_HEAD && tabRaw === "pending" ? "pending" : ("all" as const);
+    isOpsHeadOrAdmin(user.role) && tabRaw === "pending" ? "pending" : ("all" as const);
 
   const q = typeof sp.q === "string" ? sp.q : "";
   const statusFilter = parseStatus(typeof sp.status === "string" ? sp.status : undefined);
@@ -85,7 +86,7 @@ async function VendorsTableLoader({
       ? await getVendors({ search, status: statusFilter, page, includeExactCount })
       : emptyVendors;
   const pendingRequests =
-    role === Role.OPS_HEAD && tab === "pending"
+    isOpsHeadOrAdmin(role) && tab === "pending"
       ? await getPendingVendorRequests()
       : [];
 

@@ -1,6 +1,12 @@
 import { ExecutionType } from "@/lib/prisma-enums";
 
-export type CategoryOption = { id: string; name: string };
+import type { CategoryBillingGranularity } from "@/lib/prisma-enums";
+
+export type CategoryOption = {
+  id: string;
+  name: string;
+  billingGranularity: CategoryBillingGranularity;
+};
 export type SubcategoryOption = {
   id: string;
   name: string;

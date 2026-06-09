@@ -7,6 +7,7 @@ import {
   canManageFinance,
   hasGlobalWarehouseScope,
   isAdminRole,
+  isOpsHeadOrAdmin,
 } from "@/lib/admin-access";
 
 describe("admin-access", () => {
@@ -28,6 +29,13 @@ describe("admin-access", () => {
   it("restricts user deletion to Admin actors", () => {
     expect(canDeleteUser(Role.ADMIN)).toBe(true);
     expect(canDeleteUser(Role.OPS_HEAD)).toBe(false);
+  });
+
+  it("treats Admin as Ops Head for operational workflows", () => {
+    expect(isOpsHeadOrAdmin(Role.OPS_HEAD)).toBe(true);
+    expect(isOpsHeadOrAdmin(Role.ADMIN)).toBe(true);
+    expect(isOpsHeadOrAdmin(Role.SM)).toBe(false);
+    expect(isOpsHeadOrAdmin(Role.FINANCE)).toBe(false);
   });
 
   it("grants finance write access to Finance and Admin", () => {

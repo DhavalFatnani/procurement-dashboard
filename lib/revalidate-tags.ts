@@ -20,6 +20,14 @@ export function revalidateCatalogCache() {
   revalidateTag("catalog-items");
   revalidateTag(LIST_CACHE_TAGS.catalog);
   revalidatePath("/admin/catalog");
+  revalidatePath("/admin/taxonomy");
+}
+
+export function revalidateTaxonomyCache() {
+  revalidateTag("categories");
+  revalidateCatalogCache();
+  revalidatePurchaseRequestsCache();
+  revalidatePath("/admin/taxonomy");
 }
 
 export function revalidateSerialGovernance() {

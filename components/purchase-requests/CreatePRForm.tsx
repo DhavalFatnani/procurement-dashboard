@@ -1,5 +1,6 @@
 "use client";
 
+import { isOpsHeadOrAdmin } from "@/lib/admin-access";
 import { ExecutionType, Role } from "@/lib/prisma-enums";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -95,7 +96,7 @@ export function CreatePRForm({
 }) {
   const router = useRouter();
   const { isPending: submitPending, run: runSubmit } = useServerMutation();
-  const isOps = role === Role.OPS_HEAD;
+  const isOps = isOpsHeadOrAdmin(role);
   const requiresWarehousePick = isOps;
   const [warehouseId, setWarehouseId] = React.useState(defaultWarehouseId);
   const warehouseReady = !requiresWarehousePick || warehouseId.length > 0;

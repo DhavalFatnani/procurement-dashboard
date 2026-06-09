@@ -154,7 +154,7 @@ function workItemsFor(role: Role): NavItem[] {
     case Role.OPS_HEAD:
       return [INBOX_ITEM, PURCHASE_REQUESTS_ITEM, CONFIGURE_PO_ITEM, poHub];
     case Role.ADMIN:
-      return [PURCHASE_REQUESTS_ITEM, CONFIGURE_PO_ITEM, poHub];
+      return [INBOX_ITEM, PURCHASE_REQUESTS_ITEM, CONFIGURE_PO_ITEM, poHub];
     case Role.FINANCE:
       return [poHub];
   }
@@ -204,7 +204,7 @@ function adminItemsFor(role: Role): NavItem[] {
     return [
       { href: "/admin/users", label: "Users", icon: "users" },
       { href: "/admin/warehouses", label: "Warehouses", icon: "warehouses" },
-      { href: "/admin/catalog", label: "Item catalog", icon: "catalog" },
+      { href: "/admin/taxonomy", label: "Taxonomy", icon: "catalog" },
     ];
   }
   if (role === Role.ADMIN) {
@@ -212,7 +212,7 @@ function adminItemsFor(role: Role): NavItem[] {
       { href: "/admin/platform", label: "Platform control", icon: "dashboard" },
       { href: "/admin/users", label: "Users", icon: "users" },
       { href: "/admin/warehouses", label: "Warehouses", icon: "warehouses" },
-      { href: "/admin/catalog", label: "Item catalog", icon: "catalog" },
+      { href: "/admin/taxonomy", label: "Taxonomy", icon: "catalog" },
     ];
   }
   return [];

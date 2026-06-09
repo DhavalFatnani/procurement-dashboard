@@ -1,5 +1,6 @@
 "use client";
 
+import { isOpsHeadOrAdmin } from "@/lib/admin-access";
 import { ExecutionType, PRStatus, Role } from "@/lib/prisma-enums";
 import Link from "next/link";
 import { useOptimistic } from "react";
@@ -98,7 +99,7 @@ export function PRDetailView({
     pr.status,
     (_current, next: PRStatus) => next,
   );
-  const isOps = role === Role.OPS_HEAD;
+  const isOps = isOpsHeadOrAdmin(role);
   const isSm = role === Role.SM;
 
   const [draftEditMode, setDraftEditMode] = React.useState(false);
@@ -329,7 +330,7 @@ export function PRDetailView({
                         </thead>
                         <tbody>
                           {pr.lines.flatMap((line) => {
-                            if (usesSubcategoryAtomicity(line.categoryName)) {
+                            if (usesSubcategoryAtomicity(line)) {
                               return [
                                 <tr
                                   key={line.id}
@@ -385,7 +386,7 @@ export function PRDetailView({
                       <p className="mt-2 text-ds-xs text-status-warning">
                         Proposed catalog items are reviewed when you approve — use Approve PR or{" "}
                         <Link
-                          href="/admin/catalog?status=PENDING_APPROVAL"
+                          href="/admin/taxonomy?tab=items&status=PENDING_APPROVAL"
                           className="font-medium text-primary underline-offset-4 hover:underline"
                         >
                           Item catalog

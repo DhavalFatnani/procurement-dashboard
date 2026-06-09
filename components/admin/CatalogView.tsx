@@ -59,8 +59,10 @@ export function CatalogView({
   filters,
   filterOptions,
   pendingCount,
+  embedded = false,
 }: {
   initialRows: Paginated<CatalogItemListRow>;
+  embedded?: boolean;
   filters: {
     search: string;
     status: string;
@@ -125,6 +127,8 @@ export function CatalogView({
           items = items.map((r) =>
             r.id === id ? { ...r, status: CatalogItemStatus.ACTIVE } : r,
           );
+        } else if (outcome === "deleted") {
+          items = items.filter((r) => r.id !== id);
         }
 
         return { ...prev, items };
@@ -150,9 +154,13 @@ export function CatalogView({
     );
   }, [filterOptions.subcategories, filters.categoryId]);
 
-  function navigate(params: URLSearchParams) {
-    const qs = params.toString();
-    router.replace(qs ? `/admin/catalog?${qs}` : "/admin/catalog", { scroll: false });
+  function navigate(nextParams: URLSearchParams) {
+    const base = embedded ? "/admin/taxonomy" : "/admin/catalog";
+    if (embedded) nextParams.set("tab", "items");
+    const nextQs = nextParams.toString();
+    router.replace(nextQs ? `${base}?${nextQs}` : embedded ? `${base}?tab=items` : base, {
+      scroll: false,
+    });
   }
 
   function handleFilterSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -300,22 +308,28 @@ export function CatalogView({
     [handleItemResolved],
   );
 
+  const addItemButton = (
+    <Button onClick={() => setDrawerMode({ kind: "create" })}>
+      <Plus className="size-3.5" strokeWidth={1.5} aria-hidden />
+      Add item
+    </Button>
+  );
+
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Item catalog"
-        subtitle={
-          localPendingCount > 0
-            ? `${localPendingCount} catalog item${localPendingCount === 1 ? "" : "s"} pending approval. Packaging, Lock Tags, and Last Mile bill at subcategory level on PRs.`
-            : "Warehouse Maintenance and IT and Hardware Assets use the item catalog. Packaging, Lock Tags, and Last Mile use subcategory quantity on PRs."
-        }
-        action={
-          <Button onClick={() => setDrawerMode({ kind: "create" })}>
-            <Plus className="size-3.5" strokeWidth={1.5} aria-hidden />
-            Add item
-          </Button>
-        }
-      />
+      {embedded ? (
+        <div className="flex justify-end">{addItemButton}</div>
+      ) : (
+        <PageHeader
+          title="Item catalog"
+          subtitle={
+            localPendingCount > 0
+              ? `${localPendingCount} catalog item${localPendingCount === 1 ? "" : "s"} pending approval.`
+              : "Catalog items apply to vendor-purchase subcategories in catalog-item categories."
+          }
+          action={addItemButton}
+        />
+      )}
 
       <form onSubmit={handleFilterSubmit}>
         <FilterBar
@@ -402,7 +416,7 @@ export function CatalogView({
             }}
           />
           <Pagination
-            basePath="/admin/catalog"
+            basePath={embedded ? "/admin/taxonomy" : "/admin/catalog"}
             page={pageRows.page}
             pageSize={pageRows.pageSize}
             total={pageRows.total}
@@ -410,6 +424,7 @@ export function CatalogView({
             hasNextPage={pageRows.hasNextPage}
             onPageChange={handlePageChange}
             searchParams={{
+              ...(embedded ? { tab: "items" } : {}),
               q: filters.search || undefined,
               status: filters.status || undefined,
               categoryId: filters.categoryId || undefined,

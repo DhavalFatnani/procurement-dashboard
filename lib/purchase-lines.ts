@@ -1,4 +1,4 @@
-import type { GRNExceptionType } from "@/lib/prisma-enums";
+import type { CategoryBillingGranularity, GRNExceptionType } from "@/lib/prisma-enums";
 import { SERIES_CODES } from "@/lib/series-codes";
 
 export type PRLineItemRow = {
@@ -17,6 +17,7 @@ export type PRLineRow = {
   lineNumber: number;
   categoryId: string;
   categoryName: string;
+  billingGranularity: CategoryBillingGranularity;
   subcategoryId: string;
   subcategoryName: string;
   /** Sum of item quantities (vendor) or line qty (internal print). */

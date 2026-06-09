@@ -1,5 +1,6 @@
 "use client";
 
+import { isOpsHeadOrAdmin } from "@/lib/admin-access";
 import type { VendorStatus } from "@/lib/prisma-enums";
 import { Role } from "@/lib/prisma-enums";
 import Link from "next/link";
@@ -63,7 +64,7 @@ export function VendorsView({
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const canManage = role === Role.OPS_HEAD;
+  const canManage = isOpsHeadOrAdmin(role);
   const [addVendorOpen, setAddVendorOpen] = React.useState(openAddVendor ?? false);
   const [isPending, startTransition] = React.useTransition();
   // Optimistic: deactivating a vendor flips its row to INACTIVE instantly; the

@@ -1,5 +1,13 @@
 import { cache } from "react";
-import { ExecutionType, InvoiceMatchStatus, POStatus, PaymentStatus, PRStatus, Role } from "@/lib/prisma-enums";
+import {
+  CategoryBillingGranularity,
+  ExecutionType,
+  InvoiceMatchStatus,
+  POStatus,
+  PaymentStatus,
+  PRStatus,
+  Role,
+} from "@/lib/prisma-enums";
 
 import {
   getCachedActiveCatalogItems,
@@ -55,7 +63,11 @@ export type PurchaseRequestListRow = {
   poProgress?: { assigned: number; total: number };
 };
 
-export type CategoryOption = { id: string; name: string };
+export type CategoryOption = {
+  id: string;
+  name: string;
+  billingGranularity: CategoryBillingGranularity;
+};
 export type SubcategoryOption = {
   id: string;
   name: string;
@@ -185,7 +197,11 @@ export const getListFilterOptions = cache(async (): Promise<{
     () => getCachedCreators(),
   );
 
-  const categories = categoriesWithSubs.map((c) => ({ id: c.id, name: c.name }));
+  const categories = categoriesWithSubs.map((c) => ({
+    id: c.id,
+    name: c.name,
+    billingGranularity: c.billingGranularity,
+  }));
   const subcategories = categoriesWithSubs
     .flatMap((c) => c.subcategories)
     .sort((a, b) => a.name.localeCompare(b.name))

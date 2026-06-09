@@ -8,10 +8,12 @@ import type { PRLineInput } from "@/lib/pr-line-persistence";
 import type { CatalogItemOption, SubcategoryOption } from "@/lib/queries/purchase-requests";
 import { Chip } from "@/components/shared/Chip";
 import {
+  categoryById,
   categoryNameById,
   usesCatalogItemAtomicity,
   usesSubcategoryAtomicity,
 } from "@/lib/catalog-atomicity";
+import type { CategoryBillingGranularity } from "@/lib/prisma-enums";
 import { MAX_ITEMS_PER_PR_LINE } from "@/lib/catalog-items";
 import { MAX_PR_LINES } from "@/lib/purchase-lines";
 import { Button } from "@/components/ui/button";
@@ -56,6 +58,7 @@ export function linesFromDetail(
   lines: {
     categoryId: string;
     categoryName: string;
+    billingGranularity: CategoryBillingGranularity;
     subcategoryId: string;
     quantity: number;
     notes?: string | null;
@@ -72,7 +75,8 @@ export function linesFromDetail(
   }
   return lines.map((line) => {
     const subcategoryOnly =
-      vendorMode && usesSubcategoryAtomicity(line.categoryName);
+      vendorMode &&
+      usesSubcategoryAtomicity({ billingGranularity: line.billingGranularity });
 
     if (subcategoryOnly) {
       return {
@@ -98,7 +102,8 @@ export function linesFromDetail(
               catalogItemId: item.catalogItemId,
               quantity: item.quantity,
             }))
-          : vendorMode && usesCatalogItemAtomicity(line.categoryName)
+          : vendorMode &&
+              usesCatalogItemAtomicity({ billingGranularity: line.billingGranularity })
             ? [{ key: crypto.randomUUID(), quantity: 1 }]
             : [],
     };
@@ -107,13 +112,13 @@ export function linesFromDetail(
 
 export function toLineInputs(
   drafts: PRLineDraft[],
-  categories: { id: string; name: string }[],
+  categories: { id: string; name: string; billingGranularity: CategoryBillingGranularity }[],
   vendorMode = true,
 ): PRLineInput[] {
   return drafts.map(({ categoryId, subcategoryId, quantity, notes, items }) => {
     if (vendorMode) {
-      const categoryName = categoryNameById(categoryId, categories);
-      if (usesSubcategoryAtomicity(categoryName)) {
+      const category = categoryById(categoryId, categories);
+      if (category && usesSubcategoryAtomicity(category)) {
         return {
           categoryId,
           subcategoryId,
@@ -206,7 +211,7 @@ function CategorySubcategoryRow({
 }: {
   line: PRLineDraft;
   lineIndex: number;
-  categories: { id: string; name: string }[];
+  categories: { id: string; name: string; billingGranularity: CategoryBillingGranularity }[];
   subsForCategory: SubcategoryOption[];
   readOnly: boolean;
   onCategoryChange: (categoryId: string) => void;
@@ -288,7 +293,7 @@ export function PRLineEditor({
   vendorPurchaseOnly = true,
   readOnly = false,
 }: {
-  categories: { id: string; name: string }[];
+  categories: { id: string; name: string; billingGranularity: CategoryBillingGranularity }[];
   subcategories: SubcategoryOption[];
   catalogItems: CatalogItemOption[];
   lines: PRLineDraft[];
@@ -430,9 +435,9 @@ export function PRLineEditor({
   return (
     <div className="space-y-3">
       {lines.map((line, lineIndex) => {
-        const categoryName = categoryNameById(line.categoryId, categories);
-        const subcategoryOnly = usesSubcategoryAtomicity(categoryName);
-        const catalogLine = usesCatalogItemAtomicity(categoryName);
+        const category = categoryById(line.categoryId, categories);
+        const subcategoryOnly = category ? usesSubcategoryAtomicity(category) : false;
+        const catalogLine = category ? usesCatalogItemAtomicity(category) : false;
         const subsForCategory = vendorSubs.filter((s) => s.categoryId === line.categoryId);
         const catalogForSub = catalogItems.filter((c) => c.subcategoryId === line.subcategoryId);
         if (subcategoryOnly) {
@@ -485,14 +490,15 @@ export function PRLineEditor({
               subsForCategory={subsForCategory}
               readOnly={readOnly}
               onCategoryChange={(value) => {
-                const nextName = categoryNameById(value, categories);
+                const nextCategory = categoryById(value, categories);
                 updateLine(lineIndex, {
                   categoryId: value,
                   subcategoryId: "",
                   quantity: 1,
-                  items: usesCatalogItemAtomicity(nextName)
-                    ? [{ key: crypto.randomUUID(), quantity: 1 }]
-                    : [],
+                  items:
+                    nextCategory && usesCatalogItemAtomicity(nextCategory)
+                      ? [{ key: crypto.randomUUID(), quantity: 1 }]
+                      : [],
                 });
               }}
               onSubcategoryChange={(value) =>

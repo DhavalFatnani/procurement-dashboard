@@ -27,7 +27,13 @@ export type CachedSeriesConfig = CachedSeriesDefinition;
 export const getCachedCategories = unstable_cache(
   async () =>
     prisma.category.findMany({
-      include: { subcategories: true },
+      where: { status: "ACTIVE" },
+      include: {
+        subcategories: {
+          where: { status: "ACTIVE" },
+          orderBy: { name: "asc" },
+        },
+      },
       orderBy: { name: "asc" },
     }),
   ["categories-with-subcategories"],

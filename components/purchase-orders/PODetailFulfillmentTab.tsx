@@ -1,5 +1,6 @@
 "use client";
 
+import { isOpsHeadOrAdmin } from "@/lib/admin-access";
 import { POStatus, Role } from "@/lib/prisma-enums";
 import { useSearchParams } from "next/navigation";
 import * as React from "react";
@@ -34,9 +35,9 @@ export function PODetailFulfillmentTab({
   role: Role;
 }) {
   const searchParams = useSearchParams();
-  const isOps = role === Role.OPS_HEAD;
+  const isOps = isOpsHeadOrAdmin(role);
   const canRecordGrn =
-    (role === Role.SM || role === Role.OPS_HEAD) &&
+    (role === Role.SM || isOpsHeadOrAdmin(role)) &&
     RECEIVING_STATUSES.includes(po.status);
 
   const [expandedGrnId, setExpandedGrnId] = React.useState<string | null>(null);

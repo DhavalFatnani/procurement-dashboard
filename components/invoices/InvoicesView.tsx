@@ -1,5 +1,6 @@
 "use client";
 
+import { isOpsHeadOrAdmin } from "@/lib/admin-access";
 import { InvoiceMatchStatus, PaymentStatus, Role } from "@/lib/prisma-enums";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -53,8 +54,8 @@ export function InvoicesView({
 }) {
   const searchParams = useSearchParams();
   const { navigate, isPending, refresh } = useListNavigation();
-  const canUpload = role === Role.SM || role === Role.OPS_HEAD;
-  const isOps = role === Role.OPS_HEAD;
+  const canUpload = role === Role.SM || isOpsHeadOrAdmin(role);
+  const isOps = isOpsHeadOrAdmin(role);
   const rows = initialRows;
   const [sheetOpen, setSheetOpen] = React.useState(false);
   const [detail, setDetail] = React.useState<InvoiceDetail | null>(null);

@@ -1,10 +1,11 @@
+import { isOpsHeadOrAdmin } from "@/lib/admin-access";
 import { Role } from "@/lib/prisma-enums";
 
 import { PageHeader } from "@/components/shared/PageHeader";
 import { listBreadcrumbs } from "@/lib/lineage";
 
 export function VendorsPageHeader({ role }: { role: Role }) {
-  const canManage = role === Role.OPS_HEAD;
+  const canManage = isOpsHeadOrAdmin(role);
   return (
     <PageHeader
       breadcrumbs={listBreadcrumbs("/vendors")}

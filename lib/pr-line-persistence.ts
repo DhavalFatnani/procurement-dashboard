@@ -1,8 +1,11 @@
-import { CatalogItemStatus, ExecutionType } from "@/lib/prisma-enums";
+import {
+  CatalogItemStatus,
+  CategoryBillingGranularity,
+  ExecutionType,
+} from "@/lib/prisma-enums";
 import type { Prisma } from "@/lib/prisma-client";
 
 import {
-  catalogItemAtomicityCategoryNames,
   usesCatalogItemAtomicity,
   usesSubcategoryAtomicity,
 } from "@/lib/catalog-atomicity";
@@ -60,7 +63,7 @@ export async function validatePRLines(
   const subcategoryIds = [...new Set(lines.map((line) => line.subcategoryId))];
   const subRows = await prisma.subcategory.findMany({
     where: { id: { in: subcategoryIds } },
-    include: { category: { select: { name: true } } },
+    include: { category: { select: { name: true, billingGranularity: true } } },
   });
   const subById = new Map(subRows.map((sub) => [sub.id, sub]));
 
@@ -90,9 +93,7 @@ export async function validatePRLines(
     subs.push(sub);
 
     if (sub.executionType === ExecutionType.VENDOR_PURCHASE) {
-      const categoryName = sub.category.name;
-
-      if (usesSubcategoryAtomicity(categoryName)) {
+      if (usesSubcategoryAtomicity(sub.category)) {
         const qty = line.quantity ?? lineTotalQuantity(line);
         if (qty < 1) {
           return { ok: false, message: "Quantity must be at least 1." };
@@ -105,7 +106,7 @@ export async function validatePRLines(
           };
         }
         totalItems += 1;
-      } else if (usesCatalogItemAtomicity(categoryName)) {
+      } else if (usesCatalogItemAtomicity(sub.category)) {
         const items = line.items ?? [];
         if (items.length < 1) {
           return {
@@ -339,9 +340,9 @@ export async function replacePRLines(
   const categoryIds = [...new Set(lines.map((line) => line.categoryId))];
   const categories = await tx.category.findMany({
     where: { id: { in: categoryIds } },
-    select: { id: true, name: true },
+    select: { id: true, name: true, billingGranularity: true },
   });
-  const categoryNameById = new Map(categories.map((c) => [c.id, c.name]));
+  const categoryByIdMap = new Map(categories.map((c) => [c.id, c]));
 
   const subcategoryIds = [...new Set(lines.map((line) => line.subcategoryId))];
   const subcategories = await tx.subcategory.findMany({
@@ -367,9 +368,9 @@ export async function replacePRLines(
       },
     });
 
-    const categoryName = categoryNameById.get(line.categoryId) ?? "";
+    const category = categoryByIdMap.get(line.categoryId);
 
-    if (usesSubcategoryAtomicity(categoryName)) {
+    if (category && usesSubcategoryAtomicity(category)) {
       const subName = subcategoryNameById.get(line.subcategoryId);
       if (!subName) {
         continue;
@@ -395,7 +396,7 @@ export async function replacePRLines(
       continue;
     }
 
-    if (usesCatalogItemAtomicity(categoryName) && line.items) {
+    if (category && usesCatalogItemAtomicity(category) && line.items) {
       const quantityByCatalogId = new Map<string, number>();
       const catalogOrder: string[] = [];
 
@@ -439,7 +440,7 @@ export async function listPendingCatalogItemsForPR(prId: string) {
         some: {
           prLine: {
             prId,
-            category: { name: { in: [...catalogItemAtomicityCategoryNames()] } },
+            category: { billingGranularity: CategoryBillingGranularity.CATALOG_ITEM },
           },
         },
       },
@@ -464,7 +465,7 @@ export async function approvePendingCatalogItems(
         some: {
           prLine: {
             prId,
-            category: { name: { in: [...catalogItemAtomicityCategoryNames()] } },
+            category: { billingGranularity: CategoryBillingGranularity.CATALOG_ITEM },
           },
         },
       },

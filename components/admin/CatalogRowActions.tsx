@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import {
   approveCatalogItem,
   deactivateCatalogItem,
+  deleteCatalogItem,
   reactivateCatalogItem,
   rejectCatalogItem,
 } from "@/app/actions/catalog";
@@ -19,7 +20,8 @@ export type CatalogItemResolveOutcome =
   | "approved"
   | "rejected"
   | "deactivated"
-  | "reactivated";
+  | "reactivated"
+  | "deleted";
 
 export function CatalogRowActions({
   row,
@@ -35,6 +37,7 @@ export function CatalogRowActions({
   const [rejectOpen, setRejectOpen] = React.useState(false);
   const [deactivateOpen, setDeactivateOpen] = React.useState(false);
   const [reactivateOpen, setReactivateOpen] = React.useState(false);
+  const [deleteOpen, setDeleteOpen] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
 
   async function runAction(
@@ -173,6 +176,17 @@ export function CatalogRowActions({
         >
           Reactivate
         </Button>
+        {row.usageCount === 0 ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={busy}
+            onClick={() => setDeleteOpen(true)}
+          >
+            Delete
+          </Button>
+        ) : null}
         <ConfirmDialog
           open={reactivateOpen}
           onOpenChange={setReactivateOpen}
@@ -186,6 +200,24 @@ export function CatalogRowActions({
                 toast.success("Catalog item reactivated.");
                 setReactivateOpen(false);
                 onResolved?.(row.id, "reactivated");
+              },
+            );
+          }}
+        />
+        <ConfirmDialog
+          open={deleteOpen}
+          onOpenChange={setDeleteOpen}
+          title={`Delete “${row.name}”?`}
+          description="Permanent removal. Only available when unused."
+          confirmLabel="Delete"
+          confirmVariant="destructive"
+          onConfirm={() => {
+            void runAction(
+              () => deleteCatalogItem(row.id),
+              () => {
+                toast.success("Catalog item deleted.");
+                setDeleteOpen(false);
+                onResolved?.(row.id, "deleted");
               },
             );
           }}

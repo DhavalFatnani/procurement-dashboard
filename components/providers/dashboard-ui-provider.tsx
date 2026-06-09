@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import * as React from "react";
 
 import { useKeyboardShortcut } from "@/lib/keyboard";
+import { isOpsHeadOrAdmin } from "@/lib/admin-access";
 import { Role } from "@/lib/prisma-enums";
 
 const CommandPalette = dynamic(
@@ -74,13 +75,13 @@ export function DashboardUiProvider({
   useKeyboardShortcut(
     "a",
     () => pageHandlersRef.current?.onApprove?.(),
-    { enabled: role === Role.OPS_HEAD },
+    { enabled: isOpsHeadOrAdmin(role) },
   );
 
   useKeyboardShortcut(
     "r",
     () => pageHandlersRef.current?.onReject?.(),
-    { enabled: role === Role.OPS_HEAD },
+    { enabled: isOpsHeadOrAdmin(role) },
   );
 
   useKeyboardShortcut(

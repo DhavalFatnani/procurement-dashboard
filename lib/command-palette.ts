@@ -108,7 +108,7 @@ const NAV_COMMANDS: CommandItem[] = [
   {
     id: "nav-admin-catalog",
     label: "Go to Item catalog",
-    href: "/admin/catalog",
+    href: "/admin/taxonomy",
     icon: Tags,
   },
 ];
@@ -119,28 +119,28 @@ const ACTION_COMMANDS: CommandItem[] = [
     label: "Create Purchase Request",
     href: "/purchase-requests/new",
     icon: FilePlus,
-    roles: [Role.SM, Role.OPS_HEAD],
+    roles: [Role.SM, Role.OPS_HEAD, Role.ADMIN],
   },
   {
     id: "act-create-po",
     label: "Create purchase order",
     href: "/purchase-orders/configure",
     icon: ClipboardList,
-    roles: [Role.OPS_HEAD],
+    roles: [Role.OPS_HEAD, Role.ADMIN],
   },
   {
     id: "act-grn",
     label: "Record Goods Receipt",
     href: "/goods-receipt",
     icon: PackageCheck,
-    roles: [Role.SM, Role.OPS_HEAD],
+    roles: [Role.SM, Role.OPS_HEAD, Role.ADMIN],
   },
   {
     id: "act-invoice",
     label: "Upload Invoice",
     href: "/invoices/new",
     icon: Upload,
-    roles: [Role.SM, Role.OPS_HEAD],
+    roles: [Role.SM, Role.OPS_HEAD, Role.ADMIN],
   },
   {
     id: "act-vendor",
@@ -148,21 +148,21 @@ const ACTION_COMMANDS: CommandItem[] = [
     href: "/vendors?addVendor=1",
     action: "add-vendor",
     icon: Plus,
-    roles: [Role.OPS_HEAD],
+    roles: [Role.OPS_HEAD, Role.ADMIN],
   },
   {
     id: "act-add-user",
     label: "Add User",
     href: "/admin/users",
     icon: Users,
-    roles: [Role.OPS_HEAD],
+    roles: [Role.OPS_HEAD, Role.ADMIN],
   },
   {
     id: "act-add-warehouse",
     label: "Add Warehouse",
     href: "/admin/warehouses",
     icon: Warehouse,
-    roles: [Role.OPS_HEAD],
+    roles: [Role.OPS_HEAD, Role.ADMIN],
   },
 ];
 

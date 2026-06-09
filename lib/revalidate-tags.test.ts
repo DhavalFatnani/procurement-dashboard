@@ -44,6 +44,7 @@ describe("revalidatePRStatusChange", () => {
     expect(revalidateTag).toHaveBeenCalledWith("catalog-items");
     expect(revalidateTag).toHaveBeenCalledWith(LIST_CACHE_TAGS.catalog);
     expect(revalidatePath).toHaveBeenCalledWith("/admin/catalog");
+    expect(revalidatePath).toHaveBeenCalledWith("/admin/taxonomy");
   });
 });
 

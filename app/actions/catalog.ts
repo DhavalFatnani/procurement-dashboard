@@ -1,9 +1,14 @@
 "use server";
 
-import { CatalogItemStatus, ExecutionType, PRStatus, Role } from "@/lib/prisma-enums";
+import {
+  CatalogItemStatus,
+  CategoryBillingGranularity,
+  ExecutionType,
+  PRStatus,
+  Role,
+} from "@/lib/prisma-enums";
 
 import type { MutationResult } from "@/lib/action-result";
-import { usesCatalogItemAtomicity } from "@/lib/catalog-atomicity";
 import { normalizeCatalogItemName } from "@/lib/catalog-items";
 import { prisma } from "@/lib/prisma";
 import {
@@ -32,18 +37,18 @@ export async function createCatalogItem(data: {
     select: {
       id: true,
       executionType: true,
-      category: { select: { name: true } },
+      category: { select: { name: true, billingGranularity: true } },
     },
   });
   if (
     !sub ||
     sub.executionType !== ExecutionType.VENDOR_PURCHASE ||
-    !usesCatalogItemAtomicity(sub.category.name)
+    sub.category.billingGranularity !== CategoryBillingGranularity.CATALOG_ITEM
   ) {
     return {
       ok: false,
       message:
-        "Catalog items can only be added under Warehouse Maintenance or IT and Hardware Assets subcategories.",
+        "Catalog items can only be added under vendor-purchase subcategories in catalog-item categories.",
     };
   }
 
@@ -237,6 +242,28 @@ export async function deactivateCatalogItem(id: string): Promise<MutationResult>
     data: { status: CatalogItemStatus.INACTIVE },
   });
 
+  revalidateCatalogCache();
+  return { ok: true };
+}
+
+export async function deleteCatalogItem(id: string): Promise<MutationResult> {
+  await requireRoles([...OPS_OR_ADMIN_ROLES]);
+
+  const item = await prisma.catalogItem.findUnique({
+    where: { id },
+    include: { _count: { select: { prLineItems: true, poLineItems: true } } },
+  });
+  if (!item) {
+    return { ok: false, message: "Catalog item not found." };
+  }
+  if (item._count.prLineItems > 0 || item._count.poLineItems > 0) {
+    return {
+      ok: false,
+      message: "Item is used on purchase requests or orders. Deactivate instead.",
+    };
+  }
+
+  await prisma.catalogItem.delete({ where: { id } });
   revalidateCatalogCache();
   return { ok: true };
 }

@@ -27,6 +27,11 @@ export function isAdminRole(role: Role): boolean {
   return role === Role.ADMIN;
 }
 
+/** Ops Head workflows — Admin has the same operational capabilities globally. */
+export function isOpsHeadOrAdmin(role: Role): boolean {
+  return role === Role.OPS_HEAD || role === Role.ADMIN;
+}
+
 /** Admin bypasses warehouse assignment checks and list scoping. */
 export function hasGlobalWarehouseScope(role: Role): boolean {
   return role === Role.ADMIN;

@@ -45,7 +45,7 @@ describe("getNavGroupsForRole", () => {
     expect(admin?.items.map((i) => i.href)).toEqual([
       "/admin/users",
       "/admin/warehouses",
-      "/admin/catalog",
+      "/admin/taxonomy",
     ]);
   });
 
@@ -61,15 +61,11 @@ describe("getNavGroupsForRole", () => {
     }
   });
 
-  it("omits Inbox from Admin navigation", () => {
-    const hrefs = getNavItemsForRole(Role.ADMIN).map((item) => item.href);
-    expect(hrefs).not.toContain("/inbox");
-
-    const payables = getNavGroupsForRole(Role.ADMIN).find((g) => g.id === "payables")!;
-    expect(payables.items.map((item) => item.href)).not.toContain("/inbox");
-
+  it("includes Inbox at the top of Work for Admin (same ops entry point as Ops Head)", () => {
     const work = getNavGroupsForRole(Role.ADMIN).find((g) => g.id === "work")!;
+    expect(work.items[0]?.href).toBe("/inbox");
     expect(work.items.map((item) => item.href)).toEqual([
+      "/inbox",
       "/purchase-requests",
       "/purchase-orders/configure",
       "/purchase-orders",

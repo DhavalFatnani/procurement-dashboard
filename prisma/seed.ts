@@ -5,6 +5,8 @@ import {
   PRStatus,
   VendorStatus,
   CatalogItemStatus,
+  CategoryBillingGranularity,
+  TaxonomyStatus,
 } from "@/lib/prisma-client";
 import { randomUUID } from "crypto";
 import { PrismaPg } from "@prisma/adapter-pg";
@@ -121,32 +123,77 @@ async function seedWarehouses() {
 async function seedCategoriesAndSubcategories() {
   const packaging = await prisma.category.upsert({
     where: { id: "seed-cat-packaging" },
-    update: { name: "Packaging" },
-    create: { id: "seed-cat-packaging", name: "Packaging" },
+    update: {
+      name: "Packaging",
+      billingGranularity: CategoryBillingGranularity.SUBCATEGORY,
+      status: TaxonomyStatus.ACTIVE,
+    },
+    create: {
+      id: "seed-cat-packaging",
+      name: "Packaging",
+      billingGranularity: CategoryBillingGranularity.SUBCATEGORY,
+      status: TaxonomyStatus.ACTIVE,
+    },
   });
 
   const maintenance = await prisma.category.upsert({
     where: { id: "seed-cat-wh-maintenance" },
-    update: { name: "Warehouse Maintenance" },
-    create: { id: "seed-cat-wh-maintenance", name: "Warehouse Maintenance" },
+    update: {
+      name: "Warehouse Maintenance",
+      billingGranularity: CategoryBillingGranularity.CATALOG_ITEM,
+      status: TaxonomyStatus.ACTIVE,
+    },
+    create: {
+      id: "seed-cat-wh-maintenance",
+      name: "Warehouse Maintenance",
+      billingGranularity: CategoryBillingGranularity.CATALOG_ITEM,
+      status: TaxonomyStatus.ACTIVE,
+    },
   });
 
   const lockTags = await prisma.category.upsert({
     where: { id: "seed-cat-lock-tags" },
-    update: { name: "Lock Tags" },
-    create: { id: "seed-cat-lock-tags", name: "Lock Tags" },
+    update: {
+      name: "Lock Tags",
+      billingGranularity: CategoryBillingGranularity.SUBCATEGORY,
+      status: TaxonomyStatus.ACTIVE,
+    },
+    create: {
+      id: "seed-cat-lock-tags",
+      name: "Lock Tags",
+      billingGranularity: CategoryBillingGranularity.SUBCATEGORY,
+      status: TaxonomyStatus.ACTIVE,
+    },
   });
 
   const lastMile = await prisma.category.upsert({
     where: { id: "seed-cat-last-mile" },
-    update: { name: "Last Mile" },
-    create: { id: "seed-cat-last-mile", name: "Last Mile" },
+    update: {
+      name: "Last Mile",
+      billingGranularity: CategoryBillingGranularity.SUBCATEGORY,
+      status: TaxonomyStatus.ACTIVE,
+    },
+    create: {
+      id: "seed-cat-last-mile",
+      name: "Last Mile",
+      billingGranularity: CategoryBillingGranularity.SUBCATEGORY,
+      status: TaxonomyStatus.ACTIVE,
+    },
   });
 
   const itHardware = await prisma.category.upsert({
     where: { id: "seed-cat-it-hardware" },
-    update: { name: "IT and Hardware Assets" },
-    create: { id: "seed-cat-it-hardware", name: "IT and Hardware Assets" },
+    update: {
+      name: "IT and Hardware Assets",
+      billingGranularity: CategoryBillingGranularity.CATALOG_ITEM,
+      status: TaxonomyStatus.ACTIVE,
+    },
+    create: {
+      id: "seed-cat-it-hardware",
+      name: "IT and Hardware Assets",
+      billingGranularity: CategoryBillingGranularity.CATALOG_ITEM,
+      status: TaxonomyStatus.ACTIVE,
+    },
   });
 
   const packagingRows: { name: string }[] = [

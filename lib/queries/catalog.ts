@@ -8,7 +8,7 @@ import {
 } from "@/lib/prisma-client";
 
 import { getCachedCategories } from "@/lib/cache";
-import { catalogItemAtomicityCategoryNames } from "@/lib/catalog-atomicity";
+import { CategoryBillingGranularity } from "@/lib/prisma-enums";
 import { cachedQuery, LIST_CACHE_TAGS, stableFilterKey } from "@/lib/list-cache";
 import { paginatedListQuery, type Paginated } from "@/lib/pagination";
 import { prisma } from "@/lib/prisma";
@@ -57,9 +57,8 @@ export const getCatalogFilterOptions = cache(async (): Promise<{
   subcategories: CatalogSubcategoryOption[];
 }> => {
   const categoriesWithSubs = await getCachedCategories();
-  const itemAtomicityNames = new Set(catalogItemAtomicityCategoryNames());
   const vendorSubs = categoriesWithSubs
-    .filter((c) => itemAtomicityNames.has(c.name))
+    .filter((c) => c.billingGranularity === CategoryBillingGranularity.CATALOG_ITEM)
     .flatMap((c) =>
       c.subcategories
         .filter((s) => s.executionType === ExecutionType.VENDOR_PURCHASE)

@@ -124,6 +124,24 @@ const QUICK_ACTIONS_BY_ROLE: Record<Role, QuickAction[]> = {
       description: "Vendor PRs awaiting decision — all warehouses.",
     },
     {
+      label: "Create PO",
+      href: "/purchase-orders/configure",
+      icon: ClipboardList,
+      description: "Configure vendor, rates, and delivery for approved PRs.",
+    },
+    {
+      label: "Vendors",
+      href: "/vendors",
+      icon: Building2,
+      description: "Approve new vendor requests and govern records.",
+    },
+    {
+      label: "Create PR",
+      href: "/purchase-requests/new",
+      icon: FilePlus,
+      description: "Raise a request on behalf of any warehouse.",
+    },
+    {
       label: "Settle invoices",
       href: `${FINANCE_ROUTES.invoiceSettlement}?paymentStatus=UNPAID`,
       icon: Receipt,

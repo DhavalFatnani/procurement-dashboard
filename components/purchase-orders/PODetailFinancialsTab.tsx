@@ -1,6 +1,6 @@
 "use client";
 
-import { canManageFinance } from "@/lib/admin-access";
+import { canManageFinance, isOpsHeadOrAdmin } from "@/lib/admin-access";
 import { InvoiceMatchStatus, POAdvanceRequestStatus, Role } from "@/lib/prisma-enums";
 import Link from "next/link";
 import * as React from "react";
@@ -37,7 +37,7 @@ export function PODetailFinancialsTab({
   role: Role;
 }) {
   const { isPending, run } = useServerMutation();
-  const isOps = role === Role.OPS_HEAD || role === Role.ADMIN;
+  const isOps = isOpsHeadOrAdmin(role);
   const isFinance = canManageFinance(role);
   const [overrideInvoiceId, setOverrideInvoiceId] = React.useState<string | null>(
     null,
@@ -329,7 +329,7 @@ export function PODetailFinancialsTab({
                   : `${po.invoices.length} invoice${po.invoices.length === 1 ? "" : "s"} on file.`}
               </SurfaceCardDescription>
             </div>
-            {role === Role.SM || role === Role.OPS_HEAD ? (
+            {role === Role.SM || isOpsHeadOrAdmin(role) ? (
               <Button
                 size="sm"
                 variant="soft"

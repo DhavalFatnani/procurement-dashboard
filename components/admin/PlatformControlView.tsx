@@ -33,7 +33,7 @@ const QUICK_LINKS = [
     description: "Master data for warehouse locations and assignments.",
   },
   {
-    href: "/admin/catalog",
+    href: "/admin/taxonomy",
     title: "Item catalog",
     description: "Approve and maintain catalog items used on purchase lines.",
   },

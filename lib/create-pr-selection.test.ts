@@ -1,4 +1,4 @@
-import { ExecutionType } from "@/lib/prisma-enums";
+import { CategoryBillingGranularity, ExecutionType } from "@/lib/prisma-enums";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -8,8 +8,16 @@ import {
 } from "@/lib/create-pr-selection";
 
 const categories = [
-  { id: "cat-pack", name: "Packaging" },
-  { id: "cat-lock", name: LOCK_TAGS_CATEGORY_NAME },
+  {
+    id: "cat-pack",
+    name: "Packaging",
+    billingGranularity: CategoryBillingGranularity.SUBCATEGORY,
+  },
+  {
+    id: "cat-lock",
+    name: LOCK_TAGS_CATEGORY_NAME,
+    billingGranularity: CategoryBillingGranularity.SUBCATEGORY,
+  },
 ];
 
 const subcategories = [

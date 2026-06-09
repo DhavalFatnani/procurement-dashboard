@@ -2,24 +2,27 @@ import Link from "next/link";
 
 import { CreatePRForm } from "@/components/purchase-requests/CreatePRForm";
 import { PageHeader } from "@/components/shared/PageHeader";
+import { buttonVariants } from "@/components/ui/button";
+import { hasGlobalWarehouseScope, isOpsHeadOrAdmin } from "@/lib/admin-access";
 import { dbParallel } from "@/lib/db-parallel";
 import { getFilterOptions } from "@/lib/queries/purchase-requests";
-import { getWarehousesAssignedToUser } from "@/lib/queries/warehouses";
-import { Role } from "@/lib/prisma-enums";
+import { getWarehouseOptions, getWarehousesAssignedToUser } from "@/lib/queries/warehouses";
 import { ACCESS } from "@/lib/route-access";
 import { assertRole, getRequestSession } from "@/lib/session";
-import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 export default async function NewPurchaseRequestPage() {
   const user = assertRole(await getRequestSession(), [...ACCESS.purchaseRequests]);
 
-  const [assignedWarehouses, filterOptions] = await dbParallel(
-    () => getWarehousesAssignedToUser(user.id),
+  const [warehouses, filterOptions] = await dbParallel(
+    () =>
+      hasGlobalWarehouseScope(user.role)
+        ? getWarehouseOptions()
+        : getWarehousesAssignedToUser(user.id),
     () => getFilterOptions(),
   );
 
-  if (assignedWarehouses.length === 0) {
+  if (warehouses.length === 0) {
     return (
       <div className="space-y-4">
         <PageHeader title="Create purchase request" />
@@ -40,8 +43,8 @@ export default async function NewPurchaseRequestPage() {
       categories={filterOptions.categories}
       subcategories={filterOptions.subcategories}
       catalogItems={filterOptions.catalogItems}
-      warehouses={assignedWarehouses}
-      defaultWarehouseId={user.role === Role.OPS_HEAD ? "" : assignedWarehouses[0]!.id}
+      warehouses={warehouses}
+      defaultWarehouseId={isOpsHeadOrAdmin(user.role) ? "" : warehouses[0]!.id}
     />
   );
 }

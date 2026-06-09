@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
  */
 export function FilterSearch({
   name,
-  defaultValue,
+  defaultValue = "",
   placeholder = "Search…",
   className,
   ariaLabel,
@@ -29,6 +29,12 @@ export function FilterSearch({
   /** Tailwind width token — defaults to a comfortable 200px. */
   width?: string;
 }) {
+  const [value, setValue] = React.useState(defaultValue);
+
+  React.useEffect(() => {
+    setValue(defaultValue);
+  }, [defaultValue]);
+
   return (
     <div
       className={cn(
@@ -44,7 +50,8 @@ export function FilterSearch({
       <Input
         type="search"
         name={name}
-        defaultValue={defaultValue}
+        value={value}
+        onChange={(event) => setValue(event.target.value)}
         placeholder={placeholder}
         aria-label={ariaLabel ?? placeholder}
         className={cn("h-8 pl-7", width)}

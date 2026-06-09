@@ -1,5 +1,6 @@
 "use client";
 
+import { isOpsHeadOrAdmin } from "@/lib/admin-access";
 import { ExecutionType, PRStatus, Role } from "@/lib/prisma-enums";
 import { useRouter } from "next/navigation";
 import { useOptimistic } from "react";
@@ -98,7 +99,7 @@ export function PRListTable({
   onRowsChange: () => void;
 }) {
   const router = useRouter();
-  const isOps = role === Role.OPS_HEAD;
+  const isOps = isOpsHeadOrAdmin(role);
   const { isPending: actionPending, run } = useServerMutation({ onRefresh: onRowsChange });
   const [optimisticStatuses, setOptimisticStatuses] = useOptimistic(
     {} as Record<string, PRStatus>,
