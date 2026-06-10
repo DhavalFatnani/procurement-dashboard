@@ -31,6 +31,7 @@ export function revalidateTaxonomyCache() {
 }
 
 export function revalidateSerialGovernance() {
+  revalidateTag(LIST_CACHE_TAGS.serialRangeMap);
   revalidatePath("/serial-governance");
   revalidatePath("/serial-governance/range-map");
   revalidatePath("/admin/platform/series");

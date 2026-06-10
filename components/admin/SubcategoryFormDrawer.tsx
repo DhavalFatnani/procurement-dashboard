@@ -22,7 +22,9 @@ import type {
   TaxonomyCategoryOption,
 } from "@/lib/queries/taxonomy";
 
-type Mode = { kind: "create" } | { kind: "edit"; subcategory: SubcategoryListRow };
+type Mode =
+  | { kind: "create"; defaultCategoryId?: string }
+  | { kind: "edit"; subcategory: SubcategoryListRow };
 
 export type SeriesOption = { code: string; label: string };
 
@@ -42,7 +44,10 @@ export function SubcategoryFormDrawer({
   onSaved: () => void;
 }) {
   const isEdit = mode.kind === "edit";
-  const activeCategories = categories.filter((c) => c.status === TaxonomyStatus.ACTIVE);
+  const activeCategories = React.useMemo(
+    () => categories.filter((c) => c.status === TaxonomyStatus.ACTIVE),
+    [categories],
+  );
   const [categoryId, setCategoryId] = React.useState("");
   const [name, setName] = React.useState("");
   const [executionType, setExecutionType] = React.useState<ExecutionType>(
@@ -52,20 +57,26 @@ export function SubcategoryFormDrawer({
   const [submitting, setSubmitting] = React.useState(false);
   const formRef = React.useRef<HTMLFormElement>(null);
 
+  const editSubcategoryId = mode.kind === "edit" ? mode.subcategory.id : null;
+  const createDefaultCategoryId =
+    mode.kind === "create" ? mode.defaultCategoryId : undefined;
+
+  // Reset form when the drawer opens or the edit/create target changes — not on every keystroke.
   React.useEffect(() => {
     if (!open) return;
-    if (isEdit) {
+    if (mode.kind === "edit") {
       setCategoryId(mode.subcategory.categoryId);
       setName(mode.subcategory.name);
       setExecutionType(mode.subcategory.executionType);
       setSeries(mode.subcategory.series ?? "");
     } else {
-      setCategoryId(activeCategories[0]?.id ?? "");
+      setCategoryId(createDefaultCategoryId ?? activeCategories[0]?.id ?? "");
       setName("");
       setExecutionType(ExecutionType.VENDOR_PURCHASE);
       setSeries("");
     }
-  }, [open, mode, isEdit, activeCategories]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mode fields tracked via editSubcategoryId / createDefaultCategoryId
+  }, [open, editSubcategoryId, createDefaultCategoryId, activeCategories]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

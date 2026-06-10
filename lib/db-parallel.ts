@@ -1,4 +1,4 @@
-import { isPrismaConnectError } from "@/lib/db-retry";
+import { isTransientDbError } from "@/lib/db-retry";
 
 /**
  * Run independent Prisma tasks concurrently.
@@ -22,7 +22,7 @@ export async function dbParallel<T extends readonly unknown[]>(
   try {
     return await runParallel(tasks);
   } catch (error) {
-    if (!isPrismaConnectError(error)) throw error;
+    if (!isTransientDbError(error)) throw error;
     await new Promise((resolve) => setTimeout(resolve, 400));
     return runParallel(tasks);
   }

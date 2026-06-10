@@ -43,7 +43,7 @@ function createPrismaClient() {
     // Remote pooler (Sydney from India) can see brief blips; keep sockets warm and
     // fail fast instead of hanging, then recycle idle clients before they go stale.
     keepAlive: true,
-    connectionTimeoutMillis: 15_000,
+    connectionTimeoutMillis: 20_000,
     idleTimeoutMillis: 20_000,
   });
 

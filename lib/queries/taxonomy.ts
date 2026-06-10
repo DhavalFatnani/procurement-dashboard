@@ -1,4 +1,5 @@
 import {
+  CatalogItemStatus,
   CategoryBillingGranularity,
   ExecutionType,
   Prisma,
@@ -76,6 +77,151 @@ export async function getTaxonomyCategoryOptions(): Promise<TaxonomyCategoryOpti
     },
   });
   return rows;
+}
+
+export type TaxonomyTreeSubcategory = {
+  id: string;
+  name: string;
+  status: TaxonomyStatus;
+  executionType: ExecutionType;
+  series: string | null;
+  seriesLabel: string | null;
+  catalogItemCount: number;
+  pendingCatalogCount: number;
+};
+
+export type TaxonomyTreeCategory = {
+  id: string;
+  name: string;
+  status: TaxonomyStatus;
+  billingGranularity: CategoryBillingGranularity;
+  subcategories: TaxonomyTreeSubcategory[];
+  pendingCatalogCount: number;
+};
+
+export async function getCategoryDetail(id: string): Promise<CategoryListRow | null> {
+  const row = await prisma.category.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      name: true,
+      billingGranularity: true,
+      status: true,
+      _count: {
+        select: {
+          subcategories: true,
+          purchaseRequestLines: true,
+        },
+      },
+    },
+  });
+  if (!row) return null;
+  return {
+    id: row.id,
+    name: row.name,
+    billingGranularity: row.billingGranularity,
+    status: row.status,
+    subcategoryCount: row._count.subcategories,
+    prUsageCount: row._count.purchaseRequestLines,
+  };
+}
+
+export async function getSubcategoryDetail(id: string): Promise<SubcategoryListRow | null> {
+  const row = await prisma.subcategory.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      name: true,
+      categoryId: true,
+      executionType: true,
+      series: true,
+      status: true,
+      category: { select: { name: true } },
+      seriesConfig: { select: { displayName: true } },
+      _count: {
+        select: {
+          catalogItems: true,
+          purchaseRequestLines: true,
+        },
+      },
+    },
+  });
+  if (!row) return null;
+  return {
+    id: row.id,
+    name: row.name,
+    categoryId: row.categoryId,
+    categoryName: row.category.name,
+    executionType: row.executionType,
+    series: row.series,
+    seriesLabel: row.seriesConfig?.displayName ?? row.series,
+    status: row.status,
+    catalogItemCount: row._count.catalogItems,
+    prUsageCount: row._count.purchaseRequestLines,
+  };
+}
+
+export async function getTaxonomyTree(): Promise<{
+  categories: TaxonomyTreeCategory[];
+  pendingCount: number;
+}> {
+  const rows = await prisma.category.findMany({
+    orderBy: { name: "asc" },
+    select: {
+      id: true,
+      name: true,
+      status: true,
+      billingGranularity: true,
+      subcategories: {
+        orderBy: { name: "asc" },
+        select: {
+          id: true,
+          name: true,
+          status: true,
+          executionType: true,
+          series: true,
+          seriesConfig: { select: { displayName: true } },
+          catalogItems: {
+            select: { status: true },
+          },
+        },
+      },
+    },
+  });
+
+  let pendingCount = 0;
+  const categories = rows.map((cat) => {
+    const subcategories = cat.subcategories.map((sub) => {
+      let subPending = 0;
+      for (const item of sub.catalogItems) {
+        if (item.status === CatalogItemStatus.PENDING_APPROVAL) {
+          subPending += 1;
+          pendingCount += 1;
+        }
+      }
+      return {
+        id: sub.id,
+        name: sub.name,
+        status: sub.status,
+        executionType: sub.executionType,
+        series: sub.series,
+        seriesLabel: sub.seriesConfig?.displayName ?? sub.series,
+        catalogItemCount: sub.catalogItems.length,
+        pendingCatalogCount: subPending,
+      };
+    });
+    const catPending = subcategories.reduce((sum, s) => sum + s.pendingCatalogCount, 0);
+    return {
+      id: cat.id,
+      name: cat.name,
+      status: cat.status,
+      billingGranularity: cat.billingGranularity,
+      subcategories,
+      pendingCatalogCount: catPending,
+    };
+  });
+
+  return { categories, pendingCount };
 }
 
 export async function getTaxonomySubcategoryOptions(): Promise<TaxonomySubcategoryOption[]> {

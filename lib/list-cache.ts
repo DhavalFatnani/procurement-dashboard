@@ -45,4 +45,5 @@ export const LIST_CACHE_TAGS = {
   vendorDetail: "vendor-detail",
   inbox: "inbox",
   advanceRequests: "advance-requests",
+  serialRangeMap: "serial-range-map",
 } as const;

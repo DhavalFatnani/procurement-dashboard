@@ -17,7 +17,7 @@ import { Input } from "@/components/ui/input";
 import type { CatalogItemListRow, CatalogSubcategoryOption } from "@/lib/queries/catalog";
 
 type Mode =
-  | { kind: "create" }
+  | { kind: "create"; defaultSubcategoryId?: string }
   | { kind: "edit"; item: CatalogItemListRow };
 
 export function CatalogItemFormDrawer({
@@ -49,7 +49,11 @@ export function CatalogItemFormDrawer({
       setSku(mode.item.sku ?? "");
       setUnit(mode.item.unit);
     } else {
-      setSubcategoryId(subcategories[0]?.id ?? "");
+      setSubcategoryId(
+        mode.kind === "create" && mode.defaultSubcategoryId
+          ? mode.defaultSubcategoryId
+          : (subcategories[0]?.id ?? ""),
+      );
       setName("");
       setSku("");
       setUnit("pcs");

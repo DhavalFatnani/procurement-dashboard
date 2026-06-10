@@ -2,10 +2,12 @@ import { Prisma } from "@/lib/prisma-client";
 
 import { getCachedSeriesRegistry, getCachedWarehouses } from "@/lib/cache";
 import { dbParallel } from "@/lib/db-parallel";
+import { withDbRetry } from "@/lib/db-retry";
 import {
   formatWarehouseLabel,
   warehouseOptionsFromRows,
 } from "@/lib/format-warehouse";
+import { cachedQuery, LIST_CACHE_TAGS, stableFilterKey } from "@/lib/list-cache";
 import { paginatedListQuery, type Paginated } from "@/lib/pagination";
 import { prisma } from "@/lib/prisma";
 import type {
@@ -436,6 +438,22 @@ export async function getSerialRangeMap(input: {
   series: SeriesCode;
   zoomToActive?: boolean;
 }): Promise<SerialRangeMapData> {
+  const filterKey = stableFilterKey({
+    series: input.series,
+    zoomToActive: input.zoomToActive ?? false,
+  });
+  return cachedQuery(
+    LIST_CACHE_TAGS.serialRangeMap,
+    [filterKey],
+    () => fetchSerialRangeMap(input),
+    { tags: [LIST_CACHE_TAGS.serialRangeMap], revalidate: 60 },
+  );
+}
+
+async function fetchSerialRangeMap(input: {
+  series: SeriesCode;
+  zoomToActive?: boolean;
+}): Promise<SerialRangeMapData> {
   const registry = await getCachedSeriesRegistry();
   const config = registry.byCode.get(input.series);
   const ceiling = resolveSeriesCeiling(
@@ -444,30 +462,32 @@ export async function getSerialRangeMap(input: {
     registry,
   );
 
-  const rows = await prisma.serialReservation.findMany({
-    where: activeReservationsForSeriesWhere(input.series, registry),
-    orderBy: { rangeStart: "asc" },
-    select: {
-      id: true,
-      rangeStart: true,
-      rangeEnd: true,
-      quantity: true,
-      status: true,
-      prId: true,
-      poId: true,
-      warehouseId: true,
-      purpose: true,
-      createdAt: true,
-      createdBy: { select: { name: true } },
-      warehouse: { select: { name: true, location: true } },
-      po: {
-        select: {
-          status: true,
-          _count: { select: { grns: true } },
+  const rows = await withDbRetry(() =>
+    prisma.serialReservation.findMany({
+      where: activeReservationsForSeriesWhere(input.series, registry),
+      orderBy: { rangeStart: "asc" },
+      select: {
+        id: true,
+        rangeStart: true,
+        rangeEnd: true,
+        quantity: true,
+        status: true,
+        prId: true,
+        poId: true,
+        warehouseId: true,
+        purpose: true,
+        createdAt: true,
+        createdBy: { select: { name: true } },
+        warehouse: { select: { name: true, location: true } },
+        po: {
+          select: {
+            status: true,
+            _count: { select: { grns: true } },
+          },
         },
       },
-    },
-  });
+    }),
+  );
 
   const reservations: RawSerialReservationRow[] = rows.map((r) => ({
     id: r.id,

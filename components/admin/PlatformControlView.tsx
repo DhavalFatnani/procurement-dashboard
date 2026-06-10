@@ -34,8 +34,8 @@ const QUICK_LINKS = [
   },
   {
     href: "/admin/taxonomy",
-    title: "Item catalog",
-    description: "Approve and maintain catalog items used on purchase lines.",
+    title: "Taxonomy",
+    description: "Hierarchy console for categories, subcategories, catalog items, and admin overrides.",
   },
   {
     href: "/payments/invoices",
@@ -93,7 +93,7 @@ export function PlatformControlView({
         <SurfaceCard className="md:col-span-1">
           <SurfaceCardTitle>Audit trail</SurfaceCardTitle>
           <SurfaceCardDescription className="mt-2">
-            Every admin serial override is logged with actor, reason, and target metadata.
+            Serial and taxonomy admin overrides are logged with actor, reason, and target metadata.
           </SurfaceCardDescription>
         </SurfaceCard>
       </div>

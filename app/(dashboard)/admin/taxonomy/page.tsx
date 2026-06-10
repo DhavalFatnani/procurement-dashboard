@@ -1,15 +1,23 @@
-import { CatalogItemStatus, TaxonomyStatus } from "@/lib/prisma-enums";
+import { redirect } from "next/navigation";
 
-import { TaxonomyView } from "@/components/admin/TaxonomyView";
+import { TaxonomyConsole } from "@/components/admin/taxonomy/TaxonomyConsole";
+import { parseNodeParam } from "@/lib/taxonomy-node";
 import { getCachedSeriesDefinitions } from "@/lib/cache";
 import { dbParallel } from "@/lib/db-parallel";
-import { getCatalogFilterOptions, getCatalogItems } from "@/lib/queries/catalog";
-import { prisma } from "@/lib/prisma";
+import { isAdminRole } from "@/lib/admin-access";
+import { getCatalogItemById, getCatalogItems } from "@/lib/queries/catalog";
 import {
-  getCategories,
-  getSubcategories,
+  getCategoryDetail,
+  getSubcategoryDetail,
   getTaxonomyCategoryOptions,
+  getTaxonomySubcategoryOptions,
+  getTaxonomyTree,
 } from "@/lib/queries/taxonomy";
+import {
+  getCatalogItemImpact,
+  getCategoryImpact,
+  getSubcategoryImpact,
+} from "@/lib/queries/taxonomy-impact";
 import { ACCESS } from "@/lib/route-access";
 import { assertRole, getRequestSession } from "@/lib/session";
 
@@ -22,99 +30,111 @@ function str(v: string | string[] | undefined): string {
 
 export const dynamic = "force-dynamic";
 
+function legacyNodeFromTab(sp: Record<string, string | string[] | undefined>): string | null {
+  const tab = str(sp.tab);
+  if (!tab) return null;
+
+  const categoryId = str(sp.categoryId);
+  const subcategoryId = str(sp.subcategoryId);
+  const itemId = str(sp.id) || str(sp.catalogItemId);
+
+  if (tab === "items" && itemId) return `item:${itemId}`;
+  if (tab === "items" && subcategoryId) return `subcategory:${subcategoryId}`;
+  if (tab === "subcategories" && subcategoryId) return `subcategory:${subcategoryId}`;
+  if (tab === "subcategories" && categoryId) return `category:${categoryId}`;
+  if (tab === "categories" && categoryId) return `category:${categoryId}`;
+  if (tab === "items") return null;
+  if (tab === "subcategories") return null;
+  return null;
+}
+
 export default async function AdminTaxonomyPage({
   searchParams,
 }: {
   searchParams: SearchParams;
 }) {
-  assertRole(await getRequestSession(), [...ACCESS.admin]);
+  const session = await getRequestSession();
+  assertRole(session, [...ACCESS.admin]);
   const sp = await searchParams;
-  const tab = str(sp.tab) || "categories";
-  const search = str(sp.q);
-  const statusRaw = str(sp.status);
-  const categoryId = str(sp.categoryId);
-  const subcategoryId = str(sp.subcategoryId);
-  const disputedVariantsOnly = str(sp.disputed) === "1";
-  const page = Math.max(1, Number(str(sp.page)) || 1);
-  const includeExactCount = str(sp.exactCount) === "1" || page === 1;
 
-  const catalogStatus =
-    statusRaw && statusRaw in CatalogItemStatus
-      ? (statusRaw as CatalogItemStatus)
-      : undefined;
+  const legacyNode = legacyNodeFromTab(sp);
+  const nodeParam = str(sp.node) || legacyNode;
+  if (str(sp.tab) && !str(sp.node)) {
+    const params = new URLSearchParams();
+    if (nodeParam) params.set("node", nodeParam);
+    if (str(sp.pending) === "1") params.set("pending", "1");
+    const q = str(sp.q);
+    if (q) params.set("q", q);
+    redirect(`/admin/taxonomy?${params.toString()}`);
+  }
 
-  const taxonomyStatus =
-    statusRaw && statusRaw in TaxonomyStatus ? (statusRaw as TaxonomyStatus) : undefined;
+  const selectedNode = parseNodeParam(nodeParam);
 
   const [
-    taxonomyCategories,
+    { categories: tree, pendingCount },
     seriesDefinitions,
-    categoriesRows,
-    subcategoriesRows,
-    catalogFilterOptions,
-    catalogRows,
-    pendingCount,
+    taxonomyCategories,
+    taxonomySubcategories,
   ] = await dbParallel(
-    () => getTaxonomyCategoryOptions(),
+    () => getTaxonomyTree(),
     () => getCachedSeriesDefinitions(),
-    () =>
-      getCategories({
-        search: tab === "categories" ? search || undefined : undefined,
-        status: tab === "categories" ? taxonomyStatus : undefined,
-        page: tab === "categories" ? page : 1,
-        includeExactCount: tab === "categories" ? includeExactCount : false,
-      }),
-    () =>
-      getSubcategories({
-        search: tab === "subcategories" ? search || undefined : undefined,
-        status: tab === "subcategories" ? taxonomyStatus : undefined,
-        categoryId: tab === "subcategories" ? categoryId || undefined : undefined,
-        page: tab === "subcategories" ? page : 1,
-        includeExactCount: tab === "subcategories" ? includeExactCount : false,
-      }),
-    () => getCatalogFilterOptions(),
-    () =>
-      getCatalogItems({
-        search: tab === "items" ? search || undefined : undefined,
-        status: tab === "items" ? catalogStatus : undefined,
-        categoryId: tab === "items" ? categoryId || undefined : undefined,
-        subcategoryId: tab === "items" ? subcategoryId || undefined : undefined,
-        disputedVariantsOnly: tab === "items" ? disputedVariantsOnly || undefined : undefined,
-        page: tab === "items" ? page : 1,
-        includeExactCount: tab === "items" ? includeExactCount : false,
-      }),
-    () =>
-      prisma.catalogItem.count({
-        where: { status: CatalogItemStatus.PENDING_APPROVAL },
-      }),
+    () => getTaxonomyCategoryOptions(),
+    () => getTaxonomySubcategoryOptions(),
   );
 
   const seriesOptions = seriesDefinitions
     .filter((s) => s.isActive)
     .map((s) => ({ code: s.code, label: s.displayName }));
 
+  let category = null;
+  let subcategory = null;
+  let catalogItem = null;
+  let catalogItems: Awaited<ReturnType<typeof getCatalogItems>>["items"] = [];
+  let impact = null;
+
+  if (selectedNode?.type === "category") {
+    [category, impact] = await dbParallel(
+      () => getCategoryDetail(selectedNode.id),
+      () => getCategoryImpact(selectedNode.id),
+    );
+  } else if (selectedNode?.type === "subcategory") {
+    const [subcategoryRow, subImpact, catalogPage] = await dbParallel(
+      () => getSubcategoryDetail(selectedNode.id),
+      () => getSubcategoryImpact(selectedNode.id),
+      () =>
+        getCatalogItems({
+          subcategoryId: selectedNode.id,
+          page: 1,
+          pageSize: 50,
+        }),
+    );
+    subcategory = subcategoryRow;
+    impact = subImpact;
+    catalogItems = catalogPage.items;
+  } else if (selectedNode?.type === "item") {
+    catalogItem = await getCatalogItemById(selectedNode.id);
+    if (catalogItem) {
+      [impact, subcategory] = await dbParallel(
+        () => getCatalogItemImpact(selectedNode.id),
+        () => getSubcategoryDetail(catalogItem!.subcategoryId),
+      );
+    }
+  }
+
   return (
-    <TaxonomyView
-      categoriesRows={categoriesRows}
-      subcategoriesRows={subcategoriesRows}
-      catalogRows={catalogRows}
+    <TaxonomyConsole
+      tree={tree}
       pendingCount={pendingCount}
-      taxonomyCategories={taxonomyCategories}
+      selectedNode={selectedNode}
+      category={category}
+      subcategory={subcategory}
+      catalogItem={catalogItem}
+      catalogItems={catalogItems}
+      impact={impact}
+      isAdmin={isAdminRole(session!.role)}
+      categories={taxonomyCategories}
+      subcategories={taxonomySubcategories}
       seriesOptions={seriesOptions}
-      categoryFilters={{ search: tab === "categories" ? search : "", status: tab === "categories" ? statusRaw : "" }}
-      subcategoryFilters={{
-        search: tab === "subcategories" ? search : "",
-        status: tab === "subcategories" ? statusRaw : "",
-        categoryId: tab === "subcategories" ? categoryId : "",
-      }}
-      catalogFilters={{
-        search: tab === "items" ? search : "",
-        status: tab === "items" ? statusRaw : "",
-        categoryId: tab === "items" ? categoryId : "",
-        subcategoryId: tab === "items" ? subcategoryId : "",
-        disputedVariantsOnly: tab === "items" ? disputedVariantsOnly : false,
-      }}
-      catalogFilterOptions={catalogFilterOptions}
     />
   );
 }

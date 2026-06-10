@@ -2,6 +2,7 @@ import { Role } from "@/lib/prisma-enums";
 
 import { SerialRangeMapView } from "@/components/serial-governance/SerialRangeMapView";
 import { getCachedSeriesRegistry } from "@/lib/cache";
+import { dbParallel } from "@/lib/db-parallel";
 import { getSerialRangeMap } from "@/lib/queries/serial";
 import { buildSeriesOptions } from "@/lib/series-registry";
 import { ACCESS } from "@/lib/route-access";
@@ -31,10 +32,10 @@ export default async function SerialRangeMapPage({
   const sp = await searchParams;
   const { series, zoomToActive, adminModeRequested } = await parseParams(sp);
   const adminMode = adminModeRequested && user.role === Role.ADMIN;
-  const [data, registry] = await Promise.all([
-    getSerialRangeMap({ series, zoomToActive }),
-    getCachedSeriesRegistry(),
-  ]);
+  const [data, registry] = await dbParallel(
+    () => getSerialRangeMap({ series, zoomToActive }),
+    () => getCachedSeriesRegistry(),
+  );
 
   return (
     <SerialRangeMapView
