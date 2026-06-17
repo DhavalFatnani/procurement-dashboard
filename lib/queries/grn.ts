@@ -1,4 +1,4 @@
-import type { GRNExceptionType, POStatus, Prisma } from "@/lib/prisma-client";
+import type { POStatus, Prisma } from "@/lib/prisma-client";
 
 import { getCachedActiveVendorOptions } from "@/lib/cache";
 import { formatProcurementRef } from "@/lib/display-ref";
@@ -21,7 +21,7 @@ import {
   effectiveOrderedQtyForLineItem,
   sumEffectiveOrderedQty,
 } from "@/lib/po-line-effective";
-import { hasLockTagsLines, sumOrderedQty } from "@/lib/purchase-lines";
+import { hasLockTagsLines } from "@/lib/purchase-lines";
 import {
   goodsReceiptWhereFromScopeIds,
   purchaseOrderWhereFromScopeIds,

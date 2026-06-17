@@ -39,7 +39,7 @@ import {
   type PRLineRow,
 } from "@/lib/purchase-lines";
 import type { SessionUser } from "@/lib/session";
-import { canViewPurchaseRequest, prDetailNeedsFilterOptions } from "@/lib/pr-access";
+import { canViewPurchaseRequest } from "@/lib/pr-access";
 import { warehouseScopeForUser } from "@/lib/warehouse-scope";
 
 export type { PRLineRow };

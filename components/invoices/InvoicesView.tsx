@@ -53,7 +53,7 @@ export function InvoicesView({
   filterOptions: { vendors: { id: string; businessName: string }[] };
 }) {
   const searchParams = useSearchParams();
-  const { navigate, isPending, refresh } = useListNavigation();
+  const { navigate, refresh } = useListNavigation();
   const canUpload = role === Role.SM || isCentralOpsOrAbove(role);
   const isOps = isCentralOpsOrAbove(role);
   const rows = initialRows;

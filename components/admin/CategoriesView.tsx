@@ -76,7 +76,7 @@ export function CategoriesView({
     navigate(params);
   }
 
-  function handleResolved(id: string, outcome: CategoryResolveOutcome) {
+  const handleResolved = React.useCallback((id: string, outcome: CategoryResolveOutcome) => {
     setRows((prev) => {
       if (outcome === "deleted") {
         return {
@@ -93,7 +93,7 @@ export function CategoriesView({
       };
     });
     router.refresh();
-  }
+  }, [router]);
 
   const columns: DataTableColumn<CategoryListRow>[] = React.useMemo(
     () => [
@@ -141,7 +141,7 @@ export function CategoriesView({
         ),
       },
     ],
-    [],
+    [handleResolved],
   );
 
   return (

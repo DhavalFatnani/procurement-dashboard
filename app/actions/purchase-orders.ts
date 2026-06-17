@@ -1,6 +1,6 @@
 "use server";
 
-import { POStatus, Role } from "@/lib/prisma-enums";
+import { POStatus } from "@/lib/prisma-enums";
 import { revalidatePath } from "next/cache";
 
 import type { MutationResult } from "@/lib/action-result";
@@ -35,7 +35,7 @@ import {
   revalidateSerialGovernance,
 } from "@/lib/revalidate-tags";
 import { requireRoles } from "@/lib/server-action-guard";
-import { ALL_DASHBOARD_ROLES, FINANCE_OR_ADMIN_ROLES, OPS_FINANCE_OR_ADMIN_ROLES, OPS_OR_ADMIN_ROLES, PR_APPROVAL_ROLES, SM_OPS_OR_ADMIN_ROLES } from "@/lib/admin-access";
+import { ALL_DASHBOARD_ROLES, OPS_OR_ADMIN_ROLES, PR_APPROVAL_ROLES } from "@/lib/admin-access";
 import {
   createVendorLockTagsApprovalHold,
   releaseVendorLockTagsApprovalHold,

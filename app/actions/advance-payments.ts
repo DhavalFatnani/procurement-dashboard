@@ -1,6 +1,6 @@
 "use server";
 
-import { POAdvanceRequestStatus, Prisma, Role } from "@/lib/prisma-client";
+import { POAdvanceRequestStatus, Prisma } from "@/lib/prisma-client";
 
 import {
   committedTotalFromPo,
@@ -20,7 +20,7 @@ import type {
 } from "@/lib/queries/po-advance";
 import { revalidateAdvanceRequestsCache, revalidatePaymentMutation } from "@/lib/revalidate-tags";
 import { requireRoles } from "@/lib/server-action-guard";
-import { ALL_DASHBOARD_ROLES, FINANCE_OR_ADMIN_ROLES, OPS_FINANCE_OR_ADMIN_ROLES, OPS_OR_ADMIN_ROLES, SM_OPS_OR_ADMIN_ROLES } from "@/lib/admin-access";
+import { ALL_DASHBOARD_ROLES, FINANCE_OR_ADMIN_ROLES, OPS_FINANCE_OR_ADMIN_ROLES, OPS_OR_ADMIN_ROLES } from "@/lib/admin-access";
 import { prisma } from "@/lib/prisma";
 import { assertSessionPurchaseOrderAccess } from "@/lib/warehouse-access";
 import { scopeWarehouseIdsForUser } from "@/lib/warehouse-scope";

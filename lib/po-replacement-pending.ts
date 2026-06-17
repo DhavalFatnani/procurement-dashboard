@@ -17,11 +17,6 @@ type GrnExceptionRow = {
   resolutionStatus: string | null;
 };
 
-type PoLineAccepted = {
-  poLineItemId: string;
-  acceptedQty: number;
-};
-
 /**
  * Remaining replacement qty per base PO line (resolved REPLACE_AND_AWAIT_GRN only).
  */

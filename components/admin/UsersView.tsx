@@ -164,9 +164,9 @@ export function UsersView({
     }
   }
 
-  function refreshRows() {
+  const refreshRows = React.useCallback(() => {
     router.refresh();
-  }
+  }, [router]);
 
   async function handleResetPassword(row: UserListRow) {
     const res = await sendPasswordReset(row.id);
@@ -274,7 +274,7 @@ export function UsersView({
         ),
       },
     ],
-    [canDeleteUser, currentUserId],
+    [canDeleteUser, currentUserId, applyRowUpdate, refreshRows],
   );
 
   return (

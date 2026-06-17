@@ -38,7 +38,6 @@ import {
   type POLineAdjustmentRow,
 } from "@/lib/po-line-effective";
 import {
-  hasPendingReplacement,
   pendingReplacementByPoLine,
 } from "@/lib/po-replacement-pending";
 import {
@@ -60,7 +59,6 @@ import {
   formatLineSummary,
   hasLockTagsLines,
   sumLineQuantities,
-  sumOrderedQty,
   type POLineItemRow,
   type POLineRow,
   type PRLineRow,

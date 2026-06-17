@@ -134,10 +134,6 @@ export async function getCategoryImpact(categoryId: string): Promise<TaxonomyImp
     .filter((s) => s.status === TaxonomyStatus.ACTIVE)
     .map((s) => s.id);
   const catalogRows = category.subcategories.flatMap((s) => s.catalogItems);
-  const nonInactiveCatalog = catalogRows.filter(
-    (c) => c.status !== CatalogItemStatus.INACTIVE,
-  ).length;
-
   const blockers: TaxonomyBlocker[] = [];
   if (category.status === TaxonomyStatus.ACTIVE && activeSubcategoryIds.length > 0) {
     blockers.push({

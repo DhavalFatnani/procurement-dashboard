@@ -1,6 +1,6 @@
 "use client";
 
-import { ExecutionType, POStatus, PRStatus } from "@/lib/prisma-enums";
+import { POStatus } from "@/lib/prisma-enums";
 
 import {
   PRLifecycleStepper,
@@ -40,12 +40,14 @@ export type ProgressTrackerProps = PRLifecycleProps | POBarProps | DotsProps;
 
 export function ProgressTracker(props: ProgressTrackerProps) {
   if (props.variant === "stepper") {
-    const { variant: _, ...rest } = props;
+    const { variant: stepperVariant, ...rest } = props;
+    void stepperVariant;
     return <PRLifecycleStepper {...rest} />;
   }
 
   if (props.variant === "bar") {
-    const { variant: _, ...rest } = props;
+    const { variant: barVariant, ...rest } = props;
+    void barVariant;
     return <POProgressBar {...rest} />;
   }
 

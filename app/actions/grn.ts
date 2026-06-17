@@ -7,7 +7,6 @@ import {
   pendingQtyForNextGrnReceipt,
   sumReceivedQtyOnPoLine,
 } from "@/lib/grn-pending-qty";
-import { Role } from "@/lib/prisma-enums";
 
 import {
   buildEffectiveLineMap,
@@ -34,7 +33,7 @@ import type {
 } from "@/lib/queries/grn";
 import { revalidateGRNMutation } from "@/lib/revalidate-tags";
 import { requireRoles } from "@/lib/server-action-guard";
-import { ALL_DASHBOARD_ROLES, FINANCE_OR_ADMIN_ROLES, OPS_FINANCE_OR_ADMIN_ROLES, OPS_OR_ADMIN_ROLES, SM_OPS_OR_ADMIN_ROLES } from "@/lib/admin-access";
+import { SM_OPS_OR_ADMIN_ROLES } from "@/lib/admin-access";
 import { assertSessionGrnAccess, assertSessionPurchaseOrderAccess } from "@/lib/warehouse-access";
 import { scopeWarehouseIdsForUser } from "@/lib/warehouse-scope";
 

@@ -144,7 +144,8 @@ describe("getBarcodeLayoutCssVars", () => {
 
 describe("normalizeBarcodeLabelConfig", () => {
   it("fills brandBarcodeGapMm from textGapMm for legacy configs", () => {
-    const { brandBarcodeGapMm: _ignored, ...legacy } = DEFAULT_BARCODE_LABEL_CONFIG;
+    const legacy = { ...DEFAULT_BARCODE_LABEL_CONFIG };
+    delete (legacy as { brandBarcodeGapMm?: number }).brandBarcodeGapMm;
     const normalized = normalizeBarcodeLabelConfig({
       ...legacy,
       textGapMm: 8,

@@ -9,7 +9,6 @@ import type { CatalogItemOption, SubcategoryOption } from "@/lib/queries/purchas
 import { Chip } from "@/components/shared/Chip";
 import {
   categoryById,
-  categoryNameById,
   usesCatalogItemAtomicity,
   usesSubcategoryAtomicity,
 } from "@/lib/catalog-atomicity";
@@ -49,7 +48,7 @@ export type PRLineDraft = {
   items: PRLineItemDraft[];
 };
 
-export function emptyLineDraft(vendorMode = true): PRLineDraft {
+export function emptyLineDraft(): PRLineDraft {
   return {
     key: crypto.randomUUID(),
     categoryId: "",
@@ -76,7 +75,7 @@ export function linesFromDetail(
   vendorMode = true,
 ): PRLineDraft[] {
   if (lines.length === 0) {
-    return [emptyLineDraft(vendorMode)];
+    return [emptyLineDraft()];
   }
   return lines.map((line) => {
     const subcategoryOnly =
@@ -356,7 +355,7 @@ export function PRLineEditor({
     if (lines.length >= MAX_PR_LINES) {
       return;
     }
-    onChange([...lines, emptyLineDraft(vendorPurchaseOnly)]);
+    onChange([...lines, emptyLineDraft()]);
   }
 
   function removeLine(index: number) {

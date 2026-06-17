@@ -88,6 +88,7 @@ export function Combobox({
   onHighlight,
 }: ComboboxProps) {
   const [open, setOpen] = React.useState(false);
+  const listboxId = React.useId();
   const selected = options.find((opt) => opt.value === value);
   const hasValue = value !== "" && value !== clearValue;
 
@@ -116,6 +117,7 @@ export function Combobox({
             type="button"
             role="combobox"
             aria-expanded={open}
+            aria-controls={listboxId}
             aria-label={ariaLabel}
             disabled={disabled || loading}
             className={cn(selectTriggerVariants({ size }), triggerClassName)}
@@ -180,7 +182,7 @@ export function Combobox({
             }}
           >
             <CommandInput placeholder={searchPlaceholder} />
-            <CommandList>
+            <CommandList id={listboxId}>
               <CommandEmpty>{emptyText}</CommandEmpty>
               <CommandGroup>
                 {clearLabel ? (

@@ -85,7 +85,7 @@ export function SubcategoriesView({
     navigate(params);
   }
 
-  function handleResolved(id: string, outcome: SubcategoryResolveOutcome) {
+  const handleResolved = React.useCallback((id: string, outcome: SubcategoryResolveOutcome) => {
     setRows((prev) => {
       if (outcome === "deleted") {
         return {
@@ -102,7 +102,7 @@ export function SubcategoriesView({
       };
     });
     router.refresh();
-  }
+  }, [router]);
 
   const columns: DataTableColumn<SubcategoryListRow>[] = React.useMemo(
     () => [
@@ -158,7 +158,7 @@ export function SubcategoriesView({
         ),
       },
     ],
-    [],
+    [handleResolved],
   );
 
   return (

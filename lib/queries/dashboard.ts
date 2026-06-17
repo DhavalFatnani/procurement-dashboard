@@ -13,7 +13,6 @@ import { computeRemainingSettled } from "@/lib/payment-totals";
 import { prisma } from "@/lib/prisma";
 import type { SessionUser } from "@/lib/session";
 import {
-  assignedWarehouseIds,
   prWarehouseWhereFromScopeIds,
   scopeWarehouseIdsForUser,
   invoiceWhereFromScopeIds,

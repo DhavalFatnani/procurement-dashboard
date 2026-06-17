@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath, revalidateTag } from "next/cache";
-import { Prisma, Role, VendorStatus } from "@/lib/prisma-client";
+import { Prisma, VendorStatus } from "@/lib/prisma-client";
 
 import type { MutationResult } from "@/lib/action-result";
 import { dbParallel } from "@/lib/db-parallel";
@@ -24,7 +24,7 @@ import { revalidateDashboardMetrics } from "@/lib/revalidate-tags";
 import type { Paginated } from "@/lib/pagination";
 import { prisma } from "@/lib/prisma";
 import { requireRoles } from "@/lib/server-action-guard";
-import { ALL_DASHBOARD_ROLES, FINANCE_OR_ADMIN_ROLES, OPS_FINANCE_OR_ADMIN_ROLES, OPS_OR_ADMIN_ROLES, SM_OPS_OR_ADMIN_ROLES } from "@/lib/admin-access";
+import { OPS_OR_ADMIN_ROLES, SM_OPS_OR_ADMIN_ROLES } from "@/lib/admin-access";
 
 const JW_THRESHOLD = 0.85;
 

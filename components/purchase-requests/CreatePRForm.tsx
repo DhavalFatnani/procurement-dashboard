@@ -22,7 +22,6 @@ import { MAX_INTERNAL_PRINT_QUANTITY, formatSerialNumberForSeries } from "@/lib/
 import {
   createPR,
   createVendorRequest,
-  submitPR,
   submitPRForApproval,
   updatePR,
 } from "@/app/actions/purchase-requests";

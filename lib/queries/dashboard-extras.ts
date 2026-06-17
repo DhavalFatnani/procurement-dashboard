@@ -10,7 +10,6 @@ import {
   invoiceWhereFromScopeIds,
   prWarehouseWhereFromScopeIds,
   purchaseOrderWhereFromScopeIds,
-  warehouseIdFilter,
 } from "@/lib/warehouse-scope";
 
 export type POStageDistribution = {

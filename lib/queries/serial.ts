@@ -26,7 +26,6 @@ import {
   activeReservationsForSeriesWhere,
   computeNextRangeStart,
   computeRangeUsedPct,
-  formatSerialNumber,
   formatSerialNumberForSeries,
   GLOBAL_SERIAL_BLOCK_SCOPE_LABEL,
   getSeriesCeiling,

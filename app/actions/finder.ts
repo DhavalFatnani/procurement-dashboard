@@ -1,7 +1,5 @@
 "use server";
 
-import { Role } from "@/lib/prisma-enums";
-
 import { ALL_DASHBOARD_ROLES } from "@/lib/admin-access";
 import { findEntities } from "@/lib/queries/finder";
 import { requireRoles } from "@/lib/server-action-guard";

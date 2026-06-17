@@ -6,7 +6,6 @@ import {
   activeReservationsForSeriesWhere,
   computeNextRangeStart,
   formatSerialNumberForSeries,
-  getSeriesNumericBounds,
   isValidReservationRange,
   resolveSeriesCeiling,
 } from "@/lib/serial-series";

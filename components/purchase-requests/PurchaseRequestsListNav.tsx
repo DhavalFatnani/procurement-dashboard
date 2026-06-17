@@ -39,7 +39,6 @@ export function PurchaseRequestsListNav({
   children: React.ReactNode;
 }) {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const [isPending, startTransition] = React.useTransition();
 
   const navigate = React.useCallback(

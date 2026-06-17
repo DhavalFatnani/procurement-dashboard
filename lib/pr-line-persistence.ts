@@ -3,7 +3,6 @@ import {
   CategoryBillingGranularity,
   ExecutionType,
 } from "@/lib/prisma-enums";
-import type { Prisma } from "@/lib/prisma-client";
 
 import {
   usesCatalogItemAtomicity,
@@ -473,7 +472,6 @@ export async function approvePendingCatalogItems(
     select: { id: true },
   });
   const pendingIds = new Set(pending.map((p) => p.id));
-  const approvedSet = new Set(input.approvedCatalogItemIds);
 
   for (const id of input.approvedCatalogItemIds) {
     if (!pendingIds.has(id)) {

@@ -12,7 +12,6 @@ import {
 import { applyGstToSubtotal } from "@/lib/po-gst";
 import {
   buildEffectiveLineMap,
-  effectiveOrderedQtyForLegacyLine,
   effectiveOrderedQtyForLineItem,
   effectiveUnitPriceForLegacyLine,
   effectiveUnitPriceForLineItem,

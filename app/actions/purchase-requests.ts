@@ -35,7 +35,6 @@ import {
 import {
   approvePendingCatalogItems,
   headerFromFirstLine,
-  lineTotalQuantity,
   PR_LINE_MUTATION_TX_OPTIONS,
   replacePRLines,
   validatePRLines,
@@ -70,7 +69,7 @@ import {
   releaseVendorLockTagsApprovalHold,
 } from "@/lib/vendor-lock-tags-serial";
 import { requireRoles } from "@/lib/server-action-guard";
-import { ALL_DASHBOARD_ROLES, FINANCE_OR_ADMIN_ROLES, OPS_FINANCE_OR_ADMIN_ROLES, OPS_OR_ADMIN_ROLES, PR_APPROVAL_ROLES, SM_OPS_OR_ADMIN_ROLES } from "@/lib/admin-access";
+import { OPS_OR_ADMIN_ROLES, PR_APPROVAL_ROLES, SM_OPS_OR_ADMIN_ROLES } from "@/lib/admin-access";
 import {
   assertSessionPurchaseRequestAccess,
   assertSessionWarehouseAccess,

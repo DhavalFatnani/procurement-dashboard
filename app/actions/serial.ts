@@ -1,6 +1,6 @@
 "use server";
 
-import { ExecutionType, PRStatus, Role } from "@/lib/prisma-enums";
+import { ExecutionType, PRStatus } from "@/lib/prisma-enums";
 import { revalidatePath, revalidateTag } from "next/cache";
 import { after } from "next/server";
 
@@ -37,7 +37,7 @@ import {
   type InternalPrintPRPayload,
 } from "@/lib/serialReservation";
 import { requireRoles } from "@/lib/server-action-guard";
-import { ALL_DASHBOARD_ROLES, FINANCE_OR_ADMIN_ROLES, OPS_FINANCE_OR_ADMIN_ROLES, OPS_OR_ADMIN_ROLES, SM_OPS_OR_ADMIN_ROLES } from "@/lib/admin-access";
+import { OPS_OR_ADMIN_ROLES, SM_OPS_OR_ADMIN_ROLES } from "@/lib/admin-access";
 import { assertUserWarehouseAccess } from "@/lib/warehouse-access";
 import { lockTagsQtyFromSelectedItems } from "@/lib/purchase-lines";
 import {

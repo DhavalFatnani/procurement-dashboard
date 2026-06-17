@@ -19,7 +19,6 @@ export function BarcodeLabelConfigSection({
   sampleSerial,
   className,
   embedded = false,
-  showPreview: _showPreview = true,
 }: {
   config: BarcodeLabelConfig;
   onChange: (config: BarcodeLabelConfig) => void;

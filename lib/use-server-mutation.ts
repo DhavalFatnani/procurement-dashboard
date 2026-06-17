@@ -50,7 +50,7 @@ export function useServerMutation(options?: { onRefresh?: () => void }) {
         setIsPending(false);
       }
     },
-    [options?.onRefresh, router, startTransition],
+    [options, router, startTransition],
   );
 
   return { isPending, run, startTransition, router };

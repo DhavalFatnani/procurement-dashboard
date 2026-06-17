@@ -138,7 +138,7 @@ export const InvoiceSettlementPanel = React.forwardRef<
       setAdvanceDecision("skip");
       setAdvanceAllocation("0");
     }
-  }, [resetKey, detail?.invoiceId]);
+  }, [resetKey, detail]);
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();

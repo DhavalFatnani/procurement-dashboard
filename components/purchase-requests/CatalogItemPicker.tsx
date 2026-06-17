@@ -52,6 +52,7 @@ export function CatalogItemPicker({
   }) => void;
 }) {
   const [open, setOpen] = React.useState(false);
+  const listboxId = React.useId();
   const [search, setSearch] = React.useState("");
 
   const selectedCatalog = items.find((c) => c.id === catalogItemId);
@@ -115,6 +116,7 @@ export function CatalogItemPicker({
           type="button"
           role="combobox"
           aria-expanded={open}
+          aria-controls={listboxId}
           aria-label={ariaLabel}
           aria-invalid={invalid || undefined}
           disabled={disabled}
@@ -176,7 +178,7 @@ export function CatalogItemPicker({
             value={search}
             onValueChange={setSearch}
           />
-          <CommandList>
+          <CommandList id={listboxId}>
             <CommandEmpty>
               {trimmedSearch.length >= 2
                 ? "No catalog match — add as new below."
