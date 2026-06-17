@@ -69,7 +69,8 @@ async function fetchDashboardMetrics(
   role: Role,
   warehouseIds: string[] | undefined,
 ): Promise<DashboardMetrics> {
-  const includeVendorPending = role === Role.OPS_HEAD || role === Role.ADMIN;
+  const includeVendorPending =
+    role === Role.CENTRAL_TEAM || role === Role.OPS_HEAD || role === Role.ADMIN;
   const prWarehouseFilter = warehouseFilterSql(warehouseIds);
   const poWarehouseFilter = poWarehouseFilterSql(warehouseIds);
 

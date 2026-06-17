@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { isOpsHeadOrAdmin } from "@/lib/admin-access";
+import { isCentralOpsOrAbove } from "@/lib/admin-access";
 import { POStatus, Role } from "@/lib/prisma-enums";
 import { useRouter, useSearchParams } from "next/navigation";
 import * as React from "react";
@@ -80,7 +80,7 @@ export function PurchaseOrdersView({
   const router = useRouter();
   const { navigate, isPending } = useListNavigation();
   const isFinance = role === Role.FINANCE;
-  const isOps = isOpsHeadOrAdmin(role);
+  const isOps = isCentralOpsOrAbove(role);
   const rows = initialRows;
   const [density, setDensity] = useDensity();
 

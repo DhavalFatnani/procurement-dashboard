@@ -1,4 +1,4 @@
-import { canManageFinance, isOpsHeadOrAdmin } from "@/lib/admin-access";
+import { canManageFinance, canApprovePurchaseRequest, isCentralOpsOrAbove } from "@/lib/admin-access";
 import { PaymentStatus, POStatus, Role } from "@/lib/prisma-enums";
 
 import { FINANCE_ROUTES } from "@/lib/finance-routes";
@@ -39,7 +39,8 @@ export function getApplicablePOActions(
   role: Role,
 ): PONextAction[] {
   const actions: PONextAction[] = [];
-  const isOps = isOpsHeadOrAdmin(role);
+  const isOps = isCentralOpsOrAbove(role);
+  const canApprove = canApprovePurchaseRequest(role);
   const isSm = role === Role.SM;
   const isFinance = canManageFinance(role);
   const isClosed = CLOSED_STATUSES.includes(po.status);
@@ -58,7 +59,7 @@ export function getApplicablePOActions(
     (inv) => inv.paymentStatus !== PaymentStatus.PAID,
   );
 
-  if (isOps && po.openDisputeCount > 0) {
+  if (canApprove && po.openDisputeCount > 0) {
     actions.push({
       id: "resolve-disputes",
       label: "Resolve GRN disputes",
@@ -124,7 +125,7 @@ export function getApplicablePOActions(
     });
   }
 
-  if (isOps) {
+  if (canApprove) {
     actions.push({
       id: "force-close",
       label: "Force close",

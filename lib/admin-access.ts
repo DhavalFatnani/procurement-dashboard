@@ -2,11 +2,28 @@ import { Role } from "@/lib/prisma-enums";
 
 import type { SessionUser } from "@/lib/session";
 
-/** Roles that may manage master data under /admin (users, warehouses, catalog). */
-export const ADMIN_MASTER_DATA_ROLES = [Role.OPS_HEAD, Role.ADMIN] as const;
+/** Roles that may open master-data admin routes (warehouses, taxonomy). */
+export const ADMIN_MASTER_DATA_ROLES = [
+  Role.CENTRAL_TEAM,
+  Role.OPS_HEAD,
+  Role.ADMIN,
+] as const;
 
-/** Ops workflows — Admin has global super-access alongside Ops Head. */
-export const OPS_OR_ADMIN_ROLES = [Role.OPS_HEAD, Role.ADMIN] as const;
+/** User provisioning under /admin/users — Central Team excluded. */
+export const USER_ADMIN_ROLES = [Role.OPS_HEAD, Role.ADMIN] as const;
+
+/** Broad ops workflows — Central Team included; Admin has global super-access. */
+export const CENTRAL_OPS_OR_ADMIN_ROLES = [
+  Role.CENTRAL_TEAM,
+  Role.OPS_HEAD,
+  Role.ADMIN,
+] as const;
+
+/** @deprecated Use CENTRAL_OPS_OR_ADMIN_ROLES or PR_APPROVAL_ROLES as appropriate. */
+export const OPS_OR_ADMIN_ROLES = CENTRAL_OPS_OR_ADMIN_ROLES;
+
+/** PR sign-off and consequential judgment calls — Ops Head + Admin only. */
+export const PR_APPROVAL_ROLES = [Role.OPS_HEAD, Role.ADMIN] as const;
 
 /** SM + Ops (+ Admin for global ops). */
 export const SM_OPS_OR_ADMIN_ROLES = [Role.SM, Role.OPS_HEAD, Role.ADMIN] as const;
@@ -18,7 +35,13 @@ export const FINANCE_OR_ADMIN_ROLES = [Role.FINANCE, Role.ADMIN] as const;
 export const OPS_FINANCE_OR_ADMIN_ROLES = [Role.OPS_HEAD, Role.FINANCE, Role.ADMIN] as const;
 
 /** All signed-in dashboard roles. */
-export const ALL_DASHBOARD_ROLES = [Role.SM, Role.OPS_HEAD, Role.FINANCE, Role.ADMIN] as const;
+export const ALL_DASHBOARD_ROLES = [
+  Role.SM,
+  Role.CENTRAL_TEAM,
+  Role.OPS_HEAD,
+  Role.FINANCE,
+  Role.ADMIN,
+] as const;
 
 /** Routes and mutations reserved for the Admin super-user role only. */
 export const ADMIN_ONLY_ROLES = [Role.ADMIN] as const;
@@ -29,6 +52,20 @@ export function isAdminRole(role: Role): boolean {
 
 /** Ops Head workflows — Admin has the same operational capabilities globally. */
 export function isOpsHeadOrAdmin(role: Role): boolean {
+  return role === Role.OPS_HEAD || role === Role.ADMIN;
+}
+
+/** Central Team + Ops Head + Admin operational workflows (excludes PR approval). */
+export function isCentralOpsOrAbove(role: Role): boolean {
+  return (
+    role === Role.CENTRAL_TEAM ||
+    role === Role.OPS_HEAD ||
+    role === Role.ADMIN
+  );
+}
+
+/** Whether the role may approve, reject, or revert purchase requests. */
+export function canApprovePurchaseRequest(role: Role): boolean {
   return role === Role.OPS_HEAD || role === Role.ADMIN;
 }
 
@@ -44,6 +81,30 @@ export function sessionHasGlobalWarehouseScope(user: SessionUser): boolean {
 /** Only Admin may create or promote users to the Admin role. */
 export function canAssignAdminRole(actorRole: Role): boolean {
   return actorRole === Role.ADMIN;
+}
+
+/** Only Admin may create or promote users to Ops Head. */
+export function canAssignOpsHeadRole(actorRole: Role): boolean {
+  return actorRole === Role.ADMIN;
+}
+
+/** Whether actor may assign targetRole when creating or updating a user. */
+export function canAssignRole(actorRole: Role, targetRole: Role): boolean {
+  if (targetRole === Role.ADMIN) {
+    return canAssignAdminRole(actorRole);
+  }
+  if (targetRole === Role.OPS_HEAD) {
+    return canAssignOpsHeadRole(actorRole);
+  }
+  if (actorRole === Role.ADMIN || actorRole === Role.OPS_HEAD) {
+    return true;
+  }
+  return false;
+}
+
+/** Roles the actor may pick in the user admin UI. */
+export function assignableRolesFor(actorRole: Role): Role[] {
+  return ALL_DASHBOARD_ROLES.filter((r) => canAssignRole(actorRole, r));
 }
 
 /** Only Admin may permanently delete user accounts. */

@@ -42,6 +42,7 @@ const KIND_META: Record<
   advance_request: { icon: Wallet, tone: "warning" },
   vendor_request: { icon: UserPlus, tone: "info" },
   po_at_risk: { icon: AlertTriangle, tone: "error" },
+  catalog_pending: { icon: ClipboardList, tone: "info" },
 };
 
 const TONE_STYLES: Record<"info" | "warning" | "success" | "neutral" | "error", string> = {
@@ -189,6 +190,12 @@ const QUICK_ACTIONS_BY_ROLE: Record<Role, { label: string; href: string; icon: L
     { label: "Create PR", href: "/purchase-requests/new", icon: FilePlus },
     { label: "Record GRN", href: "/goods-receipt/new", icon: PackageCheck },
     { label: "Upload invoice", href: "/invoices/new", icon: Receipt },
+  ],
+  CENTRAL_TEAM: [
+    { label: "Configure PO", href: "/purchase-orders/configure", icon: ClipboardList },
+    { label: "Review vendors", href: "/vendors?tab=pending", icon: UserPlus },
+    { label: "Taxonomy", href: "/admin/taxonomy", icon: ClipboardList },
+    { label: "Create PR", href: "/purchase-requests/new", icon: FilePlus },
   ],
   OPS_HEAD: [
     { label: "Review approvals", href: "/purchase-requests?status=PENDING_APPROVAL", icon: ClipboardList },

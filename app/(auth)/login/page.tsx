@@ -11,6 +11,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 
 type Props = {
   searchParams: Promise<{ error?: string; reset?: string }>;
@@ -54,10 +55,9 @@ export default async function LoginPage({ searchParams }: Props) {
                 Forgot password?
               </Link>
             </div>
-            <Input
+            <PasswordInput
               id="password"
               name="password"
-              type="password"
               autoComplete="current-password"
               required
             />

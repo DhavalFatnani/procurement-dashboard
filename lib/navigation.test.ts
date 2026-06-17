@@ -9,8 +9,9 @@ import {
 } from "@/lib/navigation";
 
 describe("defaultLandingFor", () => {
-  it("sends SM and Ops Head to /dashboard", () => {
+  it("sends SM, Central Team, and Ops Head to /dashboard", () => {
     expect(defaultLandingFor(Role.SM)).toBe("/dashboard");
+    expect(defaultLandingFor(Role.CENTRAL_TEAM)).toBe("/dashboard");
     expect(defaultLandingFor(Role.OPS_HEAD)).toBe("/dashboard");
   });
 
@@ -32,18 +33,25 @@ describe("getNavGroupsForRole", () => {
     expect(groups).toEqual(["payables", "insights", "work"]);
   });
 
-  it("scopes Admin to Ops Head only", () => {
+  it("scopes Admin master data for Ops Head and Central Team", () => {
     expect(
       getNavGroupsForRole(Role.SM).find((g) => g.id === "admin"),
     ).toBeUndefined();
     expect(
       getNavGroupsForRole(Role.FINANCE).find((g) => g.id === "admin"),
     ).toBeUndefined();
-    const admin = getNavGroupsForRole(Role.OPS_HEAD).find(
+    const opsAdmin = getNavGroupsForRole(Role.OPS_HEAD).find(
       (g) => g.id === "admin",
     );
-    expect(admin?.items.map((i) => i.href)).toEqual([
+    expect(opsAdmin?.items.map((i) => i.href)).toEqual([
       "/admin/users",
+      "/admin/warehouses",
+      "/admin/taxonomy",
+    ]);
+    const centralAdmin = getNavGroupsForRole(Role.CENTRAL_TEAM).find(
+      (g) => g.id === "admin",
+    );
+    expect(centralAdmin?.items.map((i) => i.href)).toEqual([
       "/admin/warehouses",
       "/admin/taxonomy",
     ]);
@@ -54,8 +62,8 @@ describe("getNavGroupsForRole", () => {
     expect(groups).not.toContain("governance");
   });
 
-  it("includes Inbox at the top of Work for SM and Ops Head", () => {
-    for (const role of [Role.SM, Role.OPS_HEAD]) {
+  it("includes Inbox at the top of Work for SM, Central Team, and Ops Head", () => {
+    for (const role of [Role.SM, Role.CENTRAL_TEAM, Role.OPS_HEAD]) {
       const work = getNavGroupsForRole(role).find((g) => g.id === "work")!;
       expect(work.items[0]?.href).toBe("/inbox");
     }
@@ -99,14 +107,16 @@ describe("getNavItemsForRole (flat)", () => {
 });
 
 describe("PO-centric procurement nav", () => {
-  it("includes Configure PO between PR and PO for Ops Head", () => {
-    const work = getNavGroupsForRole(Role.OPS_HEAD).find((g) => g.id === "work")!;
-    expect(work.items.map((i) => i.href)).toEqual([
-      "/inbox",
-      "/purchase-requests",
-      "/purchase-orders/configure",
-      "/purchase-orders",
-    ]);
+  it("includes Configure PO between PR and PO for Central Team and Ops Head", () => {
+    for (const role of [Role.CENTRAL_TEAM, Role.OPS_HEAD]) {
+      const work = getNavGroupsForRole(role).find((g) => g.id === "work")!;
+      expect(work.items.map((i) => i.href)).toEqual([
+        "/inbox",
+        "/purchase-requests",
+        "/purchase-orders/configure",
+        "/purchase-orders",
+      ]);
+    }
   });
 
   it("omits Configure PO for SM and Finance", () => {

@@ -40,7 +40,7 @@ export function assignedWarehouseIds(user: SessionUser): string[] {
   if (user.role === Role.SM) {
     return user.warehouseId ? [user.warehouseId] : [];
   }
-  if (user.role === Role.OPS_HEAD || user.role === Role.FINANCE) {
+  if (user.role === Role.OPS_HEAD || user.role === Role.FINANCE || user.role === Role.CENTRAL_TEAM) {
     return user.warehouseIds;
   }
   return [];
@@ -182,9 +182,13 @@ export function invoiceWhereFromScopeIds(
   };
 }
 
-/** Whether Ops Head / Finance should pick warehouses in admin (multi-select). */
+/** Whether Ops Head / Central Team / Finance should pick warehouses in admin (multi-select). */
 export function roleUsesMultiWarehouseAssignment(role: Role): boolean {
-  return role === Role.OPS_HEAD || role === Role.FINANCE;
+  return (
+    role === Role.CENTRAL_TEAM ||
+    role === Role.OPS_HEAD ||
+    role === Role.FINANCE
+  );
 }
 
 /** Whether the signed-in user may act on the given warehouse (fail closed when unassigned). */

@@ -95,6 +95,7 @@ export async function getRecentActivityForRole(
 
 const ACTIVITY_KINDS_BY_ROLE: Record<Role, RecentActivityItem["kind"][]> = {
   [Role.SM]: ["pr", "grn", "invoice", "po"],
+  [Role.CENTRAL_TEAM]: ["pr", "po", "grn", "invoice", "payment"],
   [Role.OPS_HEAD]: ["pr", "po", "grn", "invoice", "payment"],
   [Role.FINANCE]: ["invoice", "payment"],
   [Role.ADMIN]: ["pr", "po", "grn", "invoice", "payment"],
@@ -347,6 +348,120 @@ async function computeDashboardWorkQueue(
       href: FINANCE_ROUTES.invoiceDetail(inv.id),
       badge: inv.paymentStatus.replaceAll("_", " "),
     }));
+  }
+
+  if (role === Role.CENTRAL_TEAM) {
+    const [vendorRequests, awaitingPoPrs, pendingCatalog, grnExceptions, mismatchPos] =
+      await dbParallel(
+        () =>
+          prisma.vendorRequest.findMany({
+            where: { status: "PENDING" },
+            orderBy: { createdAt: "asc" },
+            take: 3,
+            select: { id: true, businessName: true },
+          }),
+        () =>
+          prisma.purchaseRequest.findMany({
+            where: {
+              ...prWhere,
+              status: "APPROVED",
+              executionType: "VENDOR_PURCHASE",
+              lines: { some: { items: { some: { poLineItem: null } } } },
+            },
+            orderBy: { updatedAt: "asc" },
+            take: 4,
+            select: {
+              id: true,
+              vendor: { select: { businessName: true } },
+              lines: {
+                orderBy: { lineNumber: "asc" },
+                take: 1,
+                select: { subcategory: { select: { name: true } } },
+              },
+            },
+          }),
+        () =>
+          prisma.catalogItem.findMany({
+            where: { status: "PENDING_APPROVAL" },
+            orderBy: { updatedAt: "asc" },
+            take: 3,
+            select: { id: true, name: true, subcategory: { select: { name: true } } },
+          }),
+        () =>
+          prisma.goodsReceipt.findMany({
+            where: {
+              ...goodsReceiptWhereFromScopeIds(scopeWarehouseIds),
+              exceptions: { some: { resolutionStatus: null } },
+            },
+            orderBy: { receivedAt: "desc" },
+            take: 3,
+            select: {
+              id: true,
+              poId: true,
+              purchaseOrder: { select: { vendor: { select: { businessName: true } } } },
+              exceptions: {
+                where: { resolutionStatus: null },
+                select: { exceptionType: true },
+              },
+            },
+          }),
+        () =>
+          prisma.purchaseOrder.findMany({
+            where: {
+              ...poWhere,
+              invoices: {
+                some: {
+                  matchStatus: "MISMATCH",
+                  overrideReason: null,
+                },
+              },
+            },
+            orderBy: { updatedAt: "desc" },
+            take: 3,
+            select: {
+              id: true,
+              vendor: { select: { businessName: true } },
+            },
+          }),
+      );
+
+    return [
+      ...awaitingPoPrs.map((pr) => ({
+        id: pr.id,
+        title: pr.vendor?.businessName ?? pr.lines[0]?.subcategory.name ?? pr.id,
+        subtitle: "Approved — configure purchase order",
+        href: `/purchase-orders/configure/${pr.id}`,
+        badge: "Configure PO",
+      })),
+      ...vendorRequests.map((v) => ({
+        id: v.id,
+        title: v.businessName,
+        subtitle: "New vendor awaiting activation",
+        href: `/vendors?tab=pending&requestId=${v.id}`,
+        badge: "Vendor",
+      })),
+      ...pendingCatalog.map((item) => ({
+        id: item.id,
+        title: item.name,
+        subtitle: `${item.subcategory.name} — pending catalog approval`,
+        href: `/admin/taxonomy?node=item:${item.id}`,
+        badge: "Catalog",
+      })),
+      ...grnExceptions.map((grn) => ({
+        id: grn.id,
+        title: grn.purchaseOrder.vendor.businessName,
+        subtitle: `${grn.exceptions.length} open GRN exception${grn.exceptions.length === 1 ? "" : "s"}`,
+        href: `/purchase-orders/${grn.poId}?tab=fulfillment`,
+        badge: "Review",
+      })),
+      ...mismatchPos.map((po) => ({
+        id: po.id,
+        title: po.vendor.businessName,
+        subtitle: "Invoice mismatch needs Ops review",
+        href: `/purchase-orders/${po.id}?tab=invoices`,
+        badge: "Review",
+      })),
+    ].slice(0, 8);
   }
 
   if (role === Role.OPS_HEAD || role === Role.ADMIN) {

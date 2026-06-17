@@ -5,9 +5,10 @@ import { revalidatePath } from "next/cache";
 
 import type { MutationResult } from "@/lib/action-result";
 import {
-  ADMIN_MASTER_DATA_ROLES,
   ADMIN_ONLY_ROLES,
+  USER_ADMIN_ROLES,
   canAssignAdminRole,
+  canAssignRole,
 } from "@/lib/admin-access";
 import { logger } from "@/lib/logger";
 import type { Paginated } from "@/lib/pagination";
@@ -28,9 +29,9 @@ import {
 import { tryCreateSecretSupabaseClient } from "@/lib/supabase-admin";
 import { roleUsesMultiWarehouseAssignment } from "@/lib/warehouse-scope";
 
-async function guardAdminMasterData(): Promise<MutationResult | null> {
+async function guardUserAdmin(): Promise<MutationResult | null> {
   try {
-    await requireRoles([...ADMIN_MASTER_DATA_ROLES]);
+    await requireRoles([...USER_ADMIN_ROLES]);
     return null;
   } catch (err) {
     if (err instanceof ActionAuthError) {
@@ -43,7 +44,7 @@ async function guardAdminMasterData(): Promise<MutationResult | null> {
 export async function getUsers(
   filters: UserFilters,
 ): Promise<Paginated<UserListRow>> {
-  const authErr = await guardAdminMasterData();
+  const authErr = await guardUserAdmin();
   if (authErr) {
     return {
       items: [],
@@ -58,7 +59,7 @@ export async function getUsers(
 }
 
 export async function getUserById(id: string): Promise<UserDetail | null> {
-  const authErr = await guardAdminMasterData();
+  const authErr = await guardUserAdmin();
   if (authErr) return null;
   return getUserByIdQuery(id);
 }
@@ -139,7 +140,7 @@ function authAppMetadata(
 async function guardNotSelf(
   targetUserId: string,
 ): Promise<MutationResult | null> {
-  const actor = await requireRoles([...ADMIN_MASTER_DATA_ROLES]);
+  const actor = await requireRoles([...USER_ADMIN_ROLES]);
   if (actor.id === targetUserId) {
     return { ok: false, message: "You cannot perform this action on your own account." };
   }
@@ -187,7 +188,7 @@ function validateUserInput(input: CreateUserInput): string | null {
 export async function createUser(
   input: CreateUserInput,
 ): Promise<MutationResult & { userId?: string; recoveryLink?: string }> {
-  const authErr = await guardAdminMasterData();
+  const authErr = await guardUserAdmin();
   if (authErr) return authErr;
 
   try {
@@ -198,9 +199,9 @@ export async function createUser(
     const name = input.name.trim();
     const { role, password } = input;
 
-    const actor = await requireRoles([...ADMIN_MASTER_DATA_ROLES]);
-    if (role === Role.ADMIN && !canAssignAdminRole(actor.role)) {
-      return { ok: false, message: "Only Admin users can assign the Admin role." };
+    const actor = await requireRoles([...USER_ADMIN_ROLES]);
+    if (!canAssignRole(actor.role, role)) {
+      return { ok: false, message: "You cannot assign that role." };
     }
 
     const warehouses = resolveWarehouseSelection(role, input);
@@ -317,7 +318,7 @@ export async function createUser(
 }
 
 export async function updateUser(input: UpdateUserInput): Promise<MutationResult> {
-  const authErr = await guardAdminMasterData();
+  const authErr = await guardUserAdmin();
   if (authErr) return authErr;
 
   const existing = await prisma.user.findUnique({
@@ -336,12 +337,15 @@ export async function updateUser(input: UpdateUserInput): Promise<MutationResult
   const name = input.name?.trim() ?? existing.name;
   const role = input.role ?? existing.role;
 
-  const actor = await requireRoles([...ADMIN_MASTER_DATA_ROLES]);
-  if (
-    (role === Role.ADMIN || existing.role === Role.ADMIN) &&
-    !canAssignAdminRole(actor.role)
-  ) {
+  const actor = await requireRoles([...USER_ADMIN_ROLES]);
+  if (!canAssignRole(actor.role, role)) {
+    return { ok: false, message: "You cannot assign that role." };
+  }
+  if (existing.role === Role.ADMIN && !canAssignAdminRole(actor.role)) {
     return { ok: false, message: "Only Admin users can manage Admin accounts." };
+  }
+  if (existing.role === Role.OPS_HEAD && !canAssignRole(actor.role, Role.OPS_HEAD)) {
+    return { ok: false, message: "Only Admin users can manage Operations Head accounts." };
   }
 
   if (!name) return { ok: false, message: "Name is required." };
@@ -456,7 +460,7 @@ export async function deactivateUser(userId: string): Promise<MutationResult> {
 }
 
 export async function reactivateUser(userId: string): Promise<MutationResult> {
-  const authErr = await guardAdminMasterData();
+  const authErr = await guardUserAdmin();
   if (authErr) return authErr;
 
   const user = await prisma.user.findUnique({
@@ -564,7 +568,7 @@ export async function deleteUser(userId: string): Promise<MutationResult> {
 export async function sendPasswordReset(
   userId: string,
 ): Promise<MutationResult & { recoveryLink?: string }> {
-  const authErr = await guardAdminMasterData();
+  const authErr = await guardUserAdmin();
   if (authErr) return authErr;
   const user = await prisma.user.findUnique({
     where: { id: userId },

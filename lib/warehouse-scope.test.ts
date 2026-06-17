@@ -120,7 +120,8 @@ describe("purchaseOrderViaPrWarehouseWhere", () => {
 });
 
 describe("roleUsesMultiWarehouseAssignment", () => {
-  it("is true for Ops Head and Finance only", () => {
+  it("is true for Central Team, Ops Head, and Finance", () => {
+    expect(roleUsesMultiWarehouseAssignment(Role.CENTRAL_TEAM)).toBe(true);
     expect(roleUsesMultiWarehouseAssignment(Role.OPS_HEAD)).toBe(true);
     expect(roleUsesMultiWarehouseAssignment(Role.FINANCE)).toBe(true);
     expect(roleUsesMultiWarehouseAssignment(Role.SM)).toBe(false);

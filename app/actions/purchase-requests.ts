@@ -70,7 +70,7 @@ import {
   releaseVendorLockTagsApprovalHold,
 } from "@/lib/vendor-lock-tags-serial";
 import { requireRoles } from "@/lib/server-action-guard";
-import { ALL_DASHBOARD_ROLES, FINANCE_OR_ADMIN_ROLES, OPS_FINANCE_OR_ADMIN_ROLES, OPS_OR_ADMIN_ROLES, SM_OPS_OR_ADMIN_ROLES } from "@/lib/admin-access";
+import { ALL_DASHBOARD_ROLES, FINANCE_OR_ADMIN_ROLES, OPS_FINANCE_OR_ADMIN_ROLES, OPS_OR_ADMIN_ROLES, PR_APPROVAL_ROLES, SM_OPS_OR_ADMIN_ROLES } from "@/lib/admin-access";
 import {
   assertSessionPurchaseRequestAccess,
   assertSessionWarehouseAccess,
@@ -467,7 +467,7 @@ export async function forceClosePR(
   prId: string,
   reason: string,
 ): Promise<MutationResult> {
-  const user = await requireRoles([...OPS_OR_ADMIN_ROLES]);
+  const user = await requireRoles([...PR_APPROVAL_ROLES]);
   const trimmed = reason.trim();
   if (!trimmed) {
     return { ok: false, message: "Reason is required." };
@@ -1155,7 +1155,7 @@ export async function approvePR(
   catalogReview: ApprovePRInput,
 ): Promise<MutationResult> {
   return timed("action.approvePR", async () => {
-    const user = await requireRoles([...OPS_OR_ADMIN_ROLES]);
+    const user = await requireRoles([...PR_APPROVAL_ROLES]);
 
     const pr = await prisma.purchaseRequest.findUnique({
       where: { id: prId },
@@ -1269,7 +1269,7 @@ export async function rejectPR(
   prId: string,
   reason: string,
 ): Promise<MutationResult> {
-  const user = await requireRoles([...OPS_OR_ADMIN_ROLES]);
+  const user = await requireRoles([...PR_APPROVAL_ROLES]);
   const trimmed = reason.trim();
   if (!trimmed) {
     return { ok: false, message: "Rejection reason is required." };
@@ -1318,7 +1318,7 @@ export async function sendForRevision(
   prId: string,
   revisionComment: string,
 ): Promise<MutationResult> {
-  const user = await requireRoles([...OPS_OR_ADMIN_ROLES]);
+  const user = await requireRoles([...PR_APPROVAL_ROLES]);
   const comment = revisionComment.trim();
   if (!comment) {
     return { ok: false, message: "Revision comment is required." };
@@ -1370,7 +1370,7 @@ export async function revertPRApproval(
   prId: string,
   reason: string,
 ): Promise<MutationResult> {
-  const user = await requireRoles([...OPS_OR_ADMIN_ROLES]);
+  const user = await requireRoles([...PR_APPROVAL_ROLES]);
   const trimmed = reason.trim();
   if (!trimmed) {
     return { ok: false, message: "Reason is required." };

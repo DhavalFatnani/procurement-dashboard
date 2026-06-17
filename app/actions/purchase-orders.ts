@@ -35,7 +35,7 @@ import {
   revalidateSerialGovernance,
 } from "@/lib/revalidate-tags";
 import { requireRoles } from "@/lib/server-action-guard";
-import { ALL_DASHBOARD_ROLES, FINANCE_OR_ADMIN_ROLES, OPS_FINANCE_OR_ADMIN_ROLES, OPS_OR_ADMIN_ROLES, SM_OPS_OR_ADMIN_ROLES } from "@/lib/admin-access";
+import { ALL_DASHBOARD_ROLES, FINANCE_OR_ADMIN_ROLES, OPS_FINANCE_OR_ADMIN_ROLES, OPS_OR_ADMIN_ROLES, PR_APPROVAL_ROLES, SM_OPS_OR_ADMIN_ROLES } from "@/lib/admin-access";
 import {
   createVendorLockTagsApprovalHold,
   releaseVendorLockTagsApprovalHold,
@@ -241,7 +241,7 @@ export async function forceClosePO(
   poId: string,
   reason: string,
 ): Promise<MutationResult> {
-  const user = await requireRoles([...OPS_OR_ADMIN_ROLES]);
+  const user = await requireRoles([...PR_APPROVAL_ROLES]);
   const trimmed = reason.trim();
   if (!trimmed) {
     return { ok: false, message: "Reason is required." };
@@ -304,7 +304,7 @@ export async function resolveGRNException(
   exceptionId: string,
   input: ResolveGrnExceptionInput,
 ): Promise<MutationResult> {
-  const user = await requireRoles([...OPS_OR_ADMIN_ROLES]);
+  const user = await requireRoles([...PR_APPROVAL_ROLES]);
 
   const exception = await prisma.gRNException.findUnique({
     where: { id: exceptionId },

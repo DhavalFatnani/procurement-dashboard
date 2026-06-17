@@ -1,6 +1,6 @@
 "use client";
 
-import { isOpsHeadOrAdmin } from "@/lib/admin-access";
+import { isCentralOpsOrAbove } from "@/lib/admin-access";
 import { POStatus, Role } from "@/lib/prisma-enums";
 import { useRouter } from "next/navigation";
 import * as React from "react";
@@ -42,7 +42,7 @@ export function PODetailSummaryTab({
     po.gstRatePercent,
   );
   const canEditDelivery =
-    isOpsHeadOrAdmin(role) && !NON_EDITABLE.includes(po.status);
+    isCentralOpsOrAbove(role) && !NON_EDITABLE.includes(po.status);
 
   return (
     <div className="section-stack">

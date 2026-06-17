@@ -21,14 +21,14 @@ import { cn } from "@/lib/utils";
 
 export function PODetailDisputeWorkbench({
   po,
-  isOps,
+  canResolveDisputes,
   expandedExceptionId,
   onExpandedExceptionChange,
   onViewReceipt,
   deepLinkExceptionId,
 }: {
   po: PODetail;
-  isOps: boolean;
+  canResolveDisputes: boolean;
   expandedExceptionId: string | null;
   onExpandedExceptionChange: (exceptionId: string | null) => void;
   onViewReceipt: (grnId: string) => void;
@@ -58,7 +58,7 @@ export function PODetailDisputeWorkbench({
   );
 
   React.useEffect(() => {
-    if (!deepLinkExceptionId || !isOps) {
+    if (!deepLinkExceptionId) {
       return;
     }
     if (deepLinkedRef.current === deepLinkExceptionId) {
@@ -76,7 +76,7 @@ export function PODetailDisputeWorkbench({
         block: "nearest",
       });
     });
-  }, [deepLinkExceptionId, isOps, disputes, onExpandedExceptionChange]);
+  }, [deepLinkExceptionId, disputes, onExpandedExceptionChange]);
 
   if (disputes.length === 0) {
     return null;
@@ -99,7 +99,7 @@ export function PODetailDisputeWorkbench({
           <DisputeCard
             key={row.lineKey}
             row={row}
-            isOps={isOps}
+            canResolveDisputes={canResolveDisputes}
             expanded={expandedExceptionId === row.openException?.id}
             cardRef={(el) => {
               if (row.openException) {
@@ -124,7 +124,7 @@ export function PODetailDisputeWorkbench({
 
 function DisputeCard({
   row,
-  isOps,
+  canResolveDisputes,
   expanded,
   cardRef,
   onToggle,
@@ -132,7 +132,7 @@ function DisputeCard({
   onResolved,
 }: {
   row: POReceivingLineRow;
-  isOps: boolean;
+  canResolveDisputes: boolean;
   expanded: boolean;
   cardRef: (el: HTMLDivElement | null) => void;
   onToggle: () => void;
@@ -189,7 +189,7 @@ function DisputeCard({
       {expanded ? (
         <div className="px-3 pb-3">
           <LineCommercialContext row={row} onViewReceipt={onViewReceipt} />
-          {isOps ? (
+          {canResolveDisputes ? (
             <ResolveGrnExceptionPanel
               row={row}
               onResolved={onResolved}

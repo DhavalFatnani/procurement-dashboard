@@ -37,6 +37,7 @@ import type { UserDetail, UserListRow } from "@/lib/queries/users";
 
 const ROLE_TONE: Record<Role, "info" | "accent" | "neutral" | "warning"> = {
   [Role.SM]: "neutral",
+  [Role.CENTRAL_TEAM]: "info",
   [Role.OPS_HEAD]: "info",
   [Role.FINANCE]: "accent",
   [Role.ADMIN]: "warning",
@@ -52,6 +53,7 @@ export function UsersView({
   filters,
   warehouses,
   currentUserId,
+  actorRole,
   canDeleteUser,
 }: {
   initialRows: Paginated<UserListRow>;
@@ -63,6 +65,7 @@ export function UsersView({
   };
   warehouses: WarehouseOption[];
   currentUserId: string;
+  actorRole: Role;
   canDeleteUser: boolean;
 }) {
   const router = useRouter();
@@ -394,6 +397,7 @@ export function UsersView({
           }}
           warehouses={warehouses}
           mode={drawerMode}
+          actorRole={actorRole}
           onSaved={() => void refreshRows()}
           onRecoveryLink={(email, link) => setRecoveryLinkDialog({ email, link })}
         />

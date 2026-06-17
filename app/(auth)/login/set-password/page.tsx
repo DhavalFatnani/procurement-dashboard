@@ -9,7 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 
 type Props = {
   searchParams: Promise<{ error?: string }>;
@@ -35,10 +35,9 @@ export default async function SetPasswordPage({ searchParams }: Props) {
             <label className="text-sm font-medium" htmlFor="password">
               New password
             </label>
-            <Input
+            <PasswordInput
               id="password"
               name="password"
-              type="password"
               autoComplete="new-password"
               minLength={8}
               required
@@ -48,10 +47,9 @@ export default async function SetPasswordPage({ searchParams }: Props) {
             <label className="text-sm font-medium" htmlFor="confirmPassword">
               Confirm password
             </label>
-            <Input
+            <PasswordInput
               id="confirmPassword"
               name="confirmPassword"
-              type="password"
               autoComplete="new-password"
               minLength={8}
               required

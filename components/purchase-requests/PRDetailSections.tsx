@@ -1,5 +1,5 @@
 import type { LockTagsSerialPreview } from "@/app/actions/serial";
-import { isOpsHeadOrAdmin } from "@/lib/admin-access";
+import { isCentralOpsOrAbove } from "@/lib/admin-access";
 import { ExecutionType, PRStatus, Role } from "@/lib/prisma-enums";
 import Link from "next/link";
 
@@ -123,7 +123,7 @@ export function PRDetailInternalPrintSide({
   }
 
   const seriesName = internalPrintSeriesName(pr);
-  const isOps = isOpsHeadOrAdmin(role);
+  const isOps = isCentralOpsOrAbove(role);
 
   return (
     <Card size="sm">

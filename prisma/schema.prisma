@@ -13,6 +13,7 @@ datasource db {
 
 enum Role {
   SM
+  CENTRAL_TEAM
   OPS_HEAD
   FINANCE
   ADMIN

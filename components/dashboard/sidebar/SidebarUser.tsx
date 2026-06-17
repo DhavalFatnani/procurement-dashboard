@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 
 const ROLE_ACCENT: Record<Role, string> = {
   [Role.SM]: "var(--accent-role-sm)",
+  [Role.CENTRAL_TEAM]: "var(--accent-role-ops)",
   [Role.OPS_HEAD]: "var(--accent-role-ops)",
   [Role.FINANCE]: "var(--accent-role-finance)",
   [Role.ADMIN]: "var(--accent-role-ops)",

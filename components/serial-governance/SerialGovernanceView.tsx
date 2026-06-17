@@ -1,6 +1,6 @@
 "use client";
 
-import { isOpsHeadOrAdmin } from "@/lib/admin-access";
+import { isCentralOpsOrAbove } from "@/lib/admin-access";
 import { Role } from "@/lib/prisma-enums";
 import { Map, Settings2 } from "lucide-react";
 import Link from "next/link";
@@ -92,7 +92,7 @@ export function SerialGovernanceView({
   const router = useRouter();
   const searchParams = useSearchParams();
   const [, startTransition] = React.useTransition();
-  const isOps = isOpsHeadOrAdmin(role);
+  const isOps = isCentralOpsOrAbove(role);
   const isAdmin = role === Role.ADMIN;
   const showAdvancedConfig = isOps && seriesConfigs.length > 0;
 

@@ -52,6 +52,32 @@ const QUICK_ACTIONS_BY_ROLE: Record<Role, QuickAction[]> = {
       description: "Match a vendor invoice to a received PO.",
     },
   ],
+  CENTRAL_TEAM: [
+    {
+      label: "Configure PO",
+      href: "/purchase-orders/configure",
+      icon: ClipboardList,
+      description: "Set up vendor, rates, and delivery for approved PRs.",
+    },
+    {
+      label: "Taxonomy",
+      href: "/admin/taxonomy",
+      icon: Building2,
+      description: "Categories, subcategories, and catalog items.",
+    },
+    {
+      label: "Vendors",
+      href: "/vendors",
+      icon: Building2,
+      description: "Activate new vendor requests and maintain records.",
+    },
+    {
+      label: "Create PR",
+      href: "/purchase-requests/new",
+      icon: FilePlus,
+      description: "Raise a request on behalf of a warehouse.",
+    },
+  ],
   OPS_HEAD: [
     {
       label: "Review approvals",

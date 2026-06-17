@@ -1,6 +1,6 @@
 "use client";
 
-import { isOpsHeadOrAdmin } from "@/lib/admin-access";
+import { canApprovePurchaseRequest } from "@/lib/admin-access";
 import { ExecutionType, PRStatus, Role } from "@/lib/prisma-enums";
 import { useRouter } from "next/navigation";
 import { useOptimistic } from "react";
@@ -99,7 +99,7 @@ export function PRListTable({
   onRowsChange: () => void;
 }) {
   const router = useRouter();
-  const isOps = isOpsHeadOrAdmin(role);
+  const canApprove = canApprovePurchaseRequest(role);
   const { isPending: actionPending, run } = useServerMutation({ onRefresh: onRowsChange });
   const [optimisticStatuses, setOptimisticStatuses] = useOptimistic(
     {} as Record<string, PRStatus>,
@@ -176,7 +176,7 @@ export function PRListTable({
       { id: "on", header: "Created on", variant: "date", cell: (r) => formatDateTimeMedium(r.createdAt) },
     ];
 
-    if (isOps) {
+    if (canApprove) {
       base.push({
         id: "actions",
         header: "",
@@ -228,7 +228,7 @@ export function PRListTable({
     }
 
     return base;
-  }, [isOps, optimisticStatuses, actionPending]);
+  }, [canApprove, optimisticStatuses, actionPending]);
 
   const firstPendingApproval = React.useMemo(
     () =>

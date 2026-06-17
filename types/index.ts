@@ -7,7 +7,13 @@ import { Role } from "@/lib/generated/prisma/enums";
 
 export type { Role };
 
-export const ROLES = [Role.SM, Role.OPS_HEAD, Role.FINANCE, Role.ADMIN] as const;
+export const ROLES = [
+  Role.SM,
+  Role.CENTRAL_TEAM,
+  Role.OPS_HEAD,
+  Role.FINANCE,
+  Role.ADMIN,
+] as const;
 
 export function isRole(value: unknown): value is Role {
   return (

@@ -22,7 +22,7 @@ export default async function AdminUsersPage({
 }: {
   searchParams: SearchParams;
 }) {
-  const user = assertRole(await getRequestSession(), [...ACCESS.admin]);
+  const user = assertRole(await getRequestSession(), [...ACCESS.adminUsers]);
   const sp = await searchParams;
   const search = str(sp.q);
   const role = str(sp.role) as Role | "";
@@ -53,6 +53,7 @@ export default async function AdminUsersPage({
       initialRows={rows}
       warehouses={warehouses}
       currentUserId={user.id}
+      actorRole={user.role}
       canDeleteUser={canDeleteUser(user.role)}
       filters={{
         search,

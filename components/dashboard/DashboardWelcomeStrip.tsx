@@ -12,6 +12,10 @@ import type {
 import { ROLE_LABELS } from "@/lib/navigation";
 
 const PENDING_LINKS: Partial<Record<Role, { href: string; label: string }>> = {
+  [Role.CENTRAL_TEAM]: {
+    href: "/purchase-orders/configure",
+    label: "Configure purchase orders",
+  },
   [Role.OPS_HEAD]: {
     href: "/purchase-requests?status=PENDING_APPROVAL",
     label: "Review pending approvals",
@@ -50,8 +54,9 @@ function attentionCount(
     return metrics.unpaidInvoices.count;
   }
   if (isOpsMetrics(metrics)) {
+    const approvalCount = role === Role.CENTRAL_TEAM ? 0 : metrics.pendingApprovals;
     return (
-      metrics.pendingApprovals +
+      approvalCount +
       metrics.pendingVendorRequests +
       metrics.prsAwaitingPo +
       metrics.openGrnExceptions +
@@ -78,7 +83,9 @@ export function DashboardWelcomeStrip({
   const attentionHint =
     role === Role.SM && !isFinanceMetrics(metrics) && !isOpsMetrics(metrics)
       ? `${metrics.draftPurchaseRequests} draft · ${metrics.pendingApprovals} pending · ${metrics.posAwaitingReceipt} to receive`
-      : role === Role.OPS_HEAD && isOpsMetrics(metrics)
+      : role === Role.CENTRAL_TEAM && isOpsMetrics(metrics)
+        ? `${metrics.prsAwaitingPo} configure PO · ${metrics.pendingVendorRequests} vendors · ${metrics.openGrnExceptions + metrics.matchExceptions} to review`
+        : role === Role.OPS_HEAD && isOpsMetrics(metrics)
         ? `${metrics.pendingApprovals} approvals · ${metrics.prsAwaitingPo} configure PO · ${metrics.openGrnExceptions + metrics.matchExceptions} exceptions`
         : role === Role.ADMIN && isOpsMetrics(metrics)
           ? `${metrics.pendingApprovals} approvals · ${metrics.prsAwaitingPo} configure PO · ${metrics.openGrnExceptions + metrics.matchExceptions} exceptions (all warehouses)`

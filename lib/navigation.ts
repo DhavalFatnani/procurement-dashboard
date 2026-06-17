@@ -49,6 +49,17 @@ const CONFIGURE_PO_ITEM: NavItem = {
   icon: "configurePO",
 };
 
+const OPS_PO_FULFILLMENT_CHILDREN: NavItem[] = [
+  { href: "/goods-receipt", label: "Goods Receipt", icon: "goodsReceipt" },
+  { href: "/invoices", label: "Invoices", icon: "invoices" },
+  {
+    href: FINANCE_ROUTES.invoiceSettlement,
+    label: "Payments",
+    icon: "payments",
+    hint: "view only",
+  },
+];
+
 /** Flatten top-level and nested nav items (for command palette, tests). */
 export function flattenNavItems(items: NavItem[]): NavItem[] {
   return items.flatMap((item) =>
@@ -72,17 +83,9 @@ function poFulfillmentChildren(role: Role): NavItem[] {
           hint: "upload only",
         },
       ];
+    case Role.CENTRAL_TEAM:
     case Role.OPS_HEAD:
-      return [
-        { href: "/goods-receipt", label: "Goods Receipt", icon: "goodsReceipt" },
-        { href: "/invoices", label: "Invoices", icon: "invoices" },
-        {
-          href: FINANCE_ROUTES.invoiceSettlement,
-          label: "Payments",
-          icon: "payments",
-          hint: "view only",
-        },
-      ];
+      return OPS_PO_FULFILLMENT_CHILDREN;
     case Role.ADMIN:
       return [
         { href: "/goods-receipt", label: "Goods Receipt", icon: "goodsReceipt" },
@@ -113,6 +116,7 @@ function purchaseOrdersHubFor(role: Role): NavItem {
 
 export const ROLE_LABELS: Record<Role, string> = {
   [Role.SM]: "Store Manager",
+  [Role.CENTRAL_TEAM]: "Central Team",
   [Role.OPS_HEAD]: "Operations Head",
   [Role.FINANCE]: "Finance",
   [Role.ADMIN]: "Admin",
@@ -151,6 +155,7 @@ function workItemsFor(role: Role): NavItem[] {
   switch (role) {
     case Role.SM:
       return [INBOX_ITEM, PURCHASE_REQUESTS_ITEM, poHub];
+    case Role.CENTRAL_TEAM:
     case Role.OPS_HEAD:
       return [INBOX_ITEM, PURCHASE_REQUESTS_ITEM, CONFIGURE_PO_ITEM, poHub];
     case Role.ADMIN:
@@ -167,6 +172,7 @@ function governanceItemsFor(role: Role): NavItem[] {
         { href: "/vendors", label: "Vendors", icon: "vendors", hint: "read-only" },
         { href: "/serial-governance", label: "Serial Governance", icon: "serialGovernance" },
       ];
+    case Role.CENTRAL_TEAM:
     case Role.OPS_HEAD:
     case Role.ADMIN:
       return [
@@ -185,6 +191,7 @@ function insightItemsFor(role: Role): NavItem[] {
         { href: "/dashboard", label: "Dashboard", icon: "dashboard" },
         { href: "/reports", label: "Reports", icon: "reports", hint: "limited" },
       ];
+    case Role.CENTRAL_TEAM:
     case Role.OPS_HEAD:
     case Role.ADMIN:
       return [
@@ -200,6 +207,12 @@ function insightItemsFor(role: Role): NavItem[] {
 }
 
 function adminItemsFor(role: Role): NavItem[] {
+  if (role === Role.CENTRAL_TEAM) {
+    return [
+      { href: "/admin/warehouses", label: "Warehouses", icon: "warehouses" },
+      { href: "/admin/taxonomy", label: "Taxonomy", icon: "catalog" },
+    ];
+  }
   if (role === Role.OPS_HEAD) {
     return [
       { href: "/admin/users", label: "Users", icon: "users" },
@@ -249,6 +262,7 @@ export function getNavItemsForRole(role: Role): NavItem[] {
 export function defaultLandingFor(role: Role): string {
   switch (role) {
     case Role.SM:
+    case Role.CENTRAL_TEAM:
     case Role.OPS_HEAD:
       return "/dashboard";
     case Role.FINANCE:

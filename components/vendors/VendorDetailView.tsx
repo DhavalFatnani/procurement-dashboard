@@ -1,6 +1,6 @@
 "use client";
 
-import { isOpsHeadOrAdmin } from "@/lib/admin-access";
+import { isCentralOpsOrAbove } from "@/lib/admin-access";
 import { Role, VendorStatus } from "@/lib/prisma-enums";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -37,7 +37,7 @@ export function VendorDetailView({
 }) {
   const pos = vendor.purchaseOrders;
   const router = useRouter();
-  const canManage = isOpsHeadOrAdmin(role);
+  const canManage = isCentralOpsOrAbove(role);
   const [tab, setTab] = React.useState<"history" | "pos">(canManage ? "history" : "pos");
   const [deactivateOpen, setDeactivateOpen] = React.useState(false);
   const [mergeOpen, setMergeOpen] = React.useState(false);

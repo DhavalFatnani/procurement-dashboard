@@ -61,7 +61,7 @@ export async function DashboardSecondarySection({
     );
   }
 
-  if (user.role === Role.OPS_HEAD || user.role === Role.ADMIN) {
+  if (user.role === Role.OPS_HEAD || user.role === Role.CENTRAL_TEAM || user.role === Role.ADMIN) {
     const [stages, queue, activity] = await dbParallel(
       () =>
         timed("dashboard.poStages", () =>

@@ -19,6 +19,7 @@ import { ThemeToggle } from "@/components/shared/ThemeToggle";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { formatDateMedium } from "@/lib/format-datetime";
 import { formatWarehouseLabel } from "@/lib/format-warehouse";
 import { ROLE_LABELS } from "@/lib/navigation";
@@ -27,6 +28,7 @@ import { roleUsesMultiWarehouseAssignment } from "@/lib/warehouse-scope";
 
 const ROLE_TONE: Record<Role, "info" | "accent" | "neutral" | "warning"> = {
   [Role.SM]: "neutral",
+  [Role.CENTRAL_TEAM]: "info",
   [Role.OPS_HEAD]: "info",
   [Role.FINANCE]: "accent",
   [Role.ADMIN]: "warning",
@@ -240,9 +242,8 @@ export function ProfileView({ profile }: { profile: UserProfile }) {
                 <label className="text-ds-sm font-medium" htmlFor="current-password">
                   Current password
                 </label>
-                <Input
+                <PasswordInput
                   id="current-password"
-                  type="password"
                   value={currentPassword}
                   onChange={(e) => setCurrentPassword(e.target.value)}
                   autoComplete="current-password"
@@ -253,9 +254,8 @@ export function ProfileView({ profile }: { profile: UserProfile }) {
                 <label className="text-ds-sm font-medium" htmlFor="new-password">
                   New password
                 </label>
-                <Input
+                <PasswordInput
                   id="new-password"
-                  type="password"
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
                   autoComplete="new-password"
@@ -267,9 +267,8 @@ export function ProfileView({ profile }: { profile: UserProfile }) {
                 <label className="text-ds-sm font-medium" htmlFor="confirm-password">
                   Confirm new password
                 </label>
-                <Input
+                <PasswordInput
                   id="confirm-password"
-                  type="password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   autoComplete="new-password"

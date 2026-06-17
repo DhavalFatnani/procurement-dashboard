@@ -3,7 +3,7 @@ import Link from "next/link";
 import { CreatePRForm } from "@/components/purchase-requests/CreatePRForm";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { buttonVariants } from "@/components/ui/button";
-import { hasGlobalWarehouseScope, isOpsHeadOrAdmin } from "@/lib/admin-access";
+import { hasGlobalWarehouseScope, isCentralOpsOrAbove } from "@/lib/admin-access";
 import { dbParallel } from "@/lib/db-parallel";
 import { getFilterOptions } from "@/lib/queries/purchase-requests";
 import { getWarehouseOptions, getWarehousesAssignedToUser } from "@/lib/queries/warehouses";
@@ -44,7 +44,7 @@ export default async function NewPurchaseRequestPage() {
       subcategories={filterOptions.subcategories}
       catalogItems={filterOptions.catalogItems}
       warehouses={warehouses}
-      defaultWarehouseId={isOpsHeadOrAdmin(user.role) ? "" : warehouses[0]!.id}
+      defaultWarehouseId={isCentralOpsOrAbove(user.role) ? "" : warehouses[0]!.id}
     />
   );
 }

@@ -23,7 +23,7 @@ export function canViewPurchaseRequest(
       userCanActForWarehouse(user, pr.warehouseId)
     );
   }
-  if (user.role === Role.OPS_HEAD || user.role === Role.ADMIN) {
+  if (user.role === Role.OPS_HEAD || user.role === Role.CENTRAL_TEAM || user.role === Role.ADMIN) {
     return userCanActForWarehouse(user, pr.warehouseId);
   }
   return false;
@@ -37,7 +37,7 @@ export function canRevisePurchaseRequest(
   if (pr.status !== PRStatus.REVISION_REQUIRED) {
     return false;
   }
-  if (user.role === Role.SM || user.role === Role.OPS_HEAD || user.role === Role.ADMIN) {
+  if (user.role === Role.SM || user.role === Role.OPS_HEAD || user.role === Role.CENTRAL_TEAM || user.role === Role.ADMIN) {
     return userCanActForWarehouse(user, pr.warehouseId);
   }
   return false;
@@ -62,7 +62,9 @@ export function canEditDraftPurchaseRequestAsOps(
   pr: PurchaseRequestAccessFields,
 ): boolean {
   return (
-    (user.role === Role.OPS_HEAD || user.role === Role.ADMIN) &&
+    (user.role === Role.OPS_HEAD ||
+      user.role === Role.CENTRAL_TEAM ||
+      user.role === Role.ADMIN) &&
     pr.status === PRStatus.DRAFT &&
     userCanActForWarehouse(user, pr.warehouseId)
   );

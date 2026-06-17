@@ -10,6 +10,7 @@ import { Field } from "@/components/shared/Field";
 import { SheetSection } from "@/components/shared/SheetSection";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import {
   Select,
   SelectContent,
@@ -17,6 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { assignableRolesFor } from "@/lib/admin-access";
 import { ROLE_LABELS } from "@/lib/navigation";
 import type { UserDetail } from "@/lib/queries/users";
 import type { WarehouseOption } from "@/lib/format-warehouse";
@@ -80,6 +82,7 @@ export function UserFormDrawer({
   onOpenChange,
   warehouses,
   mode,
+  actorRole,
   onSaved,
   onRecoveryLink,
 }: {
@@ -87,6 +90,7 @@ export function UserFormDrawer({
   onOpenChange: (open: boolean) => void;
   warehouses: WarehouseOption[];
   mode: Mode;
+  actorRole: Role;
   onSaved: () => void;
   onRecoveryLink?: (email: string, link: string) => void;
 }) {
@@ -106,6 +110,10 @@ export function UserFormDrawer({
   const [submitting, setSubmitting] = React.useState(false);
 
   const multiWarehouse = roleUsesMultiWarehouseAssignment(role);
+  const roleOptions = React.useMemo(
+    () => assignableRolesFor(actorRole),
+    [actorRole],
+  );
 
   React.useEffect(() => {
     if (!open) return;
@@ -268,7 +276,7 @@ export function UserFormDrawer({
           title="Role & warehouse"
           description={
             multiWarehouse
-              ? "Ops Head and Finance users can be assigned to one or more warehouses. Data is scoped to those locations."
+              ? "Central Team, Ops Head, and Finance users can be assigned to one or more warehouses. Data is scoped to those locations."
               : "Store Managers operate within a single warehouse."
           }
         >
@@ -279,7 +287,7 @@ export function UserFormDrawer({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {Object.values(Role).map((r) => (
+                  {roleOptions.map((r) => (
                     <SelectItem key={r} value={r}>
                       {ROLE_LABELS[r]}
                     </SelectItem>
@@ -327,9 +335,8 @@ export function UserFormDrawer({
             description="Leave blank to email a password setup link. If delivery fails, you'll get a link to copy manually."
           >
             <Field label="Password" htmlFor="user-password" hint="Minimum 8 characters.">
-              <Input
+              <PasswordInput
                 id="user-password"
-                type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 autoComplete="new-password"

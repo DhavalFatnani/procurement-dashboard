@@ -1,6 +1,6 @@
 "use client";
 
-import { isOpsHeadOrAdmin } from "@/lib/admin-access";
+import { canApprovePurchaseRequest, isCentralOpsOrAbove } from "@/lib/admin-access";
 import { POStatus, Role } from "@/lib/prisma-enums";
 import { useSearchParams } from "next/navigation";
 import * as React from "react";
@@ -35,9 +35,10 @@ export function PODetailFulfillmentTab({
   role: Role;
 }) {
   const searchParams = useSearchParams();
-  const isOps = isOpsHeadOrAdmin(role);
+  const isOps = isCentralOpsOrAbove(role);
+  const canResolveDisputes = canApprovePurchaseRequest(role);
   const canRecordGrn =
-    (role === Role.SM || isOpsHeadOrAdmin(role)) &&
+    (role === Role.SM || isCentralOpsOrAbove(role)) &&
     RECEIVING_STATUSES.includes(po.status);
 
   const [expandedGrnId, setExpandedGrnId] = React.useState<string | null>(null);
@@ -77,7 +78,7 @@ export function PODetailFulfillmentTab({
 
       <PODetailDisputeWorkbench
         po={po}
-        isOps={isOps}
+        canResolveDisputes={canResolveDisputes}
         expandedExceptionId={expandedExceptionId}
         onExpandedExceptionChange={setExpandedExceptionId}
         onViewReceipt={handleViewReceipt}

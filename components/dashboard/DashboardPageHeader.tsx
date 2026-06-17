@@ -8,6 +8,8 @@ import { FINANCE_ROUTES } from "@/lib/finance-routes";
 const SUBTITLES: Record<Role, string> = {
   [Role.SM]:
     "Your warehouse — drafts, goods receipt, and invoice uploads in one place.",
+  [Role.CENTRAL_TEAM]:
+    "Configuration queue — PO setup, vendors, catalog, and master data across your warehouses.",
   [Role.OPS_HEAD]:
     "Governance queue — approvals, vendor onboarding, PO setup, and exception resolution.",
   [Role.FINANCE]:

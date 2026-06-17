@@ -1,6 +1,6 @@
 "use client";
 
-import { isOpsHeadOrAdmin } from "@/lib/admin-access";
+import { canApprovePurchaseRequest, isCentralOpsOrAbove } from "@/lib/admin-access";
 import { ExecutionType, PRStatus, Role } from "@/lib/prisma-enums";
 import Link from "next/link";
 import { useOptimistic } from "react";
@@ -99,7 +99,8 @@ export function PRDetailView({
     pr.status,
     (_current, next: PRStatus) => next,
   );
-  const isOps = isOpsHeadOrAdmin(role);
+  const isOps = isCentralOpsOrAbove(role);
+  const canApprove = canApprovePurchaseRequest(role);
   const isSm = role === Role.SM;
 
   const [draftEditMode, setDraftEditMode] = React.useState(false);
@@ -145,9 +146,9 @@ export function PRDetailView({
   );
 
   const subs = subcategories.filter((s) => s.categoryId === categoryId);
-  const canForceClose = isOps && FORCE_CLOSE_ALLOWED.includes(displayStatus);
+  const canForceClose = canApprove && FORCE_CLOSE_ALLOWED.includes(displayStatus);
   const canRevertApproval =
-    isOps &&
+    canApprove &&
     pr.executionType === ExecutionType.VENDOR_PURCHASE &&
     displayStatus === PRStatus.APPROVED &&
     pr.purchaseOrders.length === 0 &&
@@ -382,7 +383,7 @@ export function PRDetailView({
                         </tbody>
                       </table>
                     </div>
-                    {isOps && displayStatus === PRStatus.PENDING_APPROVAL ? (
+                    {canApprove && displayStatus === PRStatus.PENDING_APPROVAL ? (
                       <p className="mt-2 text-ds-xs text-status-warning">
                         Proposed catalog items are reviewed when you approve — use Approve PR or{" "}
                         <Link
@@ -606,7 +607,7 @@ export function PRDetailView({
             </Button>
           ) : null}
 
-          {isOps &&
+          {canApprove &&
           pr.executionType === ExecutionType.VENDOR_PURCHASE &&
           displayStatus === PRStatus.PENDING_APPROVAL ? (
             <>
@@ -655,7 +656,7 @@ export function PRDetailView({
             </Button>
           ) : null}
 
-          {isOps && pr.executionType === ExecutionType.VENDOR_PURCHASE ? (
+          {canApprove && pr.executionType === ExecutionType.VENDOR_PURCHASE ? (
             <button
               type="button"
               disabled={!canForceClose}

@@ -1,6 +1,6 @@
 "use client";
 
-import { isOpsHeadOrAdmin } from "@/lib/admin-access";
+import { isCentralOpsOrAbove } from "@/lib/admin-access";
 import { ExecutionType, PRStatus, Role } from "@/lib/prisma-enums";
 import * as React from "react";
 
@@ -81,7 +81,7 @@ export function PurchaseRequestsFilters({
   clearStatus: (status: PRStatus) => void;
   clearAllFilters: () => void;
 }) {
-  const isOps = isOpsHeadOrAdmin(role);
+  const isOps = isCentralOpsOrAbove(role);
 
   const subcatsForCategory = filterOptions.subcategories.filter(
     (s) => !filters.categoryId || s.categoryId === filters.categoryId,

@@ -20,20 +20,23 @@ export function OpsDashboardMetricsGrid({
   metrics: OpsDashboardMetrics;
   role?: Role;
 }) {
+  const showPendingApprovals = role !== Role.CENTRAL_TEAM;
   const grnExceptionsHref = role === Role.ADMIN ? "/goods-receipt" : "/inbox";
   const matchExceptionsHref = role === Role.ADMIN ? "/invoices" : "/inbox";
   return (
     <AnimatedGrid className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-      <AnimatedGridItem>
-        <MetricTile
-          label="Pending approvals"
-          value={metrics.pendingApprovals}
-          hint="Vendor PRs in your queue"
-          icon={ClipboardList}
-          iconTone={metrics.pendingApprovals > 0 ? "warning" : "neutral"}
-          href="/purchase-requests?status=PENDING_APPROVAL"
-        />
-      </AnimatedGridItem>
+      {showPendingApprovals ? (
+        <AnimatedGridItem>
+          <MetricTile
+            label="Pending approvals"
+            value={metrics.pendingApprovals}
+            hint="Vendor PRs in your queue"
+            icon={ClipboardList}
+            iconTone={metrics.pendingApprovals > 0 ? "warning" : "neutral"}
+            href="/purchase-requests?status=PENDING_APPROVAL"
+          />
+        </AnimatedGridItem>
+      ) : null}
       <AnimatedGridItem>
         <MetricTile
           label="Awaiting PO setup"
