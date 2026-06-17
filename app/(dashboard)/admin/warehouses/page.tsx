@@ -1,5 +1,3 @@
-import { Role } from "@/lib/prisma-enums";
-
 import { WarehousesView } from "@/components/admin/WarehousesView";
 import { getWarehouses } from "@/lib/queries/warehouses";
 import { ACCESS } from "@/lib/route-access";
