@@ -93,7 +93,10 @@ export function prDetailNeedsFilterOptions(
   status: PRStatus,
 ): boolean {
   return (
-    (role === Role.SM || role === Role.OPS_HEAD || role === Role.ADMIN) &&
+    (role === Role.SM ||
+      role === Role.CENTRAL_TEAM ||
+      role === Role.OPS_HEAD ||
+      role === Role.ADMIN) &&
     (status === PRStatus.DRAFT || status === PRStatus.REVISION_REQUIRED)
   );
 }

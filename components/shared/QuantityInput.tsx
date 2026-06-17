@@ -38,6 +38,7 @@ export type QuantityInputProps = {
   size?: "sm" | "default";
   /** When value is 0, show an empty field until the user types or blurs */
   showEmptyWhenZero?: boolean;
+  invalid?: boolean;
 };
 
 export function QuantityInput({
@@ -53,6 +54,7 @@ export function QuantityInput({
   showSteppers = false,
   size = "default",
   showEmptyWhenZero = false,
+  invalid = false,
 }: QuantityInputProps) {
   const displayForValue = React.useCallback(
     (n: number) => {
@@ -124,6 +126,7 @@ export function QuantityInput({
       onFocus={handleFocus}
       onBlur={handleBlur}
       aria-label={ariaLabel}
+      aria-invalid={invalid || undefined}
       className={cn(
         heightClass,
         "min-w-[5.5rem] w-full font-tabular-nums text-right text-ds-base sm:min-w-[6rem]",

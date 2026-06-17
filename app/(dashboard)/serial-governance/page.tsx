@@ -54,7 +54,9 @@ export default async function SerialGovernancePage({
     // Activity rows and the advanced series configs don't depend on each other.
     [activity, seriesConfigs] = await Promise.all([
       getSerialActivity(activityFilters),
-      user.role === Role.OPS_HEAD || user.role === Role.ADMIN
+      user.role === Role.CENTRAL_TEAM ||
+        user.role === Role.OPS_HEAD ||
+        user.role === Role.ADMIN
         ? getSeriesConfigsForAdvanced()
         : Promise.resolve(seriesConfigs),
     ]);

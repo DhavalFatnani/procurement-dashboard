@@ -67,6 +67,11 @@ import {
   resolveCreatePRSelection,
 } from "@/lib/create-pr-selection";
 import type { WarehouseOption } from "@/lib/format-warehouse";
+import {
+  validateVendorLineDrafts,
+  type PRLineFieldError,
+} from "@/lib/pr-line-validation-client";
+import { scrollFieldIntoView } from "@/lib/scroll-to-field";
 import { useServerMutation } from "@/lib/use-server-mutation";
 import { cn } from "@/lib/utils";
 
@@ -127,6 +132,7 @@ export function CreatePRForm({
   const barcodeLabelConfigRef = React.useRef(barcodeLabelConfig);
   barcodeLabelConfigRef.current = barcodeLabelConfig;
   const [vendorSheetOpen, setVendorSheetOpen] = React.useState(false);
+  const [lineFieldErrors, setLineFieldErrors] = React.useState<PRLineFieldError[]>([]);
   const [pending, startTransition] = React.useTransition();
 
   const lockTagsCategory = React.useMemo(
@@ -168,16 +174,21 @@ export function CreatePRForm({
       ? serialHintState.hint
       : null;
 
-  const vendorLinesValid = vendorLines.every(
-    (line) => line.categoryId && line.subcategoryId && line.quantity >= 1,
+  const vendorLineValidation = React.useMemo(
+    () => validateVendorLineDrafts(vendorLines, categories),
+    [vendorLines, categories],
   );
+  const vendorLinesValid = vendorLineValidation.ok;
   const section1Done =
     mode === "vendor"
       ? vendorLinesValid
       : mode === "print"
         ? lockTagsCategory != null && selection != null
         : false;
-  const section2Done = section1Done && (mode === "vendor" || quantity >= 1);
+  const section2Done =
+    mode === "vendor"
+      ? warehouseReady
+      : section1Done && quantity >= 1;
   const showVendorRequestSection =
     section2Done && executionType === ExecutionType.VENDOR_PURCHASE;
   const showLockTagsSection = section2Done && isLockTags && serialHint != null;
@@ -185,6 +196,25 @@ export function CreatePRForm({
     section2Done && executionType === ExecutionType.INTERNAL_PRINT;
   const showVendorPurchaseActions =
     section2Done && executionType === ExecutionType.VENDOR_PURCHASE;
+
+  function handleVendorLinesChange(next: PRLineDraft[]) {
+    setVendorLines(next);
+    if (lineFieldErrors.length > 0) {
+      setLineFieldErrors([]);
+    }
+  }
+
+  function runClientLineValidation(): boolean {
+    const result = validateVendorLineDrafts(vendorLines, categories);
+    if (result.ok) {
+      setLineFieldErrors([]);
+      return true;
+    }
+    setLineFieldErrors(result.errors);
+    toast.error(result.errors[0]?.message ?? "Complete line items before continuing.");
+    requestAnimationFrame(() => scrollFieldIntoView(result.firstFieldId));
+    return false;
+  }
 
   function applyDownstreamReset() {
     setVendorRequestId(DOWNSTREAM_FIELD_RESET.vendorRequestId);
@@ -200,6 +230,7 @@ export function CreatePRForm({
     setSubcategoryId("");
     setQuantity(1);
     setVendorLines([emptyLineDraft()]);
+    setLineFieldErrors([]);
     applyDownstreamReset();
   }
 
@@ -383,8 +414,7 @@ export function CreatePRForm({
   }
 
   async function persistDraft(): Promise<string | null> {
-    if (!section1Done) {
-      toast.error("Complete line items before saving.");
+    if (!runClientLineValidation()) {
       return null;
     }
     const payload = formPayload();
@@ -417,6 +447,9 @@ export function CreatePRForm({
 
   function submitForApproval() {
     if (executionType !== ExecutionType.VENDOR_PURCHASE) {
+      return;
+    }
+    if (!runClientLineValidation()) {
       return;
     }
     void runSubmit(
@@ -638,7 +671,8 @@ export function CreatePRForm({
             subcategories={subcategories}
             catalogItems={catalogItems}
             lines={vendorLines}
-            onChange={setVendorLines}
+            onChange={handleVendorLinesChange}
+            fieldErrors={lineFieldErrors}
             vendorPurchaseOnly
           />
           <div className="space-y-1.5 border-t border-border-subtle pt-4">

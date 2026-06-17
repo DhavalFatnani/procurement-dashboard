@@ -192,9 +192,9 @@ const QUICK_ACTIONS_BY_ROLE: Record<Role, { label: string; href: string; icon: L
     { label: "Upload invoice", href: "/invoices/new", icon: Receipt },
   ],
   CENTRAL_TEAM: [
+    { label: "Review approvals", href: "/purchase-requests?status=PENDING_APPROVAL", icon: ClipboardList },
     { label: "Configure PO", href: "/purchase-orders/configure", icon: ClipboardList },
     { label: "Review vendors", href: "/vendors?tab=pending", icon: UserPlus },
-    { label: "Taxonomy", href: "/admin/taxonomy", icon: ClipboardList },
     { label: "Create PR", href: "/purchase-requests/new", icon: FilePlus },
   ],
   OPS_HEAD: [

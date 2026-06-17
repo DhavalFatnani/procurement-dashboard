@@ -18,6 +18,7 @@ export function PageTransition({ children }: { children: React.ReactNode }) {
     <AnimatePresence mode="sync" initial={false}>
       <motion.div
         key={pathname}
+        className="min-h-0"
         variants={fadeRise}
         initial="initial"
         animate="animate"

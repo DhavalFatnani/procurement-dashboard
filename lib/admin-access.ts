@@ -25,14 +25,24 @@ export const OPS_OR_ADMIN_ROLES = CENTRAL_OPS_OR_ADMIN_ROLES;
 /** PR sign-off and consequential judgment calls — Ops Head + Admin only. */
 export const PR_APPROVAL_ROLES = [Role.OPS_HEAD, Role.ADMIN] as const;
 
-/** SM + Ops (+ Admin for global ops). */
-export const SM_OPS_OR_ADMIN_ROLES = [Role.SM, Role.OPS_HEAD, Role.ADMIN] as const;
+/** SM + Central Team + Ops Head + Admin (operational workflows). */
+export const SM_OPS_OR_ADMIN_ROLES = [
+  Role.SM,
+  Role.CENTRAL_TEAM,
+  Role.OPS_HEAD,
+  Role.ADMIN,
+] as const;
 
 /** Finance workflows — Admin may settle payables globally. */
 export const FINANCE_OR_ADMIN_ROLES = [Role.FINANCE, Role.ADMIN] as const;
 
-/** Finance + Ops read paths that include Admin. */
-export const OPS_FINANCE_OR_ADMIN_ROLES = [Role.OPS_HEAD, Role.FINANCE, Role.ADMIN] as const;
+/** Finance + Ops read paths that include Central Team and Admin. */
+export const OPS_FINANCE_OR_ADMIN_ROLES = [
+  Role.CENTRAL_TEAM,
+  Role.OPS_HEAD,
+  Role.FINANCE,
+  Role.ADMIN,
+] as const;
 
 /** All signed-in dashboard roles. */
 export const ALL_DASHBOARD_ROLES = [

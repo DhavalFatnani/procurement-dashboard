@@ -20,7 +20,7 @@ export function DashboardChrome({
 }) {
   return (
     <DashboardUiProvider role={role}>
-      <div className="flex h-screen w-full overflow-hidden bg-shell-gradient">
+      <div className="fixed inset-0 flex overflow-hidden bg-shell-gradient">
         <Sidebar
           className="hidden lg:flex"
           displayName={displayName}
@@ -29,7 +29,10 @@ export function DashboardChrome({
           navGroups={navGroups}
         />
 
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
+        <div
+          data-dashboard-scroll
+          className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overscroll-y-contain"
+        >
           <DashboardMobileNav
             displayName={displayName}
             role={role}

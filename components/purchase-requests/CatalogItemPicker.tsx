@@ -35,6 +35,7 @@ export function CatalogItemPicker({
   readOnly,
   placeholder = "Search catalog or add new…",
   ariaLabel = "Catalog item",
+  invalid = false,
   onChange,
 }: {
   items: CatalogItemOption[];
@@ -44,6 +45,7 @@ export function CatalogItemPicker({
   readOnly?: boolean;
   placeholder?: string;
   ariaLabel?: string;
+  invalid?: boolean;
   onChange: (value: {
     catalogItemId?: string;
     proposedName?: string;
@@ -114,6 +116,7 @@ export function CatalogItemPicker({
           role="combobox"
           aria-expanded={open}
           aria-label={ariaLabel}
+          aria-invalid={invalid || undefined}
           disabled={disabled}
           className={cn(selectTriggerVariants({ size: "sm" }), "w-full")}
           data-state={open ? "open" : "closed"}

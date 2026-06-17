@@ -54,16 +54,16 @@ const QUICK_ACTIONS_BY_ROLE: Record<Role, QuickAction[]> = {
   ],
   CENTRAL_TEAM: [
     {
-      label: "Configure PO",
-      href: "/purchase-orders/configure",
-      icon: ClipboardList,
-      description: "Set up vendor, rates, and delivery for approved PRs.",
+      label: "Review approvals",
+      href: "/purchase-requests?status=PENDING_APPROVAL",
+      icon: Inbox,
+      description: "Vendor PRs pending Ops Head approval.",
     },
     {
-      label: "Taxonomy",
-      href: "/admin/taxonomy",
-      icon: Building2,
-      description: "Categories, subcategories, and catalog items.",
+      label: "Create PO",
+      href: "/purchase-orders/configure",
+      icon: ClipboardList,
+      description: "Configure vendor, rates, and delivery for approved PRs.",
     },
     {
       label: "Vendors",

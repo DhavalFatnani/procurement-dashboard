@@ -132,9 +132,11 @@ describe("canEditOwnDraftPurchaseRequest", () => {
 });
 
 describe("prDetailNeedsFilterOptions", () => {
-  it("loads catalog options for SM and Ops on draft or revision", () => {
+  it("loads catalog options for SM, Central Team, and Ops on draft or revision", () => {
     expect(prDetailNeedsFilterOptions(Role.SM, PRStatus.DRAFT)).toBe(true);
     expect(prDetailNeedsFilterOptions(Role.SM, PRStatus.REVISION_REQUIRED)).toBe(true);
+    expect(prDetailNeedsFilterOptions(Role.CENTRAL_TEAM, PRStatus.DRAFT)).toBe(true);
+    expect(prDetailNeedsFilterOptions(Role.CENTRAL_TEAM, PRStatus.REVISION_REQUIRED)).toBe(true);
     expect(prDetailNeedsFilterOptions(Role.OPS_HEAD, PRStatus.REVISION_REQUIRED)).toBe(true);
     expect(prDetailNeedsFilterOptions(Role.OPS_HEAD, PRStatus.DRAFT)).toBe(true);
   });
@@ -147,9 +149,11 @@ describe("prDetailNeedsFilterOptions", () => {
 });
 
 describe("prDetailNeedsFilterOptions", () => {
-  it("loads catalog options for SM and Ops on draft or revision", () => {
+  it("loads catalog options for SM, Central Team, and Ops on draft or revision", () => {
     expect(prDetailNeedsFilterOptions(Role.SM, PRStatus.DRAFT)).toBe(true);
     expect(prDetailNeedsFilterOptions(Role.SM, PRStatus.REVISION_REQUIRED)).toBe(true);
+    expect(prDetailNeedsFilterOptions(Role.CENTRAL_TEAM, PRStatus.DRAFT)).toBe(true);
+    expect(prDetailNeedsFilterOptions(Role.CENTRAL_TEAM, PRStatus.REVISION_REQUIRED)).toBe(true);
     expect(prDetailNeedsFilterOptions(Role.OPS_HEAD, PRStatus.REVISION_REQUIRED)).toBe(true);
     expect(prDetailNeedsFilterOptions(Role.OPS_HEAD, PRStatus.DRAFT)).toBe(true);
   });

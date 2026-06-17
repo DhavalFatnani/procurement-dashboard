@@ -13,6 +13,8 @@ import {
   isAdminRole,
   isCentralOpsOrAbove,
   isOpsHeadOrAdmin,
+  OPS_FINANCE_OR_ADMIN_ROLES,
+  SM_OPS_OR_ADMIN_ROLES,
 } from "@/lib/admin-access";
 
 describe("admin-access", () => {
@@ -80,6 +82,11 @@ describe("admin-access", () => {
     expect(canAssignRole(Role.OPS_HEAD, Role.CENTRAL_TEAM)).toBe(true);
     expect(canAssignRole(Role.OPS_HEAD, Role.ADMIN)).toBe(false);
     expect(canAssignRole(Role.OPS_HEAD, Role.OPS_HEAD)).toBe(false);
+  });
+
+  it("includes Central Team in operational and finance read role sets", () => {
+    expect(SM_OPS_OR_ADMIN_ROLES).toContain(Role.CENTRAL_TEAM);
+    expect(OPS_FINANCE_OR_ADMIN_ROLES).toContain(Role.CENTRAL_TEAM);
   });
 
   it("grants finance write access to Finance and Admin", () => {

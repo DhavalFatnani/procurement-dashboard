@@ -27,6 +27,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import type { PRLineFieldError } from "@/lib/pr-line-validation-client";
+import {
+  getFieldErrorMessage,
+  prLineFieldId,
+} from "@/lib/pr-line-validation-client";
 
 export type PRLineItemDraft = {
   key: string;
@@ -208,6 +213,7 @@ function CategorySubcategoryRow({
   onSubcategoryChange,
   quantity,
   onQuantityChange,
+  fieldErrors = [],
 }: {
   line: PRLineDraft;
   lineIndex: number;
@@ -218,8 +224,12 @@ function CategorySubcategoryRow({
   onSubcategoryChange: (subcategoryId: string) => void;
   quantity?: number;
   onQuantityChange?: (quantity: number) => void;
+  fieldErrors?: PRLineFieldError[];
 }) {
   const showQuantity = quantity !== undefined && onQuantityChange !== undefined;
+  const categoryError = getFieldErrorMessage(fieldErrors, line.key, "category");
+  const subcategoryError = getFieldErrorMessage(fieldErrors, line.key, "subcategory");
+  const quantityError = getFieldErrorMessage(fieldErrors, line.key, "quantity");
 
   return (
     <div
@@ -230,14 +240,18 @@ function CategorySubcategoryRow({
           : "sm:grid-cols-2",
       )}
     >
-      <div className="space-y-1.5">
+      <div className="space-y-1.5" data-pr-field={prLineFieldId(line.key, "category")}>
         {fieldLabel({ children: "Category" })}
         <Select
           value={line.categoryId}
           onValueChange={onCategoryChange}
           disabled={readOnly}
         >
-          <SelectTrigger size="sm" aria-label={`Line ${lineIndex + 1} category`}>
+          <SelectTrigger
+            size="sm"
+            aria-label={`Line ${lineIndex + 1} category`}
+            aria-invalid={Boolean(categoryError) || undefined}
+          >
             <SelectValue placeholder="Select category" />
           </SelectTrigger>
           <SelectContent>
@@ -248,15 +262,22 @@ function CategorySubcategoryRow({
             ))}
           </SelectContent>
         </Select>
+        {categoryError ? (
+          <p className="text-ds-xs text-[var(--status-error)]">{categoryError}</p>
+        ) : null}
       </div>
-      <div className="space-y-1.5">
+      <div className="space-y-1.5" data-pr-field={prLineFieldId(line.key, "subcategory")}>
         {fieldLabel({ children: "Subcategory" })}
         <Select
           value={line.subcategoryId}
           onValueChange={onSubcategoryChange}
           disabled={readOnly || !line.categoryId}
         >
-          <SelectTrigger size="sm" aria-label={`Line ${lineIndex + 1} subcategory`}>
+          <SelectTrigger
+            size="sm"
+            aria-label={`Line ${lineIndex + 1} subcategory`}
+            aria-invalid={Boolean(subcategoryError) || undefined}
+          >
             <SelectValue placeholder="Select subcategory" />
           </SelectTrigger>
           <SelectContent>
@@ -267,17 +288,24 @@ function CategorySubcategoryRow({
             ))}
           </SelectContent>
         </Select>
+        {subcategoryError ? (
+          <p className="text-ds-xs text-[var(--status-error)]">{subcategoryError}</p>
+        ) : null}
       </div>
       {showQuantity ? (
-        <div className="space-y-1.5">
+        <div className="space-y-1.5" data-pr-field={prLineFieldId(line.key, "quantity")}>
           {fieldLabel({ children: "Qty" })}
           <QuantityInput
             value={quantity}
             disabled={readOnly}
             onChange={onQuantityChange}
             size="sm"
+            invalid={Boolean(quantityError)}
             aria-label={`Line ${lineIndex + 1} quantity`}
           />
+          {quantityError ? (
+            <p className="text-ds-xs text-[var(--status-error)]">{quantityError}</p>
+          ) : null}
         </div>
       ) : null}
     </div>
@@ -292,6 +320,7 @@ export function PRLineEditor({
   onChange,
   vendorPurchaseOnly = true,
   readOnly = false,
+  fieldErrors = [],
 }: {
   categories: { id: string; name: string; billingGranularity: CategoryBillingGranularity }[];
   subcategories: SubcategoryOption[];
@@ -300,6 +329,7 @@ export function PRLineEditor({
   onChange: (lines: PRLineDraft[]) => void;
   vendorPurchaseOnly?: boolean;
   readOnly?: boolean;
+  fieldErrors?: PRLineFieldError[];
 }) {
   const vendorSubs = React.useMemo(
     () =>
@@ -468,6 +498,7 @@ export function PRLineEditor({
                   })
                 }
                 onSubcategoryChange={(value) => updateLine(lineIndex, { subcategoryId: value })}
+                fieldErrors={fieldErrors}
               />
             </LineCard>
           );
@@ -509,6 +540,7 @@ export function PRLineEditor({
                     : [],
                 })
               }
+              fieldErrors={fieldErrors}
             />
 
             <div className="overflow-hidden rounded-md border border-border-subtle">
@@ -519,12 +551,28 @@ export function PRLineEditor({
               </div>
 
               <ul className="divide-y divide-border-subtle">
-                {line.items.map((item, itemIndex) => (
+                {line.items.map((item, itemIndex) => {
+                  const itemError = getFieldErrorMessage(
+                    fieldErrors,
+                    line.key,
+                    "item",
+                    item.key,
+                  );
+                  const itemQtyError = getFieldErrorMessage(
+                    fieldErrors,
+                    line.key,
+                    "quantity",
+                    item.key,
+                  );
+                  return (
                     <li
                       key={item.key}
                       className="grid gap-3 px-3 py-3 sm:grid-cols-[minmax(0,1fr)_minmax(5.5rem,7.5rem)_2.25rem] sm:items-end sm:gap-3"
                     >
-                      <div className="min-w-0 space-y-1.5">
+                      <div
+                        className="min-w-0 space-y-1.5"
+                        data-pr-field={prLineFieldId(line.key, "item", item.key)}
+                      >
                         <span className="text-ds-xs font-medium text-muted-foreground sm:sr-only">
                           {`Item ${itemIndex + 1}`}
                         </span>
@@ -534,6 +582,7 @@ export function PRLineEditor({
                           proposedName={item.proposedName}
                           readOnly={readOnly}
                           disabled={!line.subcategoryId}
+                          invalid={Boolean(itemError)}
                           placeholder={
                             line.subcategoryId
                               ? "Search catalog or add new…"
@@ -544,21 +593,31 @@ export function PRLineEditor({
                             updateItem(lineIndex, itemIndex, value)
                           }
                         />
+                        {itemError ? (
+                          <p className="text-ds-xs text-[var(--status-error)]">{itemError}</p>
+                        ) : null}
                       </div>
 
-                      <div className="space-y-1.5 sm:space-y-0">
+                      <div
+                        className="space-y-1.5 sm:space-y-0"
+                        data-pr-field={prLineFieldId(line.key, "quantity", item.key)}
+                      >
                         <span className="text-ds-xs font-medium text-muted-foreground sm:sr-only">
                           Qty
                         </span>
                         <QuantityInput
                           value={item.quantity}
                           disabled={readOnly}
+                          invalid={Boolean(itemQtyError)}
                           onChange={(q) =>
                             updateItem(lineIndex, itemIndex, { quantity: q })
                           }
                           size="sm"
                           aria-label={`Line ${lineIndex + 1} item ${itemIndex + 1} quantity`}
                         />
+                        {itemQtyError ? (
+                          <p className="text-ds-xs text-[var(--status-error)]">{itemQtyError}</p>
+                        ) : null}
                       </div>
 
                       <div className="flex items-end justify-end sm:justify-center">
@@ -578,7 +637,8 @@ export function PRLineEditor({
                         )}
                       </div>
                     </li>
-                ))}
+                  );
+                })}
               </ul>
 
               {!readOnly && line.subcategoryId && line.items.length < MAX_ITEMS_PER_PR_LINE ? (
