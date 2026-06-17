@@ -1,13 +1,15 @@
 import { redirect } from "next/navigation";
 
-import { Role } from "@/lib/prisma-enums";
+import { canAccessConfigurePO } from "@/lib/admin-access";
 import { ACCESS } from "@/lib/route-access";
 import { assertRole, getRequestSession, type SessionUser } from "@/lib/session";
 
-/** Ops-only guard for configure PO list and detail routes. */
+export { canAccessConfigurePO } from "@/lib/admin-access";
+
+/** Ops guard for configure PO list and detail routes. */
 export async function assertConfigurePOAccess(): Promise<SessionUser> {
   const user = assertRole(await getRequestSession(), [...ACCESS.purchaseOrders]);
-  if (user.role !== Role.OPS_HEAD && user.role !== Role.ADMIN) {
+  if (!canAccessConfigurePO(user.role)) {
     redirect("/purchase-orders");
   }
   return user;

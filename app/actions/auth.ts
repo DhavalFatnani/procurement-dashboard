@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
+import { landingPathForAuthUser } from "@/lib/auth-landing";
 import { authCallbackRedirectUrl, getSiteOrigin } from "@/lib/get-site-origin";
 import { mustChangePassword } from "@/lib/must-change-password";
 import { createServerSupabaseClient } from "@/lib/supabase";
@@ -65,9 +66,14 @@ export async function updatePassword(formData: FormData) {
     redirect(`/login/reset-password?error=${encodeURIComponent(error.message)}`);
   }
 
-  await supabase.auth.signOut();
+  await supabase.auth.refreshSession();
+  const {
+    data: { user: updatedUser },
+  } = await supabase.auth.getUser();
+
+  revalidatePath("/", "layout");
   revalidatePath("/dashboard");
-  redirect("/login?reset=1");
+  redirect(landingPathForAuthUser(updatedUser));
 }
 
 export async function completeRequiredPasswordChange(formData: FormData) {
@@ -105,7 +111,12 @@ export async function completeRequiredPasswordChange(formData: FormData) {
     redirect(`/login/set-password?error=${encodeURIComponent(error.message)}`);
   }
 
+  await supabase.auth.refreshSession();
+  const {
+    data: { user: updatedUser },
+  } = await supabase.auth.getUser();
+
   revalidatePath("/", "layout");
   revalidatePath("/dashboard");
-  redirect("/dashboard");
+  redirect(landingPathForAuthUser(updatedUser));
 }

@@ -7,6 +7,7 @@ import {
   canAssignAdminRole,
   canAssignOpsHeadRole,
   canAssignRole,
+  canAccessConfigurePO,
   canDeleteUser,
   canManageFinance,
   hasGlobalWarehouseScope,
@@ -54,6 +55,7 @@ describe("admin-access", () => {
 
   it("includes Central Team in central ops workflows", () => {
     expect(isCentralOpsOrAbove(Role.CENTRAL_TEAM)).toBe(true);
+    expect(canAccessConfigurePO(Role.CENTRAL_TEAM)).toBe(true);
     expect(isCentralOpsOrAbove(Role.OPS_HEAD)).toBe(true);
     expect(isCentralOpsOrAbove(Role.ADMIN)).toBe(true);
     expect(isCentralOpsOrAbove(Role.SM)).toBe(false);

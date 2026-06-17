@@ -74,6 +74,11 @@ export function isCentralOpsOrAbove(role: Role): boolean {
   );
 }
 
+/** Central Team, Ops Head, and Admin may configure purchase orders from approved PRs. */
+export function canAccessConfigurePO(role: Role): boolean {
+  return isCentralOpsOrAbove(role);
+}
+
 /** Whether the role may approve, reject, or revert purchase requests. */
 export function canApprovePurchaseRequest(role: Role): boolean {
   return role === Role.OPS_HEAD || role === Role.ADMIN;
