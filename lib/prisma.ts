@@ -2,6 +2,10 @@ import "server-only";
 
 import { PrismaPg } from "@prisma/adapter-pg";
 
+import {
+  assertAppDatabaseUrl,
+  isSessionPoolerDatabaseUrl,
+} from "@/lib/database-url";
 import { PrismaClient } from "@/lib/generated/prisma/client";
 
 /**
@@ -22,7 +26,9 @@ import { PrismaClient } from "@/lib/generated/prisma/client";
 // makes them queue (and, on a cold connection to a distant DB, each waiter also
 // pays a TLS handshake). 10 lets a page's burst run concurrently. Supabase's
 // transaction pooler multiplexes these, so it stays well within its client cap.
-const POOL_MAX = Number(process.env.DB_POOL_MAX ?? 10);
+const POOL_MAX = Number(
+  process.env.DB_POOL_MAX ?? (process.env.VERCEL ? 5 : 10),
+);
 
 function createPrismaClient() {
   const connectionString = process.env.DATABASE_URL?.trim();
@@ -30,6 +36,16 @@ function createPrismaClient() {
     throw new Error(
       "DATABASE_URL is not set. Add your Supabase transaction pooler URL (port 6543) to .env.local.",
     );
+  }
+
+  if (isSessionPoolerDatabaseUrl(connectionString)) {
+    if (process.env.NODE_ENV === "production" || process.env.VERCEL) {
+      assertAppDatabaseUrl(connectionString);
+    } else {
+      console.warn(
+        "[prisma] DATABASE_URL uses session pooler port 5432; use transaction pooler port 6543 (?pgbouncer=true) for app runtime.",
+      );
+    }
   }
 
   const adapter = new PrismaPg({

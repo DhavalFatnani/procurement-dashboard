@@ -73,9 +73,16 @@ export async function middleware(request: NextRequest) {
     return supabaseResponse;
   }
 
-  const requiresPasswordChange = user
-    ? mustChangePassword(user.userMetadata)
-    : false;
+  let requiresPasswordChange = user ? mustChangePassword(user.userMetadata) : false;
+
+  if (user && requiresPasswordChange) {
+    const {
+      data: { user: freshUser },
+    } = await supabase.auth.getUser();
+    if (freshUser && !mustChangePassword(freshUser.user_metadata ?? {})) {
+      requiresPasswordChange = false;
+    }
+  }
 
   if (user) {
     const appMeta = user.appMetadata as Record<string, unknown>;

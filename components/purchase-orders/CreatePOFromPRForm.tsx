@@ -14,8 +14,8 @@ import {
 } from "@/app/actions/purchase-requests";
 import {
   getLockTagsSerialPreviewForPRItems,
-  type LockTagsSerialPreview,
 } from "@/app/actions/serial";
+import type { LockTagsSerialPreview } from "@/lib/serial-governance-types";
 import { VendorItemComparisonDrawer } from "@/components/purchase-orders/VendorItemComparisonDrawer";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { ProcurementRefLink } from "@/components/shared/ProcurementRef";

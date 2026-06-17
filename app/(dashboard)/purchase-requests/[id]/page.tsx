@@ -9,7 +9,7 @@ import {
   PRDetailVersionHistory,
 } from "@/components/purchase-requests/PRDetailSections";
 import { PRDetailPageShell } from "@/components/purchase-requests/PRDetailPageShell";
-import { getLockTagsSerialPreviewForPR } from "@/app/actions/serial";
+import { getLockTagsSerialPreviewForPRQuery } from "@/lib/serial-preview";
 import {
   EMPTY_PR_FILTER_OPTIONS,
   getFilterOptions,
@@ -37,15 +37,12 @@ export default async function PurchaseRequestDetailPage({ params }: { params: Pa
 
   const isInternalPrint = pr.executionType === ExecutionType.INTERNAL_PRINT;
 
-  // `getFilterOptions` and `getLockTagsSerialPreviewForPR` both depend only on
-  // `pr` (already loaded), not on each other. Run them concurrently so the page
-  // pays a single DB round-trip batch instead of two sequential ones — material
-  // when the database is cross-region (see docs/performance_fiix.md).
+  // `getFilterOptions` and serial preview both depend only on `pr` (already loaded).
   const [filterOptions, lockTagsPreview] = await Promise.all([
     prDetailNeedsFilterOptions(user.role, pr.status)
       ? getFilterOptions()
       : Promise.resolve(EMPTY_PR_FILTER_OPTIONS),
-    !isInternalPrint ? getLockTagsSerialPreviewForPR(id) : Promise.resolve(null),
+    !isInternalPrint ? getLockTagsSerialPreviewForPRQuery(user, id) : Promise.resolve(null),
   ]);
 
   const prAccess = {

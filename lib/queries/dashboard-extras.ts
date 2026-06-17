@@ -1,6 +1,7 @@
 import { InvoiceMatchStatus, POStatus, Prisma, Role } from "@/lib/prisma-client";
 
 import { dbParallel } from "@/lib/db-parallel";
+import { dbSerial } from "@/lib/db-serial";
 import { FINANCE_ROUTES } from "@/lib/finance-routes";
 import { cachedQuery } from "@/lib/list-cache";
 import { prisma } from "@/lib/prisma";
@@ -111,7 +112,7 @@ async function computeRecentActivity(
   const grnWhere = goodsReceiptWhereFromScopeIds(scopeWarehouseIds);
   const invoiceWhere = invoiceWhereFromScopeIds(scopeWarehouseIds);
 
-  const [prs, pos, grns, invoices, payments] = await dbParallel(
+  const [prs, pos, grns, invoices, payments] = await dbSerial(
     () =>
       prisma.purchaseRequest.findMany({
         where: prWhere,

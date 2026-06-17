@@ -23,7 +23,7 @@ export function isTransientDbError(error: unknown): boolean {
     return true;
   }
   const message = errorMessage(error);
-  return /connection terminated|connection timeout|ECONNRESET|ETIMEDOUT|Unable to check out|Connection terminated unexpectedly/i.test(
+  return /connection terminated|connection timeout|ECONNRESET|ETIMEDOUT|Unable to check out|Connection terminated unexpectedly|EMAXCONNSESSION|max clients reached/i.test(
     message,
   );
 }

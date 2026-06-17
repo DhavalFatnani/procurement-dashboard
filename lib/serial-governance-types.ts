@@ -125,3 +125,16 @@ export type SerialSearchResult = {
   prId: string | null;
   poId: string | null;
 };
+
+/** Live lock-tag range preview for vendor PR / PO configure flows. */
+export type LockTagsSerialPreview = {
+  series: SeriesCode;
+  seriesName: string;
+  quantity: number;
+  rangeStart: string;
+  rangeEnd: string;
+  lastRangeEnd: string | null;
+  previewOnly: true;
+  /** True when range is already blocked on PR approval (PENDING hold). */
+  isHeld: boolean;
+};

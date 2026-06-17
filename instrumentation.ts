@@ -17,10 +17,18 @@ export async function register() {
       const { prisma } = await import("@/lib/prisma");
       await prisma.$queryRaw`SELECT 1`;
     } catch (error) {
-      console.error(
-        "[instrumentation] Database unreachable at startup — check DATABASE_URL and Supabase project status.",
-        error instanceof Error ? error.message : error,
-      );
+      const message = error instanceof Error ? error.message : String(error);
+      const poolSaturated = /EMAXCONNSESSION|max clients reached/i.test(message);
+      if (poolSaturated) {
+        console.warn(
+          "[instrumentation] Database pool saturated at startup — first requests may retry once pool capacity frees.",
+        );
+      } else {
+        console.error(
+          "[instrumentation] Database unreachable at startup — check DATABASE_URL and Supabase project status.",
+          message,
+        );
+      }
     }
   }
 }

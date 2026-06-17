@@ -40,52 +40,17 @@ import { requireRoles } from "@/lib/server-action-guard";
 import { ALL_DASHBOARD_ROLES, FINANCE_OR_ADMIN_ROLES, OPS_FINANCE_OR_ADMIN_ROLES, OPS_OR_ADMIN_ROLES, SM_OPS_OR_ADMIN_ROLES } from "@/lib/admin-access";
 import { assertUserWarehouseAccess } from "@/lib/warehouse-access";
 import { lockTagsQtyFromSelectedItems } from "@/lib/purchase-lines";
+import {
+  buildLockTagsRangePreview,
+  getLockTagsSerialPreviewForPRQuery,
+} from "@/lib/serial-preview";
+import type { LockTagsSerialPreview } from "@/lib/serial-governance-types";
 
 const WAREHOUSE_SCOPE_ERROR = "You cannot reserve serials for this warehouse.";
 
 async function seriesDisplayName(code: SeriesCode): Promise<string> {
   const registry = await getCachedSeriesRegistry();
   return resolveSeriesDisplayName(code, registry);
-}
-
-export type LockTagsSerialPreview = {
-  series: SeriesCode;
-  seriesName: string;
-  quantity: number;
-  rangeStart: string;
-  rangeEnd: string;
-  lastRangeEnd: string | null;
-  previewOnly: true;
-  /** True when range is already blocked on PR approval (PENDING hold). */
-  isHeld: boolean;
-};
-
-async function buildLockTagsRangePreview(quantity: number): Promise<LockTagsSerialPreview | null> {
-  if (quantity <= 0) {
-    return null;
-  }
-
-  const series = SERIES_CODES.LOCK_TAGS;
-  const latest = await prisma.serialReservation.findFirst({
-    where: validReservationsForSeriesWhere(series),
-    orderBy: { rangeEnd: "desc" },
-  });
-
-  const lastEnd = latest?.rangeEnd ?? null;
-  const nextStart = computeNextRangeStart(series, lastEnd);
-  const rangeEnd = nextStart + BigInt(quantity) - BigInt(1);
-
-  return {
-    series,
-    seriesName: await seriesDisplayName(series),
-    quantity,
-    rangeStart: formatSerialNumberForSeries(series, nextStart),
-    rangeEnd: formatSerialNumberForSeries(series, rangeEnd),
-    lastRangeEnd:
-      lastEnd != null ? formatSerialNumberForSeries(series, lastEnd) : null,
-    previewOnly: true,
-    isHeld: false,
-  };
 }
 
 /** Live preview of the next lock-tag range for a quantity (no ledger write). */
@@ -100,58 +65,8 @@ export async function getLockTagsSerialPreviewForQuantity(
 export async function getLockTagsSerialPreviewForPR(
   prId: string,
 ): Promise<LockTagsSerialPreview | null> {
-  await requireRoles([...SM_OPS_OR_ADMIN_ROLES]);
-
-  const pr = await prisma.purchaseRequest.findUnique({
-    where: { id: prId },
-    select: {
-      executionType: true,
-      lines: {
-        select: {
-          category: { select: { name: true } },
-          items: { select: { id: true, quantity: true } },
-        },
-      },
-    },
-  });
-
-  if (!pr || pr.executionType !== ExecutionType.VENDOR_PURCHASE) {
-    return null;
-  }
-
-  const allItemIds = new Set(
-    pr.lines.flatMap((line) => line.items.map((item) => item.id)),
-  );
-  const quantity = lockTagsQtyFromSelectedItems(
-    pr.lines.map((line) => ({
-      categoryName: line.category.name,
-      items: line.items,
-    })),
-    allItemIds,
-  );
-
-  if (quantity <= 0) {
-    return null;
-  }
-
-  const hold = await prisma.serialReservation.findFirst({
-    where: { prId, status: "PENDING", poId: null, series: SERIES_CODES.LOCK_TAGS },
-  });
-
-  if (hold) {
-    return {
-      series: SERIES_CODES.LOCK_TAGS,
-      seriesName: await seriesDisplayName(SERIES_CODES.LOCK_TAGS),
-      quantity: hold.quantity,
-      rangeStart: formatSerialNumberForSeries(SERIES_CODES.LOCK_TAGS, hold.rangeStart),
-      rangeEnd: formatSerialNumberForSeries(SERIES_CODES.LOCK_TAGS, hold.rangeEnd),
-      lastRangeEnd: null,
-      previewOnly: true,
-      isHeld: true,
-    };
-  }
-
-  return buildLockTagsRangePreview(quantity);
+  const user = await requireRoles([...SM_OPS_OR_ADMIN_ROLES]);
+  return getLockTagsSerialPreviewForPRQuery(user, prId);
 }
 
 /** Preview lock-tag range for selected PR line items (PO create form). */

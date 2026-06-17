@@ -144,7 +144,9 @@ NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY="<new publishable key>"
 SUPABASE_SECRET_KEY="<new secret/service_role key>"
 DATABASE_URL="postgresql://postgres.<NEW_REF>:<PWD>@aws-0-ap-south-1.pooler.supabase.com:6543/postgres?pgbouncer=true"
 DIRECT_URL="postgresql://postgres.<NEW_REF>:<PWD>@aws-0-ap-south-1.pooler.supabase.com:5432/postgres"
-# keep existing: SEED_AUTH_PASSWORD, DB_POOL_MAX, ALLOW_LOCAL_DB_PARALLEL
+# Production (Vercel): DB_POOL_MAX=3 — keeps per-instance pg pool small on serverless.
+# Never point DATABASE_URL at port 5432 (session pooler); app runtime uses 6543 only.
+# keep existing: SEED_AUTH_PASSWORD, ALLOW_LOCAL_DB_PARALLEL
 ```
 (Exact pooler host/username comes from the dashboard connection string; `ap-south-1` poolers are
 typically `aws-0-ap-south-1.pooler.supabase.com`.)

@@ -1,4 +1,4 @@
-import type { LockTagsSerialPreview } from "@/app/actions/serial";
+import type { LockTagsSerialPreview } from "@/lib/serial-governance-types";
 import { isCentralOpsOrAbove } from "@/lib/admin-access";
 import { ExecutionType, PRStatus, Role } from "@/lib/prisma-enums";
 import Link from "next/link";

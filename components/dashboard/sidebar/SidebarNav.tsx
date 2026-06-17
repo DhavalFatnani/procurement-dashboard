@@ -177,6 +177,17 @@ function NavGroupSection({
   );
 }
 
+function collectHrefs(items: NavItem[]): string[] {
+  return items.flatMap((item) =>
+    item.children ? [item.href, ...item.children.map((child) => child.href)] : [item.href],
+  );
+}
+
+function resolveActiveHref(pathname: string, allHrefs: string[]): string | undefined {
+  const sorted = [...allHrefs].sort((a, b) => b.length - a.length);
+  return sorted.find((href) => pathname === href || pathname.startsWith(`${href}/`));
+}
+
 export function SidebarNav({
   items,
   groups,
@@ -187,8 +198,17 @@ export function SidebarNav({
   onNavigate?: () => void;
 }) {
   const pathname = usePathname() ?? "";
-  const isActive = (href: string) =>
-    pathname === href || pathname.startsWith(`${href}/`);
+  const allHrefs = React.useMemo(() => {
+    if (groups && groups.length > 0) {
+      return groups.flatMap((group) => collectHrefs(group.items));
+    }
+    return collectHrefs(items ?? []);
+  }, [groups, items]);
+  const activeHref = React.useMemo(
+    () => resolveActiveHref(pathname, allHrefs),
+    [pathname, allHrefs],
+  );
+  const isActive = (href: string) => href === activeHref;
 
   if (groups && groups.length > 0) {
     return (
