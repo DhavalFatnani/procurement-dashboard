@@ -1,10 +1,16 @@
-/** Fixed locale so SSR and client hydration produce identical date strings. */
+/** Fixed locale + timezone so SSR (Vercel) and client hydration produce identical strings. */
 const LOCALE = "en-IN";
+/** Business timezone — avoids UTC-on-server vs IST-in-browser hydration mismatches. */
+const TIME_ZONE = "Asia/Kolkata";
 
-const dateMedium = new Intl.DateTimeFormat(LOCALE, { dateStyle: "medium" });
+const dateMedium = new Intl.DateTimeFormat(LOCALE, {
+  dateStyle: "medium",
+  timeZone: TIME_ZONE,
+});
 const dateTimeMedium = new Intl.DateTimeFormat(LOCALE, {
   dateStyle: "medium",
   timeStyle: "short",
+  timeZone: TIME_ZONE,
 });
 
 function parseIso(iso: string) {

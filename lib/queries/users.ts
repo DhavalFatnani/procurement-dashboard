@@ -2,6 +2,7 @@ import { Prisma, Role, UserStatus } from "@/lib/prisma-client";
 
 import { paginatedListQuery, type Paginated } from "@/lib/pagination";
 import { prisma } from "@/lib/prisma";
+import { dbSerial } from "@/lib/db-serial";
 import { formatWarehouseLabel } from "@/lib/format-warehouse";
 
 export type UserListRow = {
@@ -139,38 +140,42 @@ export async function getUserById(id: string): Promise<UserDetail | null> {
 
 /** True when the user is referenced by procurement records (blocks hard delete). */
 export async function userHasProcurementActivity(userId: string): Promise<boolean> {
-  const checks = await Promise.all([
-    prisma.vendor.count({ where: { createdById: userId } }),
-    prisma.vendorChangeLog.count({ where: { changedById: userId } }),
-    prisma.vendorRequest.count({
-      where: { OR: [{ requestedById: userId }, { reviewedById: userId }] },
-    }),
-    prisma.catalogItem.count({
-      where: {
-        OR: [{ createdById: userId }, { approvedById: userId }],
-      },
-    }),
-    prisma.purchaseRequest.count({ where: { createdById: userId } }),
-    prisma.pRVersion.count({ where: { changedById: userId } }),
-    prisma.purchaseOrder.count({ where: { forceClosedById: userId } }),
-    prisma.goodsReceipt.count({ where: { receivedById: userId } }),
-    prisma.gRNException.count({ where: { resolvedById: userId } }),
-    prisma.invoice.count({
-      where: {
-        OR: [{ uploadedById: userId }, { overrideById: userId }],
-      },
-    }),
-    prisma.payment.count({ where: { paidById: userId } }),
-    prisma.pOAdvanceRequest.count({
-      where: { OR: [{ requestedById: userId }, { reviewedById: userId }] },
-    }),
-    prisma.pOAdvancePayment.count({ where: { paidById: userId } }),
-    prisma.purchaseOrderLineAdjustment.count({ where: { createdById: userId } }),
-    prisma.serialReservation.count({ where: { createdById: userId } }),
-    prisma.seriesConfig.count({ where: { configuredById: userId } }),
-    prisma.catalogItemVendor.count({ where: { linkedById: userId } }),
-    prisma.vendorCatalogItemPrice.count({ where: { recordedById: userId } }),
-  ]);
+  const checks = await dbSerial(
+    () => prisma.vendor.count({ where: { createdById: userId } }),
+    () => prisma.vendorChangeLog.count({ where: { changedById: userId } }),
+    () =>
+      prisma.vendorRequest.count({
+        where: { OR: [{ requestedById: userId }, { reviewedById: userId }] },
+      }),
+    () =>
+      prisma.catalogItem.count({
+        where: {
+          OR: [{ createdById: userId }, { approvedById: userId }],
+        },
+      }),
+    () => prisma.purchaseRequest.count({ where: { createdById: userId } }),
+    () => prisma.pRVersion.count({ where: { changedById: userId } }),
+    () => prisma.purchaseOrder.count({ where: { forceClosedById: userId } }),
+    () => prisma.goodsReceipt.count({ where: { receivedById: userId } }),
+    () => prisma.gRNException.count({ where: { resolvedById: userId } }),
+    () =>
+      prisma.invoice.count({
+        where: {
+          OR: [{ uploadedById: userId }, { overrideById: userId }],
+        },
+      }),
+    () => prisma.payment.count({ where: { paidById: userId } }),
+    () =>
+      prisma.pOAdvanceRequest.count({
+        where: { OR: [{ requestedById: userId }, { reviewedById: userId }] },
+      }),
+    () => prisma.pOAdvancePayment.count({ where: { paidById: userId } }),
+    () => prisma.purchaseOrderLineAdjustment.count({ where: { createdById: userId } }),
+    () => prisma.serialReservation.count({ where: { createdById: userId } }),
+    () => prisma.seriesConfig.count({ where: { configuredById: userId } }),
+    () => prisma.catalogItemVendor.count({ where: { linkedById: userId } }),
+    () => prisma.vendorCatalogItemPrice.count({ where: { recordedById: userId } }),
+  );
   return checks.some((count) => count > 0);
 }
 

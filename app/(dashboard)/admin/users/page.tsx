@@ -2,7 +2,7 @@ import { Role, UserStatus } from "@/lib/prisma-enums";
 
 import { UsersView } from "@/components/admin/UsersView";
 import { canDeleteUser } from "@/lib/admin-access";
-import { dbParallel } from "@/lib/db-parallel";
+import { dbSerial } from "@/lib/db-serial";
 import { getUsers } from "@/lib/queries/users";
 import { getWarehouseOptions } from "@/lib/queries/warehouses";
 import { ACCESS } from "@/lib/route-access";
@@ -35,7 +35,7 @@ export default async function AdminUsersPage({
   const page = Math.max(1, Number(str(sp.page)) || 1);
   const includeExactCount = str(sp.exactCount) === "1";
 
-  const [warehouses, rows] = await dbParallel(
+  const [warehouses, rows] = await dbSerial(
     () => getWarehouseOptions(),
     () =>
       getUsers({
