@@ -1,0 +1,26 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`label-thermal-export > generates EPL snapshot for reference preset 1`] = `
+"N
+q464
+Q320,24
+A16,117,0,3,1,1,N,"KNOT"
+B123,16,0,1,2,4,68,N,"2000001050"
+b324,38,Q,s124,eM,r0,t0,"https://knot.in/t/2000001050"
+A123,227,0,3,1,1,N,"2000001050"
+P1
+"
+`;
+
+exports[`label-thermal-export > generates ZPL snapshot for reference preset 1`] = `
+"^XA
+^PW464
+^LL320
+^LH0,0
+^FO16,16^GB432,288,5^FS
+^FO16,117^A0N,31,26^FDKNOT^FS
+^FO123,16^BY2^BCN,68,N,N,N^FD2000001050^FS
+^FO324,38^BQN,2,2^FDQA,https://knot.in/t/2000001050^FS
+^FO123,227^A0N,28,24^FD2000001050^FS
+^XZ"
+`;

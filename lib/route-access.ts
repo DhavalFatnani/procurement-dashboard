@@ -21,6 +21,8 @@ export const ACCESS = {
   paymentRegister: [Role.FINANCE, Role.ADMIN] as const,
   inbox: [Role.SM, Role.CENTRAL_TEAM, Role.OPS_HEAD, Role.FINANCE, Role.ADMIN] as const,
   serialGovernance: [Role.SM, ...centralOpsRoutes] as const,
+  labelStudio: [Role.SM, ...centralOpsRoutes] as const,
+  binLabelPrint: [Role.SM, ...centralOpsRoutes] as const,
   reports: [Role.SM, Role.CENTRAL_TEAM, Role.OPS_HEAD, Role.FINANCE, Role.ADMIN] as const,
   profile: [Role.SM, Role.CENTRAL_TEAM, Role.OPS_HEAD, Role.FINANCE, Role.ADMIN] as const,
   /** Master data: warehouses, taxonomy */

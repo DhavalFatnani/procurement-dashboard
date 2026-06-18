@@ -16,6 +16,8 @@ export type NavIconId =
   | "invoices"
   | "payments"
   | "serialGovernance"
+  | "labelStudio"
+  | "binLabels"
   | "reports"
   | "users"
   | "warehouses"
@@ -171,6 +173,8 @@ function governanceItemsFor(role: Role): NavItem[] {
       return [
         { href: "/vendors", label: "Vendors", icon: "vendors", hint: "read-only" },
         { href: "/serial-governance", label: "Serial Governance", icon: "serialGovernance" },
+        { href: "/label-studio", label: "Label Studio", icon: "labelStudio" },
+        { href: "/bin-labels/print", label: "Print bin labels", icon: "binLabels" },
       ];
     case Role.CENTRAL_TEAM:
     case Role.OPS_HEAD:
@@ -178,6 +182,8 @@ function governanceItemsFor(role: Role): NavItem[] {
       return [
         { href: "/vendors", label: "Vendors", icon: "vendors" },
         { href: "/serial-governance", label: "Serial Governance", icon: "serialGovernance" },
+        { href: "/label-studio", label: "Label Studio", icon: "labelStudio" },
+        { href: "/bin-labels/print", label: "Print bin labels", icon: "binLabels" },
       ];
     case Role.FINANCE:
       return [];

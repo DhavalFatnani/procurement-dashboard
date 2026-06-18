@@ -10,9 +10,9 @@ import {
   AlertDialogFooter,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { BarcodeLabelSetupPanel } from "@/components/purchase-requests/BarcodeLabelSetupPanel";
+import { LabelPreviewCompact } from "@/components/label-studio/LabelPreviewCompact";
 import { ReserveSerialBatchPanel } from "@/components/purchase-requests/ReserveSerialBatchPanel";
-import type { BarcodeLabelConfig } from "@/lib/barcode-label-config";
+import type { LabelTemplate, ResolvedLabelTemplate } from "@/lib/label-template-types";
 import { formatSerialBatchLabel } from "@/lib/display-ref";
 import { getSeriesPrefix } from "@/lib/serial-series";
 import { cn } from "@/lib/utils";
@@ -30,11 +30,11 @@ export type ReserveSerialRangeDialogProps = {
   warehouseLabel: string;
   waitMessage?: string | null;
   reserving?: boolean;
-  labelConfig: BarcodeLabelConfig;
-  onLabelConfigChange: (config: BarcodeLabelConfig) => void;
-  layoutLocked?: boolean;
-  onLockLayout?: () => void;
-  onUnlockLayout?: () => void;
+  labelTemplate: LabelTemplate;
+  labelCustomized?: boolean;
+  onLabelReset?: () => void;
+  resolved?: ResolvedLabelTemplate;
+  returnTo: string;
   onConfirm: () => void;
 };
 
@@ -50,11 +50,11 @@ export function ReserveSerialRangeDialog({
   warehouseLabel,
   waitMessage,
   reserving = false,
-  labelConfig,
-  onLabelConfigChange,
-  layoutLocked = false,
-  onLockLayout,
-  onUnlockLayout,
+  labelTemplate,
+  labelCustomized = false,
+  onLabelReset,
+  resolved,
+  returnTo,
   onConfirm,
 }: ReserveSerialRangeDialogProps) {
   const batchLabel = formatSerialBatchLabel({
@@ -69,7 +69,7 @@ export function ReserveSerialRangeDialog({
     <AlertDialog open={open} onOpenChange={(next) => !reserving && onOpenChange(next)}>
       <AlertDialogContent
         size="wide"
-        className="flex max-h-[min(94vh,920px)] min-h-0 min-w-0 flex-col gap-0 overflow-hidden p-0"
+        className="flex max-h-[min(90vh,720px)] min-h-0 min-w-0 flex-col gap-0 overflow-hidden p-0"
       >
         <header className="shrink-0 border-b border-border-subtle bg-gradient-to-br from-card via-card to-muted/30 px-5 py-5 sm:px-6">
           <div className="flex items-start gap-4">
@@ -81,15 +81,14 @@ export function ReserveSerialRangeDialog({
                 Confirm &amp; reserve
               </AlertDialogTitle>
               <AlertDialogDescription className="text-left text-ds-sm leading-relaxed">
-                Lock a contiguous serial range for your warehouse, then open the print flow with
-                your label settings.
+                Review your serial batch and label layout, then reserve and print.
               </AlertDialogDescription>
             </div>
           </div>
         </header>
 
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain lg:flex-row lg:overflow-hidden">
-          <div className="shrink-0 border-b border-border-subtle bg-muted/15 px-5 py-5 lg:max-h-full lg:w-[min(100%,22rem)] lg:shrink-0 lg:overflow-y-auto lg:border-b-0 lg:border-r lg:px-6 lg:py-6">
+        <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto overscroll-contain px-5 py-5 sm:px-6 lg:flex-row lg:gap-6">
+          <div className="min-w-0 flex-1 lg:max-w-md">
             <ReserveSerialBatchPanel
               batchLabel={batchLabel}
               rangeStart={rangeStart}
@@ -102,80 +101,60 @@ export function ReserveSerialRangeDialog({
             />
           </div>
 
-          <div className="min-h-0 min-w-0 flex-1 lg:overflow-y-auto lg:overscroll-contain">
-            <div className="px-5 py-5 lg:px-6 lg:py-6">
-              <BarcodeLabelSetupPanel
-                config={labelConfig}
-                onChange={onLabelConfigChange}
-                disabled={reserving}
-                layoutLocked={layoutLocked}
-                onLockLayout={onLockLayout}
-                onUnlockLayout={onUnlockLayout}
-                series={series}
-                seriesName={seriesName}
-                sampleSerial={rangeStart}
-              />
-            </div>
+          <div className="min-w-0 flex-1 lg:max-w-sm">
+            <LabelPreviewCompact
+              template={labelTemplate}
+              resolved={resolved}
+              customized={labelCustomized}
+              series={series}
+              seriesName={seriesName}
+              sampleSerial={rangeStart}
+              returnTo={returnTo}
+              onReset={onLabelReset}
+            />
           </div>
         </div>
 
-        <div className="shrink-0 border-t border-border-subtle px-5 py-3 sm:px-6">
+        <footer className="shrink-0 border-t border-border-subtle bg-card px-5 py-4 sm:px-6">
           {waitMessage ? (
-            <div
-              className="flex items-center gap-3 rounded-xl border border-status-info/25 bg-[var(--status-info-bg)] px-4 py-3"
-              role="status"
-            >
-              <Loader2
-                className="size-4 shrink-0 animate-spin text-status-info"
-                strokeWidth={1.5}
-              />
-              <p className="text-ds-sm font-medium text-foreground">{waitMessage}</p>
-            </div>
-          ) : (
-            <div className="flex items-start gap-3 rounded-xl bg-muted/40 px-4 py-3">
-              <Info className="mt-0.5 size-4 shrink-0 text-muted-foreground" strokeWidth={1.5} />
-              <p className="text-ds-xs leading-relaxed text-muted-foreground">
-                Reservation is atomic — no overlapping ranges. If another store is printing, we
-                retry briefly before asking you to try again.
-              </p>
-            </div>
-          )}
-        </div>
+            <p className="mb-3 flex items-center gap-2 text-ds-sm text-muted-foreground">
+              <Loader2 className="size-4 shrink-0 animate-spin" aria-hidden />
+              {waitMessage}
+            </p>
+          ) : null}
 
-        <AlertDialogFooter className="mx-0 mb-0 shrink-0 flex-col gap-2 border-t border-border-subtle bg-card px-5 py-4 sm:flex-row sm:justify-between sm:px-6">
-          <p className="hidden text-ds-xs text-muted-foreground sm:block sm:max-w-[240px] sm:self-center">
-            {quantity} {quantity === 1 ? "page" : "pages"} will print after reserve.
-          </p>
-          <div className="flex w-full flex-col-reverse gap-2 sm:w-auto sm:flex-row">
-            <AlertDialogCancel disabled={reserving} className="sm:min-w-[7.5rem]">
-              Cancel
-            </AlertDialogCancel>
+          <div className="mb-3 flex items-start gap-2 rounded-lg border border-border-subtle bg-muted/20 px-3 py-2.5">
+            <Info className="mt-0.5 size-4 shrink-0 text-primary" strokeWidth={1.5} aria-hidden />
+            <p className="text-ds-xs leading-relaxed text-muted-foreground">
+              Reserving locks this serial range to your warehouse. Customize your label in Label
+              Studio before confirming, or use the default layout.
+            </p>
+          </div>
+
+          <AlertDialogFooter className="gap-2 sm:gap-2">
+            <AlertDialogCancel disabled={reserving}>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              type="button"
               disabled={reserving}
-              className={cn("gap-2 sm:min-w-[11rem]", reserving && "opacity-90")}
-              onClick={(event) => {
-                event.preventDefault();
-                if (reserving) {
-                  return;
-                }
+              className={cn(reserving && "pointer-events-none")}
+              onClick={(e) => {
+                e.preventDefault();
                 onConfirm();
               }}
             >
               {reserving ? (
                 <>
-                  <Loader2 className="size-4 animate-spin" strokeWidth={1.5} />
+                  <Loader2 className="size-4 animate-spin" aria-hidden />
                   Reserving…
                 </>
               ) : (
                 <>
-                  <Printer className="size-4" strokeWidth={1.5} />
+                  <Printer className="size-4" aria-hidden />
                   Reserve &amp; print
                 </>
               )}
             </AlertDialogAction>
-          </div>
-        </AlertDialogFooter>
+          </AlertDialogFooter>
+        </footer>
       </AlertDialogContent>
     </AlertDialog>
   );

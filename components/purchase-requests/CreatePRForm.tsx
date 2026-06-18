@@ -3,21 +3,22 @@
 import { isCentralOpsOrAbove } from "@/lib/admin-access";
 import { ExecutionType, Role } from "@/lib/prisma-enums";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import * as React from "react";
 import { toast } from "sonner";
 
 import { getSerialSeriesHint, reserveSerialRangeForPR } from "@/app/actions/serial";
+import { getResolvedLabelTemplateForPrint } from "@/app/actions/label-templates";
 import {
-  getLatestBarcodeLabelConfigForLock,
-  loadBarcodeLabelDefaults,
-  lockBarcodeLabelDefaults,
-  normalizeBarcodeLabelConfig,
-  saveBarcodeLabelDefaultsDraft,
-  saveBarcodeLabelConfigToSession,
-  unlockBarcodeLabelDefaults,
-  type BarcodeLabelConfig,
-} from "@/lib/barcode-label-config";
+  loadLabelStudioDraft,
+  clearLabelStudioDraft,
+} from "@/lib/label-studio-draft";
+import {
+  loadLabelTemplateDefaults,
+  saveLabelTemplateToSession,
+} from "@/lib/label-template-storage";
+import type { LabelTemplate, ResolvedLabelTemplate } from "@/lib/label-template-types";
+import { normalizeLabelTemplate } from "@/lib/label-template-types";
 import { MAX_INTERNAL_PRINT_QUANTITY, formatSerialNumberForSeries } from "@/lib/serial-series";
 import {
   createPR,
@@ -99,6 +100,7 @@ export function CreatePRForm({
   defaultWarehouseId?: string;
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { isPending: submitPending, run: runSubmit } = useServerMutation();
   const isOps = isCentralOpsOrAbove(role);
   const requiresWarehousePick = isOps;
@@ -123,13 +125,14 @@ export function CreatePRForm({
   const [printWaitMessage, setPrintWaitMessage] = React.useState<string | null>(null);
   const printIdempotencyKeyRef = React.useRef<string | null>(null);
   const confirmPrintInFlightRef = React.useRef(false);
-  const [labelDefaults] = React.useState(() => loadBarcodeLabelDefaults());
-  const [barcodeLabelConfig, setBarcodeLabelConfig] = React.useState<BarcodeLabelConfig>(() =>
-    normalizeBarcodeLabelConfig(labelDefaults.config),
+  const [labelDefaults] = React.useState(() => loadLabelTemplateDefaults());
+  const [labelTemplate, setLabelTemplate] = React.useState<LabelTemplate>(() =>
+    normalizeLabelTemplate(labelDefaults.template),
   );
-  const [labelLayoutLocked, setLabelLayoutLocked] = React.useState(labelDefaults.locked);
-  const barcodeLabelConfigRef = React.useRef(barcodeLabelConfig);
-  barcodeLabelConfigRef.current = barcodeLabelConfig;
+  const [labelCustomized, setLabelCustomized] = React.useState(false);
+  const [resolvedTemplate, setResolvedTemplate] = React.useState<ResolvedLabelTemplate | undefined>();
+  const labelTemplateRef = React.useRef(labelTemplate);
+  labelTemplateRef.current = labelTemplate;
   const [vendorSheetOpen, setVendorSheetOpen] = React.useState(false);
   const [lineFieldErrors, setLineFieldErrors] = React.useState<PRLineFieldError[]>([]);
   const [pending, startTransition] = React.useTransition();
@@ -343,16 +346,42 @@ export function CreatePRForm({
   }, [executionType]);
 
   React.useEffect(() => {
+    if (searchParams.get("printOpen") === "1") {
+      setPrintOpen(true);
+    }
+  }, [searchParams]);
+
+  React.useEffect(() => {
     if (printOpen) {
       printIdempotencyKeyRef.current = crypto.randomUUID();
       confirmPrintInFlightRef.current = false;
-      const saved = loadBarcodeLabelDefaults();
-      const normalized = normalizeBarcodeLabelConfig(saved.config);
-      barcodeLabelConfigRef.current = normalized;
-      setBarcodeLabelConfig(normalized);
-      setLabelLayoutLocked(saved.locked);
+
+      if (serialHint?.series) {
+        const draft = loadLabelStudioDraft({ kind: "series", series: serialHint.series });
+        if (draft?.customized) {
+          const normalized = normalizeLabelTemplate(draft.template);
+          labelTemplateRef.current = normalized;
+          setLabelTemplate(normalized);
+          setLabelCustomized(true);
+        } else {
+          const saved = loadLabelTemplateDefaults();
+          const normalized = normalizeLabelTemplate(saved.template);
+          labelTemplateRef.current = normalized;
+          setLabelTemplate(normalized);
+          setLabelCustomized(false);
+        }
+
+        void getResolvedLabelTemplateForPrint(serialHint.series).then((resolved) => {
+          setResolvedTemplate(resolved);
+          if (!loadLabelStudioDraft({ kind: "series", series: serialHint.series })?.customized) {
+            const normalized = normalizeLabelTemplate(resolved.template);
+            setLabelTemplate(normalized);
+            labelTemplateRef.current = normalized;
+          }
+        });
+      }
     }
-  }, [printOpen]);
+  }, [printOpen, serialHint?.series]);
 
   const printSubcategories = React.useMemo(() => {
     if (!lockTagsCategory) {
@@ -511,9 +540,9 @@ export function CreatePRForm({
             resolvedPrId = result.prId;
             setPrId(result.prId);
             if (result.reservationId) {
-              saveBarcodeLabelConfigToSession(
+              saveLabelTemplateToSession(
                 result.reservationId,
-                barcodeLabelConfigRef.current,
+                labelTemplateRef.current,
               );
             }
             setPrintOpen(false);
@@ -547,26 +576,19 @@ export function CreatePRForm({
     });
   }
 
-  function handleLabelConfigChange(next: BarcodeLabelConfig) {
-    const normalized = normalizeBarcodeLabelConfig(next);
-    barcodeLabelConfigRef.current = normalized;
-    setBarcodeLabelConfig(normalized);
-    if (!labelLayoutLocked) {
-      saveBarcodeLabelDefaultsDraft(normalized);
-    }
+  function handleLabelReset() {
+    if (!serialHint?.series) return;
+    clearLabelStudioDraft({ kind: "series", series: serialHint.series });
+    void getResolvedLabelTemplateForPrint(serialHint.series).then((resolved) => {
+      setResolvedTemplate(resolved);
+      const normalized = normalizeLabelTemplate(resolved.template);
+      setLabelTemplate(normalized);
+      labelTemplateRef.current = normalized;
+      setLabelCustomized(false);
+    });
   }
 
-  function handleLockLabelLayout() {
-    const state = lockBarcodeLabelDefaults(getLatestBarcodeLabelConfigForLock());
-    setLabelLayoutLocked(state.locked);
-    toast.success("Label layout locked as your default for future prints.");
-  }
-
-  function handleUnlockLabelLayout() {
-    const state = unlockBarcodeLabelDefaults(barcodeLabelConfigRef.current);
-    setLabelLayoutLocked(state.locked);
-    toast.message("Layout unlocked — adjust settings, then lock again to save as default.");
-  }
+  const labelStudioReturnTo = "/purchase-requests/new?printOpen=1";
 
   const printRangeStart = serialHint?.nextStart ?? "";
   const printRangeEnd =
@@ -889,11 +911,11 @@ export function CreatePRForm({
           warehouseLabel={selectedWarehouse?.label ?? "—"}
           waitMessage={printWaitMessage}
           reserving={printReserving}
-          labelConfig={barcodeLabelConfig}
-          onLabelConfigChange={handleLabelConfigChange}
-          layoutLocked={labelLayoutLocked}
-          onLockLayout={handleLockLabelLayout}
-          onUnlockLayout={handleUnlockLabelLayout}
+          labelTemplate={labelTemplate}
+          labelCustomized={labelCustomized}
+          onLabelReset={handleLabelReset}
+          resolved={resolvedTemplate}
+          returnTo={labelStudioReturnTo}
           onConfirm={() => confirmPrint()}
         />
       ) : null}

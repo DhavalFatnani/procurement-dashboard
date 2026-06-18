@@ -214,6 +214,7 @@ model User {
   serialReservationsReleased SerialReservation[] @relation("SerialReservationReleasedBy")
   adminAuditLogs            AdminAuditLog[]
   seriesConfigsConfigured   SeriesConfig[]
+  labelTemplatesCreated     LabelTemplate[]
   catalogItemsCreated       CatalogItem[]       @relation("CatalogItemCreatedBy")
   catalogItemsApproved      CatalogItem[]       @relation("CatalogItemApprovedBy")
   catalogItemVendorsLinked  CatalogItemVendor[] @relation("CatalogItemVendorLinkedBy")
@@ -880,6 +881,8 @@ model SerialReservation {
   prId           String?                  @unique
   poId           String?                  @unique
   idempotencyKey String                   @unique
+  /// Ephemeral print-time label template override (LabelTemplate v1 JSON).
+  printTimeLabelOverride Json?
   createdById    String
   releasedAt     DateTime?
   releasedById   String?
@@ -929,13 +932,50 @@ model SeriesConfig {
   ceilingAlertPct         Int      @default(80)
   sortOrder               Int      @default(0)
   isActive                Boolean  @default(true)
+  labelTemplateId         String?
   configuredById          String
   configuredAt            DateTime @default(now())
   updatedAt               DateTime @default(now()) @updatedAt
 
   configuredBy         User                @relation(fields: [configuredById], references: [id])
+  labelTemplate        LabelTemplate?      @relation(fields: [labelTemplateId], references: [id], onDelete: SetNull)
   serialReservations     SerialReservation[]
   subcategories          Subcategory[]
 
   @@index([isActive, sortOrder])
+  @@index([labelTemplateId])
+}
+
+enum LabelTemplatePurpose {
+  SERIAL
+  BIN
+}
+
+model LabelTemplate {
+  id          String               @id @default(cuid())
+  name        String
+  description String?
+  purpose     LabelTemplatePurpose   @default(SERIAL)
+  template    Json
+  createdById String
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  createdBy         User          @relation(fields: [createdById], references: [id])
+  orgDefaultFor     OrgSettings?  @relation("OrgDefaultLabelTemplate")
+  orgBinDefaultFor  OrgSettings?  @relation("OrgDefaultBinLabelTemplate")
+  seriesOverrides   SeriesConfig[]
+
+  @@index([createdById])
+  @@index([purpose])
+}
+
+model OrgSettings {
+  id                       String   @id @default("singleton")
+  defaultLabelTemplateId   String?  @unique
+  defaultBinLabelTemplateId String? @unique
+  updatedAt                DateTime @updatedAt
+
+  defaultLabelTemplate    LabelTemplate? @relation("OrgDefaultLabelTemplate", fields: [defaultLabelTemplateId], references: [id], onDelete: SetNull)
+  defaultBinLabelTemplate LabelTemplate? @relation("OrgDefaultBinLabelTemplate", fields: [defaultBinLabelTemplateId], references: [id], onDelete: SetNull)
 }

@@ -5,16 +5,24 @@ import * as React from "react";
 
 import { SerialBarcodePrintSheet } from "@/components/purchase-requests/SerialBarcodePrintSheet";
 import { PageAlert } from "@/components/shared/PageAlert";
-import { buttonVariants } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatProcurementRef, formatSerialBatchLabel } from "@/lib/display-ref";
 import { formatDateTimeMedium } from "@/lib/format-datetime";
+import { getResolvedLabelTemplateForPrint } from "@/app/actions/label-templates";
+import { buildLabelStudioUrl } from "@/lib/label-studio-url";
 import {
-  loadBarcodeLabelConfigFromSession,
-  type BarcodeLabelConfig,
-} from "@/lib/barcode-label-config";
+  downloadThermalFile,
+  generateEplBatch,
+  generateZplBatch,
+} from "@/lib/label-thermal-export";
+import { loadEffectiveLabelTemplateFromSession } from "@/lib/label-template-storage";
+import { getReferencePreset } from "@/lib/label-template-presets";
+import type { LabelTemplate } from "@/lib/label-template-types";
+import { normalizeLabelTemplate } from "@/lib/label-template-types";
+import { listSerialNumbersInRange } from "@/lib/serial-range";
 import { cn } from "@/lib/utils";
-import { CheckCircle2, Loader2, Printer } from "lucide-react";
+import { CheckCircle2, Loader2, Palette, Printer } from "lucide-react";
 
 type PrintStatus = "preparing" | "ready" | "printing" | "done";
 
@@ -108,18 +116,60 @@ export function SMPrintSummaryView({
   );
   const [labelProgress, setLabelProgress] = React.useState({ completed: 0, total: reservation.quantity });
   const [mountPrintSheet, setMountPrintSheet] = React.useState(false);
-  const [labelConfig] = React.useState<BarcodeLabelConfig>(() =>
-    loadBarcodeLabelConfigFromSession(reservation.id),
+  const seriesName = reservation.seriesName;
+
+  const [labelTemplate, setLabelTemplate] = React.useState<LabelTemplate>(() =>
+    normalizeLabelTemplate(getReferencePreset()),
   );
+  const [templateLoading, setTemplateLoading] = React.useState(true);
 
   React.useEffect(() => {
-    if (!autoPrint) {
+    let cancelled = false;
+    const fromSession = loadEffectiveLabelTemplateFromSession(reservation.id);
+
+    void getResolvedLabelTemplateForPrint(
+      reservation.series as import("@/lib/series-codes").SeriesCode,
+      reservation.id,
+    ).then((resolved) => {
+      if (cancelled) return;
+      const effective = fromSession ?? resolved.template;
+      setLabelTemplate(normalizeLabelTemplate(effective));
+      setTemplateLoading(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [reservation.id, reservation.series]);
+  const serials = React.useMemo(
+    () => listSerialNumbersInRange(reservation.rangeStart, reservation.rangeEnd),
+    [reservation.rangeStart, reservation.rangeEnd],
+  );
+
+  const thermalContext = {
+    seriesName,
+    prId,
+    prNumber: prId,
+    reservationId: reservation.id,
+  };
+
+  function handleDownloadZpl() {
+    const content = generateZplBatch(labelTemplate, serials, thermalContext);
+    downloadThermalFile(content, `labels-${reservation.id}.zpl`);
+  }
+
+  function handleDownloadEpl() {
+    const content = generateEplBatch(labelTemplate, serials, thermalContext);
+    downloadThermalFile(content, `labels-${reservation.id}.epl`);
+  }
+
+  React.useEffect(() => {
+    if (!autoPrint || templateLoading) {
       return;
     }
     setMountPrintSheet(true);
-  }, [autoPrint]);
+  }, [autoPrint, templateLoading]);
 
-  const seriesName = reservation.seriesName;
   const batchLabel = formatSerialBatchLabel({
     seriesName,
     rangeStart: reservation.rangeStart,
@@ -127,7 +177,17 @@ export function SMPrintSummaryView({
     quantity: reservation.quantity,
   });
 
-  const labelsLoading = autoPrint && printStatus !== "done";
+  const labelsLoading = autoPrint && (templateLoading || printStatus !== "done");
+
+  const editLabelHref = buildLabelStudioUrl({
+    view: "editor",
+    purpose: "serial",
+    series: reservation.series as import("@/lib/series-codes").SeriesCode,
+    returnTo: `/purchase-requests/${prId}/print`,
+    mode: "wizard",
+    reservationId: reservation.id,
+    prId,
+  });
 
   return (
     <>
@@ -209,6 +269,21 @@ export function SMPrintSummaryView({
         </Card>
 
         {!labelsLoading ? (
+          <div className="flex flex-wrap gap-2">
+            <Link href={editLabelHref} className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
+              <Palette className="size-4" aria-hidden />
+              Edit label
+            </Link>
+            <Button type="button" variant="outline" size="sm" onClick={handleDownloadZpl}>
+              Download ZPL
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={handleDownloadEpl}>
+              Download EPL
+            </Button>
+          </div>
+        ) : null}
+
+        {!labelsLoading ? (
           <PageAlert variant="info">
             Store managers cannot export or copy serial data from this screen. Each page prints one
             barcode with KNOT branding to prevent duplicate usage. Page setup is chosen when you
@@ -235,7 +310,8 @@ export function SMPrintSummaryView({
           rangeStart={reservation.rangeStart}
           rangeEnd={reservation.rangeEnd}
           seriesName={seriesName}
-          labelConfig={labelConfig}
+          labelTemplate={labelTemplate}
+          prId={prId}
           autoPrint={autoPrint}
           onStatusChange={setPrintStatus}
           onProgress={(completed, total) => setLabelProgress({ completed, total })}

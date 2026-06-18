@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import { Suspense } from "react";
+
 import { CreatePRForm } from "@/components/purchase-requests/CreatePRForm";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { buttonVariants } from "@/components/ui/button";
@@ -38,13 +40,15 @@ export default async function NewPurchaseRequestPage() {
   }
 
   return (
-    <CreatePRForm
-      role={user.role}
-      categories={filterOptions.categories}
-      subcategories={filterOptions.subcategories}
-      catalogItems={filterOptions.catalogItems}
-      warehouses={warehouses}
-      defaultWarehouseId={isCentralOpsOrAbove(user.role) ? "" : warehouses[0]!.id}
-    />
+    <Suspense fallback={<p className="text-ds-sm text-muted-foreground">Loading…</p>}>
+      <CreatePRForm
+        role={user.role}
+        categories={filterOptions.categories}
+        subcategories={filterOptions.subcategories}
+        catalogItems={filterOptions.catalogItems}
+        warehouses={warehouses}
+        defaultWarehouseId={isCentralOpsOrAbove(user.role) ? "" : warehouses[0]!.id}
+      />
+    </Suspense>
   );
 }

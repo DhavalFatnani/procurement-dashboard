@@ -3,12 +3,11 @@
 import type { SeriesCode } from "@/lib/series-codes";
 
 import { BarcodeLabelSetupPanel } from "@/components/purchase-requests/BarcodeLabelSetupPanel";
-import type { BarcodeLabelConfig } from "@/lib/barcode-label-config";
+import type { LabelTemplate, ResolvedLabelTemplate } from "@/lib/label-template-types";
 import { cn } from "@/lib/utils";
 
-/** @deprecated Use BarcodeLabelSetupPanel directly. Thin wrapper for existing imports. */
 export function BarcodeLabelConfigSection({
-  config,
+  template,
   onChange,
   disabled = false,
   layoutLocked = false,
@@ -17,11 +16,16 @@ export function BarcodeLabelConfigSection({
   series,
   seriesName,
   sampleSerial,
+  reservationId,
+  prId,
+  resolved,
+  isAdmin,
+  canManageSeries,
   className,
   embedded = false,
 }: {
-  config: BarcodeLabelConfig;
-  onChange: (config: BarcodeLabelConfig) => void;
+  template: LabelTemplate;
+  onChange: (template: LabelTemplate) => void;
   disabled?: boolean;
   layoutLocked?: boolean;
   onLockLayout?: () => void;
@@ -29,13 +33,17 @@ export function BarcodeLabelConfigSection({
   series?: SeriesCode;
   seriesName?: string;
   sampleSerial?: string;
+  reservationId?: string;
+  prId?: string;
+  resolved?: ResolvedLabelTemplate;
+  isAdmin?: boolean;
+  canManageSeries?: boolean;
   className?: string;
   embedded?: boolean;
-  showPreview?: boolean;
 }) {
   return (
     <BarcodeLabelSetupPanel
-      config={config}
+      template={template}
       onChange={onChange}
       disabled={disabled}
       layoutLocked={layoutLocked}
@@ -44,6 +52,11 @@ export function BarcodeLabelConfigSection({
       series={series}
       seriesName={seriesName}
       sampleSerial={sampleSerial}
+      reservationId={reservationId}
+      prId={prId}
+      resolved={resolved}
+      isAdmin={isAdmin}
+      canManageSeries={canManageSeries}
       className={cn(embedded ? "min-h-0" : "rounded-xl border border-border-subtle bg-card p-4", className)}
     />
   );

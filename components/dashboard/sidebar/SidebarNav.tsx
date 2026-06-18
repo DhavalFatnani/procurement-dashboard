@@ -11,6 +11,7 @@ import {
   FileText,
   Hash,
   Inbox,
+  LayoutTemplate,
   LayoutDashboard,
   ListChecks,
   PackageCheck,
@@ -19,6 +20,7 @@ import {
   Users,
   Wallet,
   Warehouse,
+  Boxes,
   type LucideIcon,
 } from "lucide-react";
 
@@ -36,6 +38,8 @@ const NAV_ICONS: Record<NavIconId, LucideIcon> = {
   invoices: Receipt,
   payments: Wallet,
   serialGovernance: Hash,
+  labelStudio: LayoutTemplate,
+  binLabels: Boxes,
   reports: BarChart3,
   users: Users,
   warehouses: Warehouse,
